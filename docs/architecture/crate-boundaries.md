@@ -16,7 +16,7 @@ xdg-thumbnail/
       src/main.rs
 ```
 
-The library crate is the spec-oriented core. It should implement stable concepts from the Freedesktop Thumbnail Managing Standard and expose APIs that can be reused by GUI applications and other thumbnail consumers.
+The library crate is the spec-oriented core. It should implement stable cache inspection and validation concepts from the Freedesktop Thumbnail Managing Standard and expose APIs that can be reused by cleanup tools and thumbnail consumers.
 
 The CLI crate is the policy runner. It should translate user input into cleanup policy, call the library to inspect cache entries, and perform filesystem mutations only after the CLI has made an explicit deletion decision.
 
@@ -29,22 +29,18 @@ The CLI crate is the policy runner. It should translate user input into cleanup 
 - Represent cache namespaces separately for successful thumbnail sizes and program-version failure entries.
 - Compute thumbnail filenames from canonical thumbnail URIs using MD5 and the `.png` suffix, including absolute canonical URIs for the personal cache and `./`-prefixed relative URIs for shared repositories, as specified in `docs/spec/uri-canonicalization.md`.
 - Reject shared-repository relative URIs that are not a single direct child filename, including parent segments, path separators, or encoded path separators.
-- Read and write standard PNG text metadata such as `Thumb::URI`, `Thumb::MTime`, `Thumb::Size`, and `Thumb::Mimetype`.
-- Require `Thumb::URI` and `Thumb::MTime` for personal-cache thumbnails, store and compare `Thumb::MTime` as whole Unix epoch seconds, and reject personal-cache writes when the original modification time cannot be obtained.
+- Read standard PNG text metadata such as `Thumb::URI`, `Thumb::MTime`, `Thumb::Size`, and `Thumb::Mimetype`.
+- Require `Thumb::URI` and `Thumb::MTime` for personal-cache validation and compare `Thumb::MTime` as whole Unix epoch seconds.
 - Iterate cache entries from the personal thumbnail cache and optional shared thumbnail repositories.
 - Validate personal and shared thumbnails with separate contexts because shared repositories may omit `Thumb::URI` or `Thumb::MTime` when they use other freshness mechanisms.
-- Validate saved successful thumbnail PNGs against the required image format and maximum dimensions for the selected size class.
+- Inspect successful thumbnail PNGs against the required image format and maximum dimensions for the selected size class.
 - Treat failure entries as metadata-carrying PNG files in program-version failure namespaces, not as successful thumbnail size entries.
-- Save thumbnails atomically by writing a temporary PNG in the target directory and renaming it to the final path.
-- Reject thumbnail creation requests for originals located inside the personal thumbnail cache or a shared `.sh_thumbnails` repository.
-- Treat shared thumbnail repositories as read-only during normal lookup and cleanup; shared-repository writes require an explicit creation mode.
-- Apply spec-compatible permissions for the personal cache: cache directories must be created with mode `700`, and thumbnail files must be created with mode `600`.
-- Apply shared-repository permissions only in explicit shared creation mode. The Freedesktop standard says shared thumbnail permissions should be the same as the original image permissions, but this project intentionally does not follow that text strictly for executable or special permission bits. For PNG thumbnails, shared creation preserves read/write visibility with a mode derived from `original_mode & 0o666`, and never adds execute or special permission bits to thumbnail PNG files.
+- Treat shared thumbnail repositories as read-only during initial lookup and cleanup; shared-repository writes are outside the initial library and CLI responsibilities.
 - Return structured, policy-neutral inspection facts without applying CLI cleanup policy. Invalid PNG structure, missing required metadata, invalid metadata syntax, stale metadata, nonconforming PNG encoding, and dimension violations must remain distinguishable facts.
 - Provide cache entry handles for entries discovered by library iteration or explicit cache-path resolution, and implement safe removal on those handles with containment checks and no symlink following. The removal design should prefer directory-relative APIs such as `openat` and `unlinkat`, or a capability-style equivalent, so containment and symlink checks are not only string-prefix checks. Any fallback that cannot provide that strength must be documented and reported as best-effort.
 - Avoid exposing user-facing URI classification, age thresholds, deletion reasons, or cleanup decisions from the library API.
 
-The library should avoid depending on CLI-only concerns such as terminal formatting, progress bars, command-line parsing, logging configuration, user-specific cleanup defaults, or user-facing report vocabulary. Optional image-specific helpers may be added later, but the base crate should stay usable by cleanup tools and GUI applications without pulling in image rendering stacks.
+The library should avoid depending on CLI-only concerns such as terminal formatting, progress bars, command-line parsing, logging configuration, user-specific cleanup defaults, or user-facing report vocabulary. Image rendering, thumbnail generation, metadata writing, and thumbnail save helpers are outside the base crate scope.
 
 The `x-large` and `xx-large` size classes are treated as supported documented behavior from the Freedesktop Thumbnail Managing Standard `latest` text, including the December 2020 0.9.0 history entry.
 

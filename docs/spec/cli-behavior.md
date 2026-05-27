@@ -88,7 +88,9 @@ Deletion candidates found during a non-delete report are not errors.
 - Deletion should only target files located under the resolved thumbnail cache directories.
 - The CLI should never follow thumbnail path symlinks for deletion without an explicit, reviewed design.
 - The CLI should never follow symlinked failure namespace directories.
+- The CLI should never create, update, regenerate, or request thumbnails.
 - The CLI should never create or request thumbnails for files located under the personal thumbnail cache or a shared `.sh_thumbnails` repository.
+- The CLI should never create or update shared thumbnail repositories.
 - Missing size directories are not errors.
 - Unreadable entries should be reported and skipped.
 - Nonstandard filename deletion is not part of the initial CLI contract.

@@ -11,9 +11,9 @@ Primary references:
 
 - Freedesktop Thumbnail Managing Standard latest text: <https://specifications.freedesktop.org/thumbnail/latest/>
 - Thumbnail directory layout: <https://specifications.freedesktop.org/thumbnail/latest/directory.html>
-- Thumbnail creation metadata: <https://specifications.freedesktop.org/thumbnail/latest/creation.html>
+- Thumbnail metadata keys: <https://specifications.freedesktop.org/thumbnail/latest/creation.html>
 - Thumbnail URI canonicalization: `spec/uri-canonicalization.md`
-- Thumbnail saving and filename hashing: <https://specifications.freedesktop.org/thumbnail/latest/thumbsave.html>
+- Thumbnail filename hashing: <https://specifications.freedesktop.org/thumbnail/latest/thumbsave.html>
 - Modification checks: <https://specifications.freedesktop.org/thumbnail/latest/modifications.html>
 - Deletion guidance: <https://specifications.freedesktop.org/thumbnail/latest/delete.html>
 - Shared thumbnail repositories: <https://specifications.freedesktop.org/thumbnail/latest/shared.html>

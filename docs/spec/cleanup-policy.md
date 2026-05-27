@@ -55,6 +55,8 @@ Reports should derive deletion and skip reasons from policy-neutral inspection f
 - The cleanup tool should not contact remote servers to check whether remote originals still exist.
 - The cleanup tool should not mount removable media to check whether originals still exist.
 - The cleanup tool should not rewrite correct thumbnails just to normalize metadata.
+- The cleanup tool should not create, update, regenerate, or save personal-cache thumbnails or failure entries.
+- The cleanup tool should not create or update shared thumbnail repositories.
 - The cleanup tool should not delete shared thumbnail repositories unless an explicit shared-repository option is added later.
 - The cleanup tool should not create, rewrite, or delete thumbnails whose original URI points inside the personal thumbnail cache or a shared `.sh_thumbnails` repository.
 

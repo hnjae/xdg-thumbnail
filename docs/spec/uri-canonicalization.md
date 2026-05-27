@@ -1,6 +1,6 @@
 # URI Canonicalization
 
-Thumbnail path calculation and `Thumb::URI` metadata must use the same canonical thumbnail URI bytes. The implementation must not hash display paths, shell-expanded paths, lossy path conversions, IRIs, or a different URI string than the one written into standard metadata.
+Thumbnail path calculation and `Thumb::URI` metadata must use the same canonical thumbnail URI bytes. The implementation must not hash display paths, shell-expanded paths, lossy path conversions, IRIs, or a different URI string than the one stored in standard metadata.
 
 Initial platform support targets Unix-like XDG desktop environments. Local filesystem URI construction depends on Unix path identity and path bytes; unsupported platforms must fail explicitly instead of approximating URI or path behavior that could produce incompatible thumbnail filenames.
 
@@ -8,7 +8,7 @@ Initial platform support targets Unix-like XDG desktop environments. Local files
 
 Personal-cache thumbnails use absolute canonical URIs. The MD5 input for the thumbnail filename is the exact byte sequence of the canonical URI string after URI percent-encoding. The URI used for hashing is a URI identity, not a user-facing display path.
 
-For local filesystem paths, the public constructor should accept only absolute paths. It should emit a `file:///` URI with empty authority, percent-encode path bytes without lossy Unicode replacement, and never expand shell syntax such as `~`. The exact emitted URI bytes are the bytes used later for hashing and metadata writing.
+For local filesystem paths, the public constructor should accept only absolute paths. It should emit a `file:///` URI with empty authority, percent-encode path bytes without lossy Unicode replacement, and never expand shell syntax such as `~`. The exact emitted URI bytes are the bytes used later for hashing and metadata validation.
 
 `file://localhost/...` is normalized to `file:///...` when constructing a local filesystem URI for personal-cache path calculation. Other `file:` authorities are not directly checkable local paths; cache inspection may report them, but application lookup must not validate them by probing the local filesystem unless an explicit resolver is added.
 
