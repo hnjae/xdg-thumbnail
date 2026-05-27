@@ -13,8 +13,8 @@ Primary references:
 - Thumbnail directory layout: <https://specifications.freedesktop.org/thumbnail/latest/directory.html>
 - Thumbnail metadata keys: <https://specifications.freedesktop.org/thumbnail/latest/creation.html>
 - Thumbnail URI canonicalization: `spec/uri-canonicalization.md`
-- Prune CLI behavior: `spec/cli-behavior.md`
-- Generate CLI behavior: `spec/generate-behavior.md`
+- Prune CLI behavior: `spec/prune-cli-behavior.md`
+- Generate CLI behavior: `spec/generate-cli-behavior.md`
 - Thumbnail filename hashing: <https://specifications.freedesktop.org/thumbnail/latest/thumbsave.html>
 - Modification checks: <https://specifications.freedesktop.org/thumbnail/latest/modifications.html>
 - Deletion guidance: <https://specifications.freedesktop.org/thumbnail/latest/delete.html>
