@@ -25,6 +25,8 @@ mod policy {
     pub enum DeleteReason {
         /// The original stable local file is missing.
         OriginalMissing,
+        /// The original exists but stored metadata no longer matches it.
+        StaleLocalMetadata,
         /// A remote thumbnail is older than the configured threshold.
         RemoteOlderThanThreshold,
         /// A virtual or archive thumbnail is older than the configured threshold.
@@ -40,6 +42,10 @@ mod policy {
     pub enum SkipReason {
         /// The entry is outside the current scan policy.
         OutOfScope,
+        /// The original cannot be checked reliably enough for deletion.
+        OriginalUnverifiable,
+        /// The cache filename is not part of the standard thumbnail namespace.
+        NonstandardFilename,
         /// The entry could not be inspected because of filesystem permissions or I/O errors.
         Unreadable,
     }

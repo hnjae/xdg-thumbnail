@@ -46,8 +46,8 @@ pub enum CacheEntryState {
     Outdated,
     /// The original could not be read well enough to validate the entry.
     UnreadableOriginal,
-    /// The original is remote, virtual, or otherwise not directly checkable.
-    RemoteOrUnknown,
+    /// The original cannot be verified through the available validation context.
+    UnverifiableOriginal,
     /// The thumbnail file or metadata is malformed.
     Malformed,
 }
