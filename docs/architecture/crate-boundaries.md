@@ -37,9 +37,9 @@ The CLI crate is the policy runner. It should translate user input into cleanup 
 - Reject thumbnail creation requests for originals located inside the personal thumbnail cache or a shared `.sh_thumbnails` repository.
 - Treat shared thumbnail repositories as read-only during normal lookup and cleanup; shared-repository writes require an explicit creation mode.
 - Apply spec-compatible permissions for the personal cache: cache directories must be created with mode `700`, and thumbnail files must be created with mode `600`.
-- Apply shared-repository permissions only in explicit shared creation mode, preserving the original file's read visibility as far as practical while never adding execute or special permission bits to thumbnail PNG files.
+- Apply shared-repository permissions only in explicit shared creation mode. The Freedesktop standard says shared thumbnail permissions should match the original image permissions; this project interprets that for PNG files as preserving read/write visibility with a mode derived from `original_mode & 0o666`, while never adding execute or special permission bits to thumbnail PNG files.
 - Return structured, policy-neutral inspection facts without applying CLI cleanup policy.
-- Provide cache entry handles for entries discovered by library iteration or explicit cache-path resolution, and implement safe removal on those handles with containment checks and no symlink following.
+- Provide cache entry handles for entries discovered by library iteration or explicit cache-path resolution, and implement safe removal on those handles with containment checks and no symlink following. The removal design should prefer directory-relative APIs such as `openat` and `unlinkat`, or a capability-style equivalent, so containment and symlink checks are not only string-prefix checks. Any fallback that cannot provide that strength must be documented and reported as best-effort.
 - Avoid exposing user-facing URI classification, age thresholds, deletion reasons, or cleanup decisions from the library API.
 
 The library should avoid depending on CLI-only concerns such as terminal formatting, progress bars, command-line parsing, logging configuration, user-specific cleanup defaults, or user-facing report vocabulary. Optional image-specific helpers may be added later, but the base crate should stay usable by cleanup tools and GUI applications without pulling in image rendering stacks.
@@ -48,14 +48,14 @@ The `x-large` and `xx-large` size classes are treated as supported documented be
 
 ## CLI Responsibilities
 
-- Parse command-line options such as `--older-than`, `--delete`, `--delete-stale-local`, `--delete-failures`, `--delete-nonstandard-files`, `--size`, `--scope`, `--age-basis`, `--include-nonstandard-files`, `--format`, `--ignore-fhs-media`, `--verbose`, and repeated custom removable path hints.
+- Parse command-line options such as `--older-than`, `--delete`, `--delete-stale-local`, `--delete-failures`, `--size`, `--scope`, `--age-basis`, `--include-nonstandard-files`, `--format`, `--ignore-fhs-media`, `--verbose`, and repeated custom removable path hints.
 - Classify URI schemes and path prefixes according to user-facing cleanup policy.
 - Apply age-based cleanup for remote, virtual, and removable-media-like entries.
 - Inspect and classify failure entries when the user includes failure namespaces in the scan scope, while requiring an extra failure-deletion opt-in before treating them as deletion candidates.
 - Own cleanup policy types such as URI classes, deletion reasons, skip reasons, and cleanup decisions.
 - Request removal through library cache entry handles only after the CLI has made an explicit deletion decision, and only when the relevant destructive flags are present.
 - Delete successful thumbnail entries only when `--delete` is passed, failure entries only when both `--delete` and `--delete-failures` are passed, and report what was removed, skipped, or left unchanged.
-- Skip nonstandard cache filenames by default and include them in deletion policy only when the user passes `--delete-nonstandard-files`.
+- Skip nonstandard cache filenames by default and expose them only as reportable skipped entries when the user passes `--include-nonstandard-files`.
 - Provide conservative defaults and clear report output before destructive cleanup.
 - Convert library errors into actionable CLI diagnostics and exit codes.
 

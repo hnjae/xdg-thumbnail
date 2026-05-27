@@ -52,11 +52,11 @@ The caller is responsible for rendering a thumbnail with the original aspect rat
 
 Application lookup must not use existing thumbnails when the original is not currently readable. Separate management-tool inspection may still parse thumbnail files and metadata without opening the original, but such inspection must report facts rather than validate the thumbnail for display.
 
-Explicit shared-repository creation mode should preserve the original file's read visibility as far as practical, not the personal-cache `700` directory and `600` file privacy policy. Thumbnail PNG files must not inherit execute or special permission bits from originals.
+Explicit shared-repository creation mode should preserve original file read/write visibility with a mode derived from `original_mode & 0o666`, not the personal-cache `700` directory and `600` file privacy policy. This is the project interpretation of the Freedesktop requirement that shared thumbnail permissions match the original image permissions while avoiding execute and special permission bits on PNG files.
 
 ## Pruning Model
 
-The library owns cache entry discovery, policy-neutral inspection facts, and low-level cache path safety. The CLI owns user-facing cleanup policy, report vocabulary, and destructive intent. A pruning run should therefore enumerate cache entries through the library, classify and decide in the CLI, then request deletion through a library cache entry handle only for entries that still pass containment checks and are not symlinks.
+The library owns cache entry discovery, policy-neutral inspection facts, and low-level cache path safety. The CLI owns user-facing cleanup policy, report vocabulary, and destructive intent. A pruning run should therefore enumerate cache entries through the library, classify and decide in the CLI, then request deletion through a library cache entry handle only for entries that still pass containment checks and are not symlinks. Cache entry deletion should be implemented with directory-relative removal primitives such as `openat` and `unlinkat`, or a capability-style equivalent, where available; weaker fallbacks must be treated as best-effort rather than race-free.
 
 Access-time based cleanup should record thumbnail file metadata before parsing PNG content. The implementation may use access-time-preserving opens when available, but cleanup correctness must not depend on proving detailed access-time semantics for every mounted filesystem.
 

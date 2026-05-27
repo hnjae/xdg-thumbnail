@@ -6,8 +6,8 @@ The `xdg-thumbnail` library provides reusable primitives for applications that n
 
 - Make spec-compatible thumbnail path calculation straightforward.
 - Make thumbnail URI canonicalization explicit and shared by path calculation, metadata writing, and validation.
-- Represent the canonical thumbnail URI as an owned library type rather than exposing a general URL type as the identity used for hashing.
-- Provide canonical URI constructors for local filesystem paths and shared-repository child filenames, while allowing callers to provide already-canonical absolute URI strings for non-local backends without hidden parser reserialization.
+- Use the same canonical thumbnail URI bytes for hashing, metadata writing, and validation.
+- Provide canonical URI constructors for local filesystem paths and shared-repository child filenames, while allowing callers to provide already-canonical absolute URI identities for non-local backends without changing the identity used for hashing.
 - Allow applications to validate cached thumbnails without duplicating PNG metadata parsing.
 - Allow applications to create thumbnails atomically after they render image data.
 - Allow management tools to inspect cache entries without embedding CLI cleanup policy into the library.
@@ -20,7 +20,7 @@ The library should expose APIs for:
 - Resolving the personal thumbnail cache root.
 - Constructing canonical personal-cache `file:` URI strings from absolute local paths without lossy path conversion.
 - Constructing canonical shared-repository URI strings only for direct child originals represented by `./`-prefixed relative URIs.
-- Accepting caller-provided canonical absolute URI strings for non-local backends without normalizing, reparsing, or reserializing the string used for hashing.
+- Accepting caller-provided canonical absolute URI identities for non-local backends and preserving the supplied identity bytes for hashing and metadata comparison.
 - Computing the cache path for a canonical original URI and requested thumbnail namespace.
 - Representing cache namespaces separately for successful thumbnail sizes and program-version failure entries.
 - Parsing thumbnail PNG metadata.
@@ -41,7 +41,7 @@ The base library API does not decode images, render documents, or extract video 
 
 For personal-cache writes, the metadata builder must require `Thumb::URI` and `Thumb::MTime`. `Thumb::MTime` must be stored and compared as whole Unix epoch seconds. `Thumb::Size` should be included when original file size is available. The save helper should not write a personal-cache thumbnail when the original modification time cannot be obtained. Shared-repository writes are only available through an explicit shared creation mode and must use the shared relative URI rules in `docs/spec/uri-canonicalization.md`.
 
-For personal-cache validation, missing `Thumb::URI`, a `Thumb::URI` value that differs from the canonical original URI, missing `Thumb::MTime`, or a `Thumb::MTime` value that differs from the original modification time in whole seconds makes the thumbnail invalid. `Thumb::Size` should be compared when present.
+For personal-cache validation, missing `Thumb::URI`, a `Thumb::URI` value that differs from the canonical original URI, missing `Thumb::MTime`, or a `Thumb::MTime` value that differs from the original modification time in whole seconds makes the thumbnail invalid for display. `Thumb::Size` should be compared when present. Management tools should distinguish missing or malformed required metadata from metadata that is well-formed but stale for an existing original.
 
 For shared-repository validation, `Thumb::URI`, `Thumb::MTime`, and `Thumb::Size` should be compared when present. Missing `Thumb::URI` or `Thumb::MTime` should produce a validation result that is usable by callers that accept shared repository freshness policy, but it must not be reported as equivalent to a fully metadata-validated personal-cache thumbnail. The public result type should distinguish at least fully verified entries, shared entries accepted by caller policy despite missing freshness metadata, unchecked inspection results, and invalid entries.
 

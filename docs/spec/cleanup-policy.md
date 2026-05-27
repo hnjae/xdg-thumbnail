@@ -11,16 +11,16 @@ The cleanup tool removes thumbnails that are no longer useful while avoiding del
 - Remote URI such as `http:`, `https:`, `ftp:`, `sftp:`, `smb:`, or `dav:`: delete the thumbnail when it has not been accessed within the configured age threshold and `--delete` is passed.
 - Archive or virtual URI such as `zip:`, `tar:`, `trash:`, `recent:`, `mtp:`, or KIO-style virtual schemes: delete the thumbnail when it has not been accessed within the configured age threshold and `--delete` is passed.
 - Local file under a removable, portal, or desktop-fuse path: treat it like a remote or virtual URI and use age-based cleanup instead of a missing-file check.
-- Malformed thumbnail PNG or missing or invalid required identity metadata: delete the thumbnail when `--delete` is passed.
+- Malformed thumbnail PNG, missing required identity metadata, or metadata with invalid syntax: delete the thumbnail when `--delete` is passed. Well-formed metadata that no longer matches an existing original is stale metadata, not malformed metadata.
 - Nonconforming successful-thumbnail PNGs that can still be parsed, such as entries without full alpha support, interlaced entries, or entries whose dimensions exceed the namespace limit: report them as invalid for application lookup, but do not delete them by default solely for format nonconformance.
 - Failure entries: skip by default because they are application-specific retry state; when the user scans them with `--scope failures` or `--scope all`, apply the same URI classification, metadata checks, and age evaluation as successful thumbnails, except successful-thumbnail dimension checks do not apply. Failure entries may become deletion candidates only when `--delete-failures` is passed, and actual deletion still requires `--delete`.
-- Nonstandard filenames in thumbnail cache directories: skip by default; include them in reports when `--include-nonstandard-files` or `--delete-nonstandard-files` is passed; allow deletion decisions only when `--delete-nonstandard-files` and `--delete` are both passed.
+- Nonstandard filenames in thumbnail cache directories: skip by default; include them in reports when `--include-nonstandard-files` is passed; do not delete them in the initial CLI. A future nonstandard-file cleanup feature must define a narrower, reviewed deletion target before it is exposed.
 
 The default age threshold is 30 days.
 
 Actual deletion requires `--delete`; without it, the CLI reports the same decisions without mutating the cache.
 
-Standard thumbnail entry filenames are 32 lowercase hexadecimal MD5 characters followed by `.png`. The cleanup tool should not infer that other files under the cache are safe to delete unless the user explicitly opts into nonstandard-file deletion. Nonstandard directories and symlinks remain skipped unless a later reviewed design explicitly permits them.
+Standard thumbnail entry filenames are 32 lowercase hexadecimal MD5 characters followed by `.png`. The cleanup tool should not infer that other files under the cache are safe to delete. Nonstandard files, directories, and symlinks remain skipped unless a later reviewed design explicitly permits a narrower deletion policy.
 
 ## Removable And Desktop-Fuse Heuristics
 
@@ -46,7 +46,7 @@ Users who prefer aggressive cleanup should be able to explicitly choose thumbnai
 
 ## Deletion Reasons
 
-The CLI should return structured, stable reason identifiers for deletion candidates. Initial reason identifiers are `original-missing`, `stale-local-metadata`, `remote-older-than-threshold`, `virtual-older-than-threshold`, `removable-older-than-threshold`, `malformed`, and `nonstandard-file`. Report-only reasons should distinguish at least `nonconforming-format` and `nonconforming-dimensions`. Skip reasons should distinguish at least `original-unverifiable`, `nonstandard-filename`, `failure-deletion-not-enabled`, `timestamp-unreliable`, `timestamp-unavailable`, `unreadable-entry`, and `out-of-scope`.
+The CLI should return structured, stable reason identifiers for deletion candidates. Initial reason identifiers are `original-missing`, `stale-local-metadata`, `remote-older-than-threshold`, `virtual-older-than-threshold`, `removable-older-than-threshold`, and `malformed`. The `malformed` reason covers unreadable PNG structure, missing required identity metadata, and metadata values that cannot be parsed; it does not cover metadata that is well-formed but stale for an existing original. Report-only reasons should distinguish at least `nonconforming-format` and `nonconforming-dimensions`. Skip reasons should distinguish at least `original-unverifiable`, `nonstandard-filename`, `failure-deletion-not-enabled`, `timestamp-unreliable`, `timestamp-unavailable`, `unreadable-entry`, and `out-of-scope`.
 
 Reports should derive deletion and skip reasons from policy-neutral inspection facts such as metadata validity, original availability, unsupported URI for local validation, thumbnail timestamps, cache namespace, and cache location. The CLI should show deletion and skip reasons in report and verbose output.
 
@@ -56,7 +56,7 @@ Reports should derive deletion and skip reasons from policy-neutral inspection f
 - The cleanup tool should not mount removable media to check whether originals still exist.
 - The cleanup tool should not rewrite correct thumbnails just to normalize metadata.
 - The cleanup tool should not delete shared thumbnail repositories unless an explicit shared-repository option is added later.
-- The cleanup tool should not create, rewrite, or delete thumbnails for files located inside thumbnail cache directories.
+- The cleanup tool should not create, rewrite, or delete thumbnails whose original URI points inside the personal thumbnail cache or a shared `.sh_thumbnails` repository.
 
 ## Resolved Defaults
 

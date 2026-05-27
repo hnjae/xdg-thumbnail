@@ -1,16 +1,16 @@
 # URI Canonicalization
 
-Thumbnail path calculation and `Thumb::URI` metadata must use the same canonical thumbnail URI string. The library must not hash display paths, shell-expanded paths, lossy path conversions, or a different URI string than the one written into standard metadata. The canonical thumbnail URI should be represented by a library-owned string newtype so general-purpose URL parsers cannot silently reserialize or normalize the identity used for MD5 hashing.
+Thumbnail path calculation and `Thumb::URI` metadata must use the same canonical thumbnail URI bytes. The implementation must not hash display paths, shell-expanded paths, lossy path conversions, IRIs, or a different URI string than the one written into standard metadata.
 
 ## Personal Cache URIs
 
-Personal-cache thumbnails use absolute canonical URIs. The MD5 input for the thumbnail filename is the exact UTF-8 byte sequence of that URI string.
+Personal-cache thumbnails use absolute canonical URIs. The MD5 input for the thumbnail filename is the exact byte sequence of the canonical URI string after URI percent-encoding. The URI used for hashing is a URI identity, not a user-facing display path.
 
-For local filesystem paths, the public constructor should accept only absolute paths. It should emit a `file:///` URI with empty authority, percent-encode path bytes without lossy Unicode replacement, and never expand shell syntax such as `~`. The constructor should preserve the exact canonical string it returns for later hashing and metadata writing.
+For local filesystem paths, the public constructor should accept only absolute paths. It should emit a `file:///` URI with empty authority, percent-encode path bytes without lossy Unicode replacement, and never expand shell syntax such as `~`. The exact emitted URI bytes are the bytes used later for hashing and metadata writing.
 
 `file://localhost/...` is normalized to `file:///...` when constructing a local filesystem URI for personal-cache path calculation. Other `file:` authorities are not directly checkable local paths; cache inspection may report them, but application lookup must not validate them by probing the local filesystem unless an explicit resolver is added.
 
-For non-local personal-cache URIs, the library should not attempt to canonicalize every possible URI scheme. Callers that own a backend such as `http:`, `smb:`, `dav:`, `trash:`, or an application-specific virtual scheme may provide an already-canonical absolute URI string. The library should preserve that string exactly for hashing and metadata comparison, and any validation it performs should be limited to rejecting strings that cannot be used as absolute thumbnail URI identities. It must not parse and reserialize caller-provided URI strings as a hidden normalization step.
+For non-local personal-cache URIs, the library should not attempt to canonicalize every possible URI scheme. Callers that own a backend such as `http:`, `smb:`, `dav:`, `trash:`, or an application-specific virtual scheme may provide an already-canonical absolute URI string. The library should preserve that URI identity exactly for hashing and metadata comparison. Validation should be limited to rejecting values that cannot be absolute URI identities, including relative references, control characters, and unescaped non-ASCII IRI text. The library must not parse and reserialize caller-provided URI strings as a hidden normalization step.
 
 Relative `$XDG_CACHE_HOME` values are invalid under the XDG Base Directory rules and must be ignored. If `$XDG_CACHE_HOME` is unset, blank, or relative, the personal thumbnail root falls back to `$HOME/.cache/thumbnails`. If `$HOME` cannot be determined, cache root resolution must fail rather than invent a relative fallback.
 

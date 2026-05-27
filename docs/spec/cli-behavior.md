@@ -20,7 +20,6 @@ Options:
 --size <SIZE>                 Restrict successful thumbnail scan to one size namespace: normal, large, x-large, or xx-large. Can be passed multiple times.
 --scope <SCOPE>               Restrict scan scope: thumbnails, failures, or all. Defaults to thumbnails.
 --include-nonstandard-files   Include nonstandard filenames in reports.
---delete-nonstandard-files    Treat nonstandard filenames as deletion candidates. Implies report visibility for those entries; actual deletion still requires --delete.
 --removable-prefix <PATH>     Add a local path prefix that should use age-based cleanup. Can be passed multiple times.
 --ignore-fhs-media            Do not treat /media as removable by default.
 --age-basis <BASIS>           Timestamp basis for age-based cleanup: access-time or modification-time. Defaults to access-time.
@@ -49,7 +48,7 @@ The command should not scan shared thumbnail repositories by default. Failure en
 
 When failure entries are scanned, the CLI applies the same inspection and classification policy used for successful thumbnails: classify the stored original URI, validate available metadata, and use the configured age basis for remote, virtual, and removable entries. Failure entries are application-specific retry state, so they may become deletion candidates only when `--delete-failures` is passed. Actual deletion still requires `--delete`. Passing `--delete-failures` without scanning failure entries is a usage error. Failure entries do not use successful-thumbnail size validation.
 
-By default, deletion decisions apply only to standard thumbnail entry filenames: a 32-character lowercase hexadecimal MD5 digest followed by `.png`. Files with nonstandard names are reported as skipped when visible during scanning and are not deletion candidates. `--include-nonstandard-files` makes them visible in reports. `--delete-nonstandard-files` also makes them visible and is required before any nonstandard filename may become a deletion candidate. Even then, actual deletion still requires `--delete`, and directories and symlinks remain skipped unless a later design explicitly permits them.
+By default, deletion decisions apply only to standard thumbnail entry filenames: a 32-character lowercase hexadecimal MD5 digest followed by `.png`. Files with nonstandard names are reported as skipped when visible during scanning and are not deletion candidates. `--include-nonstandard-files` makes them visible in reports. Directories and symlinks remain skipped unless a later design explicitly permits them.
 
 For local `file:` originals, deletion for a missing original requires a reliable local check that distinguishes confirmed absence from permission errors, transient I/O errors, unsupported authorities, and unsupported path conversion. Unverifiable originals are reported and skipped rather than treated as missing.
 
@@ -89,5 +88,5 @@ Deletion candidates found during a non-delete report are not errors.
 - The CLI should never create or request thumbnails for files located under the personal thumbnail cache or a shared `.sh_thumbnails` repository.
 - Missing size directories are not errors.
 - Unreadable entries should be reported and skipped.
-- Nonstandard filename deletion must require both `--delete` and `--delete-nonstandard-files`.
+- Nonstandard filename deletion is not part of the initial CLI contract.
 - Failure entry deletion must require `--delete`, `--delete-failures`, and a scan scope that includes failure entries.
