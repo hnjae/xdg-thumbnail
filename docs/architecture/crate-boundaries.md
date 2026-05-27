@@ -14,7 +14,7 @@ xdg-thumbnail/
       src/main.rs
 ```
 
-The library crate is the spec-oriented core. It should implement stable concepts from the Freedesktop Thumbnail Managing Standard and expose APIs that can be reused by GUI applications such as Kiriview.
+The library crate is the spec-oriented core. It should implement stable concepts from the Freedesktop Thumbnail Managing Standard and expose APIs that can be reused by GUI applications and other thumbnail consumers.
 
 The CLI crate is the policy runner. It should translate user input into cleanup policy, call the library to inspect cache entries, and perform filesystem mutations only after the CLI has made an explicit deletion decision.
 

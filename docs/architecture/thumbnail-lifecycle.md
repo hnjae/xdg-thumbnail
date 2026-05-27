@@ -44,7 +44,7 @@ The library should compare modification times for equality, not only check wheth
 
 Thumbnail creation should be caller-driven and must start from a currently readable original. For local files, the library may provide a helper that opens the file and records its metadata. For non-local backends, the caller may provide an explicit original identity containing the canonical thumbnail URI, modification time, optional size, and proof that the original was readable through that backend. The library should provide the cache path, metadata writer, validation logic, and atomic save helper. Image decoding, document rendering, image-orientation handling, and video frame extraction should remain outside the core library unless a dedicated optional feature is added later.
 
-This keeps the library useful for Kiriview without forcing the CLI to depend on image rendering stacks it does not need.
+This keeps the library useful for GUI thumbnail consumers without forcing the CLI to depend on image rendering stacks it does not need.
 
 Creation must not run for originals located inside the personal thumbnail cache or a shared `.sh_thumbnails` repository. Those files are already cache artifacts and should be loaded directly by callers that need them.
 
@@ -62,7 +62,7 @@ Access-time based cleanup should record thumbnail file metadata before parsing P
 
 ## Application Lookup Target
 
-Kiriview should be able to use the library through a flow equivalent to:
+A GUI thumbnail consumer should be able to use the library through a flow equivalent to:
 
 ```rust
 let uri = ThumbnailUri::from_file_path(path)?;
