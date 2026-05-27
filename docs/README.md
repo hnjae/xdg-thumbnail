@@ -7,10 +7,13 @@ This directory contains project-level documentation for the `xdg-thumbnail` work
 
 Primary references:
 
-- Freedesktop Thumbnail Managing Standard 0.8.0: <https://specifications.freedesktop.org/thumbnail/0.8.0/>
-- Thumbnail directory layout: <https://specifications.freedesktop.org/thumbnail/0.8.0/directory.html>
-- Thumbnail creation metadata: <https://specifications.freedesktop.org/thumbnail/0.8.0/creation.html>
-- Thumbnail saving and filename hashing: <https://specifications.freedesktop.org/thumbnail/0.8.0/thumbsave.html>
-- Modification checks: <https://specifications.freedesktop.org/thumbnail/0.8.0/modifications.html>
-- Deletion guidance: <https://specifications.freedesktop.org/thumbnail/0.8.0/delete.html>
-- Shared thumbnail repositories: <https://specifications.freedesktop.org/thumbnail/0.8.0/shared.html>
+- Freedesktop Thumbnail Managing Standard latest text: <https://specifications.freedesktop.org/thumbnail/latest/>
+- Thumbnail directory layout: <https://specifications.freedesktop.org/thumbnail/latest/directory.html>
+- Thumbnail creation metadata: <https://specifications.freedesktop.org/thumbnail/latest/creation.html>
+- Thumbnail URI canonicalization: `spec/uri-canonicalization.md`
+- Thumbnail saving and filename hashing: <https://specifications.freedesktop.org/thumbnail/latest/thumbsave.html>
+- Modification checks: <https://specifications.freedesktop.org/thumbnail/latest/modifications.html>
+- Deletion guidance: <https://specifications.freedesktop.org/thumbnail/latest/delete.html>
+- Shared thumbnail repositories: <https://specifications.freedesktop.org/thumbnail/latest/shared.html>
+
+This project targets the `latest` text, including the December 2020 0.9.0 history entry that adds `x-large` and `xx-large`, even though the freedesktop specification index still lists only the 0.8.0 versioned link.
