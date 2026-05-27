@@ -5,7 +5,7 @@ use xdg_thumbnail::ThumbnailSize;
 
 #[allow(dead_code)]
 mod policy {
-    /// A cleanup-oriented URI classification owned by the CLI policy layer.
+    /// A cleanup-oriented URI classification owned by the prune policy layer.
     #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
     pub enum UriClass {
         /// A local file whose path can be checked directly.
@@ -69,5 +69,9 @@ fn main() {
         .map(ThumbnailSize::directory_name)
         .join(", ");
 
-    println!("xdg-thumbnail {} ({sizes})", env!("CARGO_PKG_VERSION"));
+    println!(
+        "{} {} ({sizes})",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION")
+    );
 }

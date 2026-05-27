@@ -7,7 +7,7 @@ name = "xdg-thumbnail"
 version = "0.1.0"
 
 [[package]]
-name = "xdg-thumbnail-cli"
+name = "xdg-thumbnail-prune"
 version = "0.1.0"
 dependencies = [
  "xdg-thumbnail",
