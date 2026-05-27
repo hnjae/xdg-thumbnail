@@ -29,7 +29,7 @@ The library should expose APIs for:
 - Checking whether a personal-cache thumbnail is valid for a given original by verifying `Thumb::URI`, `Thumb::MTime`, and `Thumb::Size` according to the Freedesktop standard.
 - Checking shared-repository thumbnails with a separate validation context where present `Thumb::URI`, `Thumb::MTime`, and `Thumb::Size` values are verified, but missing `Thumb::URI` or `Thumb::MTime` does not automatically make the entry invalid.
 - Iterating cache entries from known thumbnail directories.
-- Returning policy-neutral inspection facts for cache management tools.
+- Returning policy-neutral inspection facts for cache management tools, including thumbnail timestamps and whether metadata inspection preserved access time.
 - Distinguishing inspection facts precisely enough that callers do not have to infer cleanup policy from a coarse invalid state.
 - Returning cache entry handles that identify entries discovered by library iteration and can remove those entries safely when the caller has already made a deletion decision.
 - Reading shared thumbnail repositories without modifying them.
@@ -46,7 +46,7 @@ Application validation APIs must not return an existing personal-cache thumbnail
 
 Failure entries are separate from successful thumbnail size namespaces. They are PNG metadata carriers stored under `fail/<program-version>/`; successful-thumbnail dimension limits do not apply to them. The initial library API can locate, parse, and inspect failure entries, but it does not write failure entries.
 
-The library should not apply user-facing cleanup policy. It may report facts such as missing originals, unreadable originals, unsupported original URI for local validation, missing required metadata, invalid metadata syntax, well-formed metadata mismatches, unreadable PNG structure, nonconforming PNG encoding, successful-thumbnail dimension violations, thumbnail timestamps, and cache location, but age thresholds, removable path heuristics, URI class names, reason vocabulary, and deletion decisions belong to the caller.
+The library should not apply user-facing cleanup policy. It may report facts such as missing originals, unreadable originals, unsupported original URI for local validation, missing required metadata, invalid metadata syntax, well-formed metadata mismatches, unreadable PNG structure, nonconforming PNG encoding, successful-thumbnail dimension violations, thumbnail timestamps, whether access time was preserved during metadata inspection, and cache location, but age thresholds, removable path heuristics, URI class names, reason vocabulary, and deletion decisions belong to the caller.
 
 The library must not collapse all invalid entries into a single generic error state. A PNG that can be parsed but lacks full alpha support, uses interlacing, or exceeds the selected successful-thumbnail namespace dimensions is nonconforming for lookup, not equivalent to an unreadable PNG or invalid identity metadata.
 
@@ -57,4 +57,4 @@ The library removal API must operate only on cache entry handles returned by lib
 - Creating, updating, rewriting, or saving successful personal-cache thumbnails is not a project goal; thumbnail generators should live in separate applications or crates that own image, document, and video decoding stacks.
 - Writing failure entries is not a project goal.
 - The initial library API does not create or update shared thumbnail repositories. Shared repositories are read-only inputs for lookup and inspection.
-- A future explicit shared-repository creation mode may be added only after its externally visible behavior is documented in `docs/spec/`. That future mode must remain opt-in, must use the shared relative URI rules in `docs/spec/uri-canonicalization.md`, and should preserve original file read/write visibility with a mode derived from `original_mode & 0o666` rather than copying executable or special permission bits to thumbnail PNG files.
+- A future explicit shared-repository creation mode may be added only after its externally visible behavior is documented in `docs/spec/`. That future mode must remain opt-in, must use the shared relative URI rules in `docs/spec/uri-canonicalization.md`, and must document a permission model that preserves the original file's intended visibility while explicitly calling out any security-motivated deviation from the Freedesktop shared-repository text.

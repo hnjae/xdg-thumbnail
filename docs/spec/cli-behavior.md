@@ -16,7 +16,7 @@ Options:
 --older-than <DURATION>       Age threshold for remote, virtual, and removable entries. Defaults to 30d.
 --delete                      Apply deletion decisions. Without this option, prune only reports planned actions.
 --delete-stale-local          Delete stale local thumbnails whose originals still exist but no longer match stored metadata.
---delete-failures             Allow failure entries scanned by --scope failures or --scope all to become deletion candidates. Actual deletion still requires --delete.
+--allow-delete-failures       Allow failure entries scanned by --scope failures or --scope all to become deletion candidates. Actual deletion still requires --delete.
 --size <SIZE>                 Restrict successful thumbnail scan to one size namespace: normal, large, x-large, or xx-large. Can be passed multiple times.
 --scope <SCOPE>               Restrict scan scope: thumbnails, failures, or all. Defaults to thumbnails.
 --include-nonstandard-files   Include nonstandard filenames in reports.
@@ -46,7 +46,7 @@ The command should not scan shared thumbnail repositories by default. Failure en
 
 `--size` applies only to successful thumbnail size namespaces. With `--scope all`, successful thumbnail entries are restricted to the requested sizes while failure entries are still scanned. Passing `--size` with `--scope failures` is a usage error because no successful thumbnail namespace is being scanned.
 
-When failure entries are scanned, the CLI applies the same inspection and classification policy used for successful thumbnails: classify the stored original URI, validate available metadata, and use the configured age basis for remote, virtual, and removable entries. Failure entries are application-specific retry state, so they may become deletion candidates only when `--delete-failures` is passed. Actual deletion still requires `--delete`. Passing `--delete-failures` without scanning failure entries is a usage error. Failure entries do not use successful-thumbnail size validation.
+When failure entries are scanned, the CLI applies the same inspection and classification policy used for successful thumbnails: classify the stored original URI, validate available metadata, and use the configured age basis for remote, virtual, and removable entries. Failure entries are application-specific retry state, so they may become deletion candidates only when `--allow-delete-failures` is passed. Actual deletion still requires `--delete`. Passing `--allow-delete-failures` without `--scope failures` or `--scope all` is a usage error, and the diagnostic must tell the user to add one of those scan scopes. Failure entries do not use successful-thumbnail size validation.
 
 Failure entry scanning is limited to one namespace level below `$XDG_CACHE_HOME/thumbnails/fail/`. Each immediate real directory is treated as one program-version namespace, and only files directly contained in that namespace directory are inspected as failure entries. The CLI must not follow symlinked failure namespace directories, must not recurse into nested directories, and must report visible skipped entries when reporting is requested. A missing `fail` directory is not an error.
 
@@ -58,7 +58,7 @@ For local `file:` originals, deletion for a missing original requires a reliable
 
 The default human output should report deletion candidates, applied deletions, skipped entries that require user attention, operational errors, and a final summary. Entries kept without issues should be omitted from human output unless `--verbose` is passed. Stable machine-readable output should be available through `--format jsonl`; JSONL emits one record for each visible inspected entry so dry-run and destructive runs can be compared exactly.
 
-Each reported entry should include the thumbnail path, original URI if available, namespace, classification, decision, whether the decision was applied, reason, and the timestamp basis for age-based decisions. Verbose human output should include kept entries and classification details.
+Each reported entry should include the thumbnail path, original URI if available, namespace, classification, decision, whether the decision was applied, reason, and the timestamp basis for age-based decisions. When access time is the selected age basis, reports should also expose whether access time was preserved during metadata inspection or why age evaluation was skipped. Verbose human output should include kept entries and classification details.
 
 Example:
 
@@ -66,7 +66,7 @@ Example:
 would-delete normal/abcdefabcdefabcdefabcdefabcdefab.png uri=http://example.test/a.jpg class=remote reason=remote-older-than-threshold age=45d basis=access-time
 would-delete normal/0123456789abcdef0123456789abcdef.png class=unknown reason=missing-required-metadata
 skip normal/bad.png reason=nonstandard-filename
-summary scanned=421 kept=398 would-delete=2 skipped=21 errors=0 basis=access-time timestamp-unavailable=0 timestamp-unreliable=0
+summary scanned=421 kept=398 would-delete=2 skipped=21 errors=0 basis=access-time timestamp-unavailable=0 timestamp-unreliable=0 timestamp-preservation-unavailable=0
 ```
 
 When `--delete` is passed and a deletion succeeds, the human output should use `deleted` rather than `would-delete`. JSONL output should keep the cleanup decision separate from an `applied` boolean so dry-run and destructive runs are easy to compare.
@@ -79,12 +79,14 @@ When `--age-basis modification-time` is used, human and JSONL output must expose
 - `1`: one or more deletions failed.
 - `2`: command-line usage error.
 - `3`: cache scan failed before producing reliable results.
+- `4`: scan completed but one or more nonfatal inspection errors occurred, such as unreadable entries, entries whose metadata could not be read without changing access time in an access-time cleanup run, or per-entry I/O errors that did not invalidate the whole scan.
 
 Deletion candidates found during a non-delete report are not errors.
 
 ## Safety Requirements
 
 - The command must not delete or rewrite files unless `--delete` is passed.
+- When `--age-basis access-time` is active, the command should not read thumbnail contents in a way that can update thumbnail access times. Entries that cannot be inspected without potentially changing access time are reported as skipped rather than treated as age-based deletion candidates.
 - Deletion should only target files located under the resolved thumbnail cache directories.
 - The CLI should never follow thumbnail path symlinks for deletion without an explicit, reviewed design.
 - The CLI should never follow symlinked failure namespace directories.
@@ -94,4 +96,4 @@ Deletion candidates found during a non-delete report are not errors.
 - Missing size directories are not errors.
 - Unreadable entries should be reported and skipped.
 - Nonstandard filename deletion is not part of the initial CLI contract.
-- Failure entry deletion must require `--delete`, `--delete-failures`, and a scan scope that includes failure entries.
+- Failure entry deletion must require `--delete`, `--allow-delete-failures`, and a scan scope that includes failure entries.
