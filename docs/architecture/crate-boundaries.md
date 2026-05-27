@@ -22,8 +22,9 @@ The CLI crate is the policy runner. It should translate user input into cleanup 
 
 - Resolve the thumbnail cache root from the XDG base directory rules, including ignoring relative `$XDG_CACHE_HOME` values.
 - Represent canonical thumbnail URIs as library-owned string newtypes that preserve the exact MD5 and `Thumb::URI` input.
+- Construct canonical thumbnail URIs for local filesystem paths and shared-repository child filenames; for other schemes, preserve caller-provided canonical absolute URI strings without parser reserialization.
 - Represent thumbnail sizes: `normal`, `large`, `x-large`, and `xx-large`.
-- Represent cache namespaces separately for successful thumbnail sizes and application-specific failure entries.
+- Represent cache namespaces separately for successful thumbnail sizes and program-version failure entries.
 - Compute thumbnail filenames from canonical thumbnail URIs using MD5 and the `.png` suffix, including absolute canonical URIs for the personal cache and `./`-prefixed relative URIs for shared repositories, as specified in `docs/spec/uri-canonicalization.md`.
 - Reject shared-repository relative URIs that are not a single direct child filename, including parent segments, path separators, or encoded path separators.
 - Read and write standard PNG text metadata such as `Thumb::URI`, `Thumb::MTime`, `Thumb::Size`, and `Thumb::Mimetype`.
@@ -31,7 +32,7 @@ The CLI crate is the policy runner. It should translate user input into cleanup 
 - Iterate cache entries from the personal thumbnail cache and optional shared thumbnail repositories.
 - Validate personal and shared thumbnails with separate contexts because shared repositories may omit `Thumb::URI` or `Thumb::MTime` when they use other freshness mechanisms.
 - Validate saved successful thumbnail PNGs against the required image format and maximum dimensions for the selected size class.
-- Treat failure entries as metadata-carrying PNG files in application-specific failure namespaces, not as successful thumbnail size entries.
+- Treat failure entries as metadata-carrying PNG files in program-version failure namespaces, not as successful thumbnail size entries.
 - Save thumbnails atomically by writing a temporary PNG in the target directory and renaming it to the final path.
 - Reject thumbnail creation requests for originals located inside the personal thumbnail cache or a shared `.sh_thumbnails` repository.
 - Treat shared thumbnail repositories as read-only during normal lookup and cleanup; shared-repository writes require an explicit creation mode.
@@ -46,12 +47,13 @@ The `x-large` and `xx-large` size classes are treated as supported documented be
 
 ## CLI Responsibilities
 
-- Parse command-line options such as `--older-than`, `--delete`, `--size`, `--scope`, `--include-nonstandard-files`, `--format`, `--ignore-fhs-media`, `--verbose`, and repeated custom removable path hints.
+- Parse command-line options such as `--older-than`, `--delete`, `--delete-stale-local`, `--delete-nonstandard-files`, `--size`, `--scope`, `--age-basis`, `--include-nonstandard-files`, `--format`, `--ignore-fhs-media`, `--verbose`, and repeated custom removable path hints.
 - Classify URI schemes and path prefixes according to user-facing cleanup policy.
 - Apply age-based cleanup for remote, virtual, and removable-media-like entries.
+- Apply the same cleanup policy to failure entries when the user includes failure namespaces in the scan scope.
 - Own cleanup policy types such as URI classes, deletion reasons, skip reasons, and cleanup decisions.
 - Delete files only when `--delete` is passed and report what was removed, skipped, or left unchanged.
-- Skip nonstandard cache filenames by default and include them in deletion policy only when the user passes `--include-nonstandard-files`.
+- Skip nonstandard cache filenames by default and include them in deletion policy only when the user passes `--delete-nonstandard-files`.
 - Provide conservative defaults and clear report output before destructive cleanup.
 - Convert library errors into actionable CLI diagnostics and exit codes.
 
@@ -69,7 +71,11 @@ pub enum ThumbnailSize {
 
 pub enum CacheNamespace {
     Size(ThumbnailSize),
-    Failure(ApplicationId),
+    Failure(FailureNamespace),
+}
+
+pub struct FailureNamespace {
+    program_version: String,
 }
 
 pub struct CanonicalThumbnailUri {
@@ -123,6 +129,6 @@ pub trait CleanupClassifier {
 }
 ```
 
-The CLI default classifier should handle stable URI scheme categories and user-configurable path prefixes. It should treat `/media`, `/run/media/$UID`, GVfs, and KIO FUSE paths as removable or desktop-managed by default; `/media` can be disabled with `--ignore-fhs-media`; `/mnt` is excluded by default and can be added with repeated `--removable-prefix` options.
+The CLI default classifier should handle stable URI scheme categories and user-configurable path prefixes. It should treat `/media`, `/run/media/$UID`, `/run/user/$UID/doc`, GVfs, and KIO FUSE paths as removable, portal, or desktop-managed by default; `/media` can be disabled with `--ignore-fhs-media`; `/mnt` is excluded by default and can be added with repeated `--removable-prefix` options.
 
-For `file:` URIs, the default classifier should only treat empty authority and `localhost` authority as directly checkable local paths. Other authorities should be classified conservatively as remote or unknown unless an implementation-specific resolver is added.
+For `file:` URIs, the default classifier should only treat empty authority and `localhost` authority as directly checkable local paths. Other authorities should be classified conservatively as remote or unknown unless an implementation-specific resolver is added. Direct local checks must distinguish confirmed absence from permission errors, transient I/O errors, and unsupported path conversion so cleanup policy can skip unverifiable originals instead of deleting them as missing.

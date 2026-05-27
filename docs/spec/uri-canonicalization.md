@@ -10,6 +10,8 @@ For local filesystem paths, the public constructor should accept only absolute p
 
 `file://localhost/...` is normalized to `file:///...` when constructing a local filesystem URI for personal-cache path calculation. Other `file:` authorities are not directly checkable local paths; cache inspection may report them, but application lookup must not validate them by probing the local filesystem unless an explicit resolver is added.
 
+For non-local personal-cache URIs, the library should not attempt to canonicalize every possible URI scheme. Callers that own a backend such as `http:`, `smb:`, `dav:`, `trash:`, or an application-specific virtual scheme may provide an already-canonical absolute URI string. The library should preserve that string exactly for hashing and metadata comparison, and any validation it performs should be limited to rejecting strings that cannot be used as absolute thumbnail URI identities. It must not parse and reserialize caller-provided URI strings as a hidden normalization step.
+
 Relative `$XDG_CACHE_HOME` values are invalid under the XDG Base Directory rules and must be ignored. If `$XDG_CACHE_HOME` is unset, blank, or relative, the personal thumbnail root falls back to `$HOME/.cache/thumbnails`. If `$HOME` cannot be determined, cache root resolution must fail rather than invent a relative fallback.
 
 The library should avoid filesystem canonicalization as a hidden URI normalization step. Resolving symlinks or changing path identity before hashing can make thumbnails incompatible with callers that use the visible path URI; callers that need a resolved path should resolve it before constructing the thumbnail URI.

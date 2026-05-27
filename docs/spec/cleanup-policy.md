@@ -4,14 +4,16 @@ The cleanup tool removes thumbnails that are no longer useful while avoiding del
 
 ## Default Policy
 
-- Stable local `file:` URI: delete the thumbnail when the original path no longer exists.
+- Stable local `file:` URI: delete the thumbnail when a direct local filesystem check confirms that the original path no longer exists.
 - Stable local `file:` URI with matching original metadata: keep the thumbnail.
 - Stable local `file:` URI with changed original metadata: report it as stale and invalid for lookup; the CLI leaves it for applications to recreate by default and deletes it only when `--delete-stale-local` and `--delete` are both passed.
+- Stable local `file:` URI whose original cannot be checked reliably because of permissions, transient I/O errors, unsupported authorities, or unsupported path conversion: report it as unverifiable and skip deletion.
 - Remote URI such as `http:`, `https:`, `ftp:`, `sftp:`, `smb:`, or `dav:`: delete the thumbnail when it has not been accessed within the configured age threshold and `--delete` is passed.
 - Archive or virtual URI such as `zip:`, `tar:`, `trash:`, `recent:`, `mtp:`, or KIO-style virtual schemes: delete the thumbnail when it has not been accessed within the configured age threshold and `--delete` is passed.
 - Local file under a removable, portal, or desktop-fuse path: treat it like a remote or virtual URI and use age-based cleanup instead of a missing-file check.
 - Malformed thumbnail PNG or thumbnail metadata: delete the thumbnail when `--delete` is passed.
-- Nonstandard filenames in thumbnail cache directories: skip by default; include them in reports only when `--include-nonstandard-files` is passed; allow deletion decisions only when `--delete-nonstandard-files` and `--delete` are both passed.
+- Failure entries: skip by default because they are application-specific retry state; when the user scans them with `--scope failures` or `--scope all`, apply the same URI classification, metadata, age, and deletion policy as successful thumbnails, except successful-thumbnail dimension checks do not apply.
+- Nonstandard filenames in thumbnail cache directories: skip by default; include them in reports when `--include-nonstandard-files` or `--delete-nonstandard-files` is passed; allow deletion decisions only when `--delete-nonstandard-files` and `--delete` are both passed.
 
 The default age threshold is 30 days.
 
@@ -25,6 +27,7 @@ The CLI should classify local `file:` paths under these prefixes as removable or
 
 - `/media`
 - `/run/media/$UID`
+- `/run/user/$UID/doc`
 - `/run/user/$UID/gvfs`
 - `/run/user/$UID/kio-fuse`
 
@@ -38,25 +41,13 @@ Age-based cleanup needs a timestamp for "not accessed within the configured peri
 
 The CLI should classify the timestamp basis per entry instead of trying to globally prove filesystem access-time semantics. Initial timestamp bases are `access-time`, `access-time-untrusted`, `modification-time`, and `unavailable`. Age-based deletion may run only for `access-time` by default. If access time is unavailable or untrusted, the CLI should report the candidate as skipped rather than delete it because modification time is not evidence that the thumbnail was recently accessed.
 
-An explicit future option may allow modification-time fallback for users who prefer aggressive cleanup. If such a fallback is added, verbose and report output must state that the decision is based on thumbnail file modification time rather than access time because many Linux systems use `relatime` or `noatime`.
+Users who prefer aggressive cleanup should be able to explicitly choose thumbnail file modification time as the age basis. When modification time is used for an age-based decision, verbose and report output must state that the decision is based on thumbnail file modification time rather than access time because many Linux systems use `relatime` or `noatime`.
 
 ## Deletion Reasons
 
-The CLI should return structured reasons for deletion candidates. The library should return policy-neutral inspection facts such as metadata validity, original availability, unsupported URI for local validation, thumbnail timestamps, cache namespace, and cache location.
+The CLI should return structured, stable reason identifiers for deletion candidates. Initial reason identifiers are `original-missing`, `stale-local-metadata`, `remote-older-than-threshold`, `virtual-older-than-threshold`, `removable-older-than-threshold`, `malformed`, and `nonstandard-file`. Skip reasons should distinguish at least `original-unverifiable`, `nonstandard-filename`, `timestamp-untrusted`, `timestamp-unavailable`, `unreadable-entry`, and `out-of-scope`.
 
-```rust
-pub enum DeleteReason {
-    OriginalMissing,
-    StaleLocalMetadata,
-    RemoteOlderThanThreshold,
-    VirtualOlderThanThreshold,
-    RemovableOlderThanThreshold,
-    Malformed,
-    NonstandardFile,
-}
-```
-
-The CLI should show these reasons in report and verbose output.
+The library should return policy-neutral inspection facts such as metadata validity, original availability, unsupported URI for local validation, thumbnail timestamps, cache namespace, and cache location. The CLI should show deletion and skip reasons in report and verbose output.
 
 ## Non-Goals
 
@@ -66,8 +57,8 @@ The CLI should show these reasons in report and verbose output.
 - The cleanup tool should not delete shared thumbnail repositories unless an explicit shared-repository option is added later.
 - The cleanup tool should not create, rewrite, or delete thumbnails for files located inside thumbnail cache directories.
 
-## Open Decisions
+## Resolved Defaults
 
-- Whether stale local thumbnails with existing originals should be deleted by default or only reported. Initial policy: report only, with an explicit `--delete-stale-local` option reserved for users who want destructive stale-local cleanup.
-- Whether the CLI should persist its own last-seen timestamp database instead of relying on filesystem access time. Initial policy: no separate database.
-- Whether an explicit modification-time fallback option should be added for age-based cleanup when access time is unavailable. Initial policy: do not delete those candidates by default.
+- Stale local thumbnails with existing originals are reported by default and deleted only with explicit stale-local deletion enabled.
+- The CLI does not persist its own last-seen timestamp database.
+- Access time is the default basis for age-based cleanup. Modification time may be used only when the user explicitly selects it, and reports must expose that basis.

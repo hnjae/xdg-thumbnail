@@ -54,8 +54,28 @@ Application lookup must not use existing thumbnails when the original is not cur
 
 Explicit shared-repository creation mode should use permissions consistent with the original files, not the personal-cache `700` directory and `600` file privacy policy.
 
+## Application Lookup Target
+
+Kiriview should be able to use the library through a flow equivalent to:
+
+```rust
+let uri = ThumbnailUri::from_file_path(path)?;
+let original = OriginalFile::open_readable(path)?;
+let identity = OriginalIdentity::from_readable_file(&uri, &original)?;
+let cache_path = cache.thumbnail_path(&uri, CacheNamespace::Size(ThumbnailSize::Normal));
+
+if cache.is_valid(&cache_path, &identity)?.is_fully_verified() {
+    return Ok(cache_path);
+}
+
+let rendered_png = render_thumbnail(path)?;
+cache.save_png_atomic(CacheNamespace::Size(ThumbnailSize::Normal), rendered_png, metadata, &identity)?;
+```
+
+The exact API should be shaped by implementation, but applications should not need to know the hash filename algorithm, cache directory layout, or PNG metadata keys directly.
+
 ## Failure Entries
 
-The standard supports per-application failure entries under `thumbnails/fail/<program-version>/`. The library should model these as failure namespaces, not as thumbnail sizes. It should be able to locate and parse failure entries, but writing failure entries should require an explicit application identifier. Failure entries are PNG metadata carriers saved with the same URI-derived filename procedure as successful thumbnails and must carry at least `Thumb::URI` and `Thumb::MTime` for readable originals. They should be written as minimal valid PNG files, not zero-byte files, and successful-thumbnail size validation does not apply to them. Failure entries must not be written when the original is not currently readable.
+The standard supports per-program-version failure entries under `thumbnails/fail/<program-version>/`. The library should model these as failure namespaces, not as thumbnail sizes. It should be able to locate and parse failure entries, but writing failure entries should require an explicit program-version namespace. Failure entries are PNG metadata carriers saved with the same URI-derived filename procedure as successful thumbnails and must carry at least `Thumb::URI` and `Thumb::MTime` for readable originals. They should be written as minimal valid PNG files, not zero-byte files, and successful-thumbnail size validation does not apply to them. Failure entries must not be written when the original is not currently readable.
 
-Initial behavior: the CLI scans successful thumbnail entries by default and scans failure entries only with `--scope failures` or `--scope all`. This avoids deleting application-specific retry state without explicit user intent.
+Initial behavior: the CLI scans successful thumbnail entries by default and scans failure entries only with `--scope failures` or `--scope all`. This avoids deleting application-specific retry state without explicit user intent. Once failure entries are in scope, the CLI should apply the same cleanup policy as successful thumbnails because the user is asking to manage cache entries for the same original URI identity; the only special case is that successful-thumbnail dimension validation does not apply.
