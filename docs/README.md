@@ -3,7 +3,7 @@
 This directory contains project-level documentation for the `xdg-thumbnail` workspace.
 
 - `architecture/`: internal design, crate boundaries, data flow, and implementation constraints.
-- `spec/`: user-facing behavior, CLI contract, cleanup policy, and public library expectations.
+- `spec/`: externally visible behavior, CLI contract, cleanup policy, and public library API contract.
 
 Primary references:
 

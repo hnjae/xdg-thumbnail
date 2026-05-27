@@ -52,7 +52,13 @@ The caller is responsible for rendering a thumbnail with the original aspect rat
 
 Application lookup must not use existing thumbnails when the original is not currently readable. Separate management-tool inspection may still parse thumbnail files and metadata without opening the original, but such inspection must report facts rather than validate the thumbnail for display.
 
-Explicit shared-repository creation mode should use permissions consistent with the original files, not the personal-cache `700` directory and `600` file privacy policy.
+Explicit shared-repository creation mode should preserve the original file's read visibility as far as practical, not the personal-cache `700` directory and `600` file privacy policy. Thumbnail PNG files must not inherit execute or special permission bits from originals.
+
+## Pruning Model
+
+The library owns cache entry discovery, policy-neutral inspection facts, and low-level cache path safety. The CLI owns user-facing cleanup policy, report vocabulary, and destructive intent. A pruning run should therefore enumerate cache entries through the library, classify and decide in the CLI, then request deletion through a library cache entry handle only for entries that still pass containment checks and are not symlinks.
+
+Access-time based cleanup should record thumbnail file metadata before parsing PNG content. The implementation may use access-time-preserving opens when available, but cleanup correctness must not depend on proving detailed access-time semantics for every mounted filesystem.
 
 ## Application Lookup Target
 
@@ -76,6 +82,6 @@ The exact API should be shaped by implementation, but applications should not ne
 
 ## Failure Entries
 
-The standard supports per-program-version failure entries under `thumbnails/fail/<program-version>/`. The library should model these as failure namespaces, not as thumbnail sizes. It should be able to locate and parse failure entries, but writing failure entries should require an explicit program-version namespace. Failure entries are PNG metadata carriers saved with the same URI-derived filename procedure as successful thumbnails and must carry at least `Thumb::URI` and `Thumb::MTime` for readable originals. They should be written as minimal valid PNG files, not zero-byte files, and successful-thumbnail size validation does not apply to them. Failure entries must not be written when the original is not currently readable.
+The standard supports per-program-version failure entries under `thumbnails/fail/<program-version>/`. The library should model these as failure namespaces, not as thumbnail sizes. It should be able to locate and parse failure entries, but writing failure entries should require an explicit program-version namespace. Failure entries are PNG metadata carriers saved with the same URI-derived filename procedure as successful thumbnails and must carry at least `Thumb::URI` and `Thumb::MTime` for readable originals. They should be written as valid PNG metadata carriers, not zero-byte files, and successful-thumbnail size validation does not apply to them. Failure entries must not be written when the original is not currently readable.
 
-Initial behavior: the CLI scans successful thumbnail entries by default and scans failure entries only with `--scope failures` or `--scope all`. This avoids deleting application-specific retry state without explicit user intent. Once failure entries are in scope, the CLI should apply the same cleanup policy as successful thumbnails because the user is asking to manage cache entries for the same original URI identity; the only special case is that successful-thumbnail dimension validation does not apply.
+Initial behavior: the CLI scans successful thumbnail entries by default and scans failure entries only with `--scope failures` or `--scope all`. This avoids touching application-specific retry state without explicit user intent. Once failure entries are in scope, the CLI should inspect and classify them like successful thumbnails because the user is asking to manage cache entries for the same original URI identity; the special cases are that successful-thumbnail dimension validation does not apply and deletion requires `--delete-failures` in addition to `--delete`.

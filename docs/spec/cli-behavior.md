@@ -1,6 +1,6 @@
 # CLI Behavior
 
-The CLI manages thumbnails in the user's Freedesktop thumbnail cache. Its first command should be a pruning command that reports planned changes by default and deletes files only when explicitly requested.
+The CLI manages thumbnails in the user's Freedesktop thumbnail cache. The initial CLI provides a pruning command that reports planned changes by default and deletes files only when explicitly requested.
 
 ## Command Shape
 
@@ -10,12 +10,13 @@ Initial command shape:
 xdg-thumbnail prune [OPTIONS]
 ```
 
-Candidate options:
+Options:
 
 ```text
 --older-than <DURATION>       Age threshold for remote, virtual, and removable entries. Defaults to 30d.
 --delete                      Apply deletion decisions. Without this option, prune only reports planned actions.
 --delete-stale-local          Delete stale local thumbnails whose originals still exist but no longer match stored metadata.
+--delete-failures             Allow failure entries scanned by --scope failures or --scope all to become deletion candidates. Actual deletion still requires --delete.
 --size <SIZE>                 Restrict successful thumbnail scan to one size namespace: normal, large, x-large, or xx-large. Can be passed multiple times.
 --scope <SCOPE>               Restrict scan scope: thumbnails, failures, or all. Defaults to thumbnails.
 --include-nonstandard-files   Include nonstandard filenames in reports.
@@ -27,7 +28,7 @@ Candidate options:
 --verbose                     Print classification and timestamp details.
 ```
 
-The exact option names can change during implementation, but the CLI should preserve these capabilities.
+The option names above are the initial CLI contract. Behavior or option-name changes require a spec update.
 
 ## Default Scan Scope
 
@@ -46,7 +47,7 @@ The command should not scan shared thumbnail repositories by default. Failure en
 
 `--size` applies only to successful thumbnail size namespaces. With `--scope all`, successful thumbnail entries are restricted to the requested sizes while failure entries are still scanned. Passing `--size` with `--scope failures` is a usage error because no successful thumbnail namespace is being scanned.
 
-When failure entries are scanned, the CLI applies the same cleanup policy used for successful thumbnails: classify the stored original URI, validate available metadata, use the configured age basis for remote, virtual, and removable entries, and delete only when the relevant destructive flags are present. Failure entries do not use successful-thumbnail size validation.
+When failure entries are scanned, the CLI applies the same inspection and classification policy used for successful thumbnails: classify the stored original URI, validate available metadata, and use the configured age basis for remote, virtual, and removable entries. Failure entries are application-specific retry state, so they may become deletion candidates only when `--delete-failures` is passed. Actual deletion still requires `--delete`. Passing `--delete-failures` without scanning failure entries is a usage error. Failure entries do not use successful-thumbnail size validation.
 
 By default, deletion decisions apply only to standard thumbnail entry filenames: a 32-character lowercase hexadecimal MD5 digest followed by `.png`. Files with nonstandard names are reported as skipped when visible during scanning and are not deletion candidates. `--include-nonstandard-files` makes them visible in reports. `--delete-nonstandard-files` also makes them visible and is required before any nonstandard filename may become a deletion candidate. Even then, actual deletion still requires `--delete`, and directories and symlinks remain skipped unless a later design explicitly permits them.
 
@@ -54,15 +55,17 @@ For local `file:` originals, deletion for a missing original requires a reliable
 
 ## Report Output
 
-The default output should be readable for humans. Stable machine-readable output should be available through `--format jsonl`. Each candidate should include the thumbnail path, original URI if available, namespace, classification, decision, whether the decision was applied, reason, and the timestamp basis for age-based decisions.
+The default human output should report deletion candidates, applied deletions, skipped entries that require user attention, operational errors, and a final summary. Entries kept without issues should be omitted from human output unless `--verbose` is passed. Stable machine-readable output should be available through `--format jsonl`; JSONL emits one record for each visible inspected entry so dry-run and destructive runs can be compared exactly.
+
+Each reported entry should include the thumbnail path, original URI if available, namespace, classification, decision, whether the decision was applied, reason, and the timestamp basis for age-based decisions. Verbose human output should include kept entries and classification details.
 
 Example:
 
 ```text
-would-delete normal/abcdefabcdefabcdefabcdefabcdefab.png uri=http://example.test/a.jpg class=remote reason=older-than-threshold age=45d
-keep normal/fedcba9876543210fedcba9876543210.png uri=file:///home/user/photo.jpg class=local-stable reason=valid
-would-delete normal/0123456789abcdef0123456789abcdef.png class=unknown reason=malformed-metadata
+would-delete normal/abcdefabcdefabcdefabcdefabcdefab.png uri=http://example.test/a.jpg class=remote reason=remote-older-than-threshold age=45d basis=access-time
+would-delete normal/0123456789abcdef0123456789abcdef.png class=unknown reason=malformed
 skip normal/bad.png reason=nonstandard-filename
+summary scanned=421 kept=398 would-delete=2 skipped=21 errors=0
 ```
 
 When `--delete` is passed and a deletion succeeds, the human output should use `deleted` rather than `would-delete`. JSONL output should keep the cleanup decision separate from an `applied` boolean so dry-run and destructive runs are easy to compare.
@@ -87,3 +90,4 @@ Deletion candidates found during a non-delete report are not errors.
 - Missing size directories are not errors.
 - Unreadable entries should be reported and skipped.
 - Nonstandard filename deletion must require both `--delete` and `--delete-nonstandard-files`.
+- Failure entry deletion must require `--delete`, `--delete-failures`, and a scan scope that includes failure entries.

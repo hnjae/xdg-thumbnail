@@ -37,22 +37,24 @@ The CLI crate is the policy runner. It should translate user input into cleanup 
 - Reject thumbnail creation requests for originals located inside the personal thumbnail cache or a shared `.sh_thumbnails` repository.
 - Treat shared thumbnail repositories as read-only during normal lookup and cleanup; shared-repository writes require an explicit creation mode.
 - Apply spec-compatible permissions for the personal cache: cache directories must be created with mode `700`, and thumbnail files must be created with mode `600`.
-- Apply shared-repository permissions only in explicit shared creation mode, using permissions consistent with the original files rather than personal-cache-only privacy permissions.
+- Apply shared-repository permissions only in explicit shared creation mode, preserving the original file's read visibility as far as practical while never adding execute or special permission bits to thumbnail PNG files.
 - Return structured, policy-neutral inspection facts without applying CLI cleanup policy.
+- Provide cache entry handles for entries discovered by library iteration or explicit cache-path resolution, and implement safe removal on those handles with containment checks and no symlink following.
 - Avoid exposing user-facing URI classification, age thresholds, deletion reasons, or cleanup decisions from the library API.
 
-The library should avoid depending on CLI-only concerns such as terminal formatting, progress bars, command-line parsing, logging configuration, or user-specific cleanup defaults.
+The library should avoid depending on CLI-only concerns such as terminal formatting, progress bars, command-line parsing, logging configuration, user-specific cleanup defaults, or user-facing report vocabulary. Optional image-specific helpers may be added later, but the base crate should stay usable by cleanup tools and GUI applications without pulling in image rendering stacks.
 
 The `x-large` and `xx-large` size classes are treated as supported documented behavior from the Freedesktop Thumbnail Managing Standard `latest` text, including the December 2020 0.9.0 history entry.
 
 ## CLI Responsibilities
 
-- Parse command-line options such as `--older-than`, `--delete`, `--delete-stale-local`, `--delete-nonstandard-files`, `--size`, `--scope`, `--age-basis`, `--include-nonstandard-files`, `--format`, `--ignore-fhs-media`, `--verbose`, and repeated custom removable path hints.
+- Parse command-line options such as `--older-than`, `--delete`, `--delete-stale-local`, `--delete-failures`, `--delete-nonstandard-files`, `--size`, `--scope`, `--age-basis`, `--include-nonstandard-files`, `--format`, `--ignore-fhs-media`, `--verbose`, and repeated custom removable path hints.
 - Classify URI schemes and path prefixes according to user-facing cleanup policy.
 - Apply age-based cleanup for remote, virtual, and removable-media-like entries.
-- Apply the same cleanup policy to failure entries when the user includes failure namespaces in the scan scope.
+- Inspect and classify failure entries when the user includes failure namespaces in the scan scope, while requiring an extra failure-deletion opt-in before treating them as deletion candidates.
 - Own cleanup policy types such as URI classes, deletion reasons, skip reasons, and cleanup decisions.
-- Delete files only when `--delete` is passed and report what was removed, skipped, or left unchanged.
+- Request removal through library cache entry handles only after the CLI has made an explicit deletion decision, and only when the relevant destructive flags are present.
+- Delete successful thumbnail entries only when `--delete` is passed, failure entries only when both `--delete` and `--delete-failures` are passed, and report what was removed, skipped, or left unchanged.
 - Skip nonstandard cache filenames by default and include them in deletion policy only when the user passes `--delete-nonstandard-files`.
 - Provide conservative defaults and clear report output before destructive cleanup.
 - Convert library errors into actionable CLI diagnostics and exit codes.
@@ -104,10 +106,16 @@ pub struct CacheEntryInspection {
     thumbnail_accessed_at: Option<std::time::SystemTime>,
     namespace: CacheNamespace,
     cache_location: CacheLocation,
+    handle: CacheEntryHandle,
+}
+
+pub struct CacheEntryHandle {
+    cache_root: CacheRoot,
+    path: std::path::PathBuf,
 }
 ```
 
-The exact names can change during implementation, but the direction should remain: the library describes cache entries and filesystem facts, while the CLI classifies entries, decides which cleanup policy to run, and applies destructive changes.
+The exact names can change during implementation, but the direction should remain: the library describes cache entries and filesystem facts and owns low-level cache path safety, while the CLI classifies entries, decides which cleanup policy to run, and requests destructive changes only through library-provided cache entry handles.
 
 ## URI Classification Boundary
 
