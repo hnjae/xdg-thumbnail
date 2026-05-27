@@ -2,6 +2,8 @@
 
 The `xdg-thumbnail` library provides reusable primitives for applications that need to read, validate, create, or inspect Freedesktop thumbnails.
 
+Initial platform support targets Unix-like XDG desktop environments. APIs that depend on Unix path bytes, Unix file metadata, or XDG cache semantics should return an explicit unsupported-platform error on platforms where those semantics cannot be represented reliably.
+
 ## Public API Goals
 
 - Make spec-compatible thumbnail path calculation straightforward.
@@ -30,6 +32,7 @@ The library should expose APIs for:
 - Checking shared-repository thumbnails with a separate validation context where present `Thumb::URI`, `Thumb::MTime`, and `Thumb::Size` values are verified, but missing `Thumb::URI` or `Thumb::MTime` does not automatically make the entry invalid.
 - Iterating cache entries from known thumbnail directories.
 - Returning policy-neutral inspection facts for cache management tools.
+- Distinguishing inspection facts precisely enough that callers do not have to infer cleanup policy from a coarse invalid state.
 - Returning cache entry handles that identify entries discovered by library iteration and can remove those entries safely when the caller has already made a deletion decision.
 - Saving a completed PNG to the cache through an atomic temporary file flow.
 - Refusing to create thumbnails for originals located inside thumbnail cache directories.
@@ -41,7 +44,7 @@ The base library API does not decode images, render documents, or extract video 
 
 For personal-cache writes, the metadata builder must require `Thumb::URI` and `Thumb::MTime`. `Thumb::MTime` must be stored and compared as whole Unix epoch seconds. `Thumb::Size` should be included when original file size is available. The save helper should not write a personal-cache thumbnail when the original modification time cannot be obtained. Shared-repository writes are only available through an explicit shared creation mode and must use the shared relative URI rules in `docs/spec/uri-canonicalization.md`.
 
-For personal-cache validation, missing `Thumb::URI`, a `Thumb::URI` value that differs from the canonical original URI, missing `Thumb::MTime`, or a `Thumb::MTime` value that differs from the original modification time in whole seconds makes the thumbnail invalid for display. `Thumb::Size` should be compared when present. Management tools should distinguish missing or malformed required metadata from metadata that is well-formed but stale for an existing original.
+For personal-cache validation, missing `Thumb::URI`, a `Thumb::URI` value that differs from the canonical original URI, missing `Thumb::MTime`, or a `Thumb::MTime` value that differs from the original modification time in whole seconds makes the thumbnail invalid for display. `Thumb::Size` should be compared when present. Management tools should distinguish missing required metadata and invalid metadata syntax from metadata that is well-formed but stale for an existing original.
 
 For shared-repository validation, `Thumb::URI`, `Thumb::MTime`, and `Thumb::Size` should be compared when present. Missing `Thumb::URI` or `Thumb::MTime` should produce a validation result that is usable by callers that accept shared repository freshness policy, but it must not be reported as equivalent to a fully metadata-validated personal-cache thumbnail. The public result type should distinguish at least fully verified entries, shared entries accepted by caller policy despite missing freshness metadata, unchecked inspection results, and invalid entries.
 
@@ -49,6 +52,8 @@ Application lookup APIs must not return an existing personal-cache thumbnail as 
 
 Failure entries are separate from successful thumbnail size namespaces. They are PNG metadata carriers stored under `fail/<program-version>/`; successful-thumbnail dimension limits do not apply to them. A failure writer should create a valid PNG metadata carrier, not a zero-byte file, and must require an explicit program-version namespace plus `Thumb::URI` and `Thumb::MTime` for readable originals.
 
-The library should not apply user-facing cleanup policy. It may report facts such as missing originals, unreadable originals, unsupported original URI for local validation, mismatched metadata, malformed PNGs, nonconforming PNG format, thumbnail timestamps, and cache location, but age thresholds, removable path heuristics, URI class names, and deletion decisions belong to the caller.
+The library should not apply user-facing cleanup policy. It may report facts such as missing originals, unreadable originals, unsupported original URI for local validation, missing required metadata, invalid metadata syntax, well-formed metadata mismatches, unreadable PNG structure, nonconforming PNG encoding, successful-thumbnail dimension violations, thumbnail timestamps, and cache location, but age thresholds, removable path heuristics, URI class names, reason vocabulary, and deletion decisions belong to the caller.
+
+The library must not collapse all invalid entries into a single generic error state. A PNG that can be parsed but lacks full alpha support, uses interlacing, or exceeds the selected successful-thumbnail namespace dimensions is nonconforming for lookup, not equivalent to an unreadable PNG or invalid identity metadata.
 
 The library removal API must operate only on cache entry handles returned by library iteration or explicit cache-path resolution. It must verify that the target is still inside the resolved thumbnail cache directory, must not follow symlinks, and must report deletion failures without retrying outside the cache root.

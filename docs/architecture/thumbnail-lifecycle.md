@@ -52,13 +52,13 @@ The caller is responsible for rendering a thumbnail with the original aspect rat
 
 Application lookup must not use existing thumbnails when the original is not currently readable. Separate management-tool inspection may still parse thumbnail files and metadata without opening the original, but such inspection must report facts rather than validate the thumbnail for display.
 
-Explicit shared-repository creation mode should preserve original file read/write visibility with a mode derived from `original_mode & 0o666`, not the personal-cache `700` directory and `600` file privacy policy. This is the project interpretation of the Freedesktop requirement that shared thumbnail permissions match the original image permissions while avoiding execute and special permission bits on PNG files.
+Explicit shared-repository creation mode should preserve original file read/write visibility with a mode derived from `original_mode & 0o666`, not the personal-cache `700` directory and `600` file privacy policy. This intentionally does not follow the Freedesktop shared-permission text strictly for executable or special permission bits; PNG thumbnails should not gain those bits merely because the original image has them.
 
 ## Pruning Model
 
 The library owns cache entry discovery, policy-neutral inspection facts, and low-level cache path safety. The CLI owns user-facing cleanup policy, report vocabulary, and destructive intent. A pruning run should therefore enumerate cache entries through the library, classify and decide in the CLI, then request deletion through a library cache entry handle only for entries that still pass containment checks and are not symlinks. Cache entry deletion should be implemented with directory-relative removal primitives such as `openat` and `unlinkat`, or a capability-style equivalent, where available; weaker fallbacks must be treated as best-effort rather than race-free.
 
-Access-time based cleanup should record thumbnail file metadata before parsing PNG content. The implementation may use access-time-preserving opens when available, but cleanup correctness must not depend on proving detailed access-time semantics for every mounted filesystem.
+Access-time based cleanup should record thumbnail file metadata before parsing PNG content. The implementation may use access-time-preserving opens when available, such as `O_NOATIME` on Linux, but cleanup correctness must not depend on proving detailed access-time semantics for every mounted filesystem.
 
 ## Application Lookup Target
 
@@ -85,3 +85,5 @@ The exact API should be shaped by implementation, but applications should not ne
 The standard supports per-program-version failure entries under `thumbnails/fail/<program-version>/`. The library should model these as failure namespaces, not as thumbnail sizes. It should be able to locate and parse failure entries, but writing failure entries should require an explicit program-version namespace. Failure entries are PNG metadata carriers saved with the same URI-derived filename procedure as successful thumbnails and must carry at least `Thumb::URI` and `Thumb::MTime` for readable originals. They should be written as valid PNG metadata carriers, not zero-byte files, and successful-thumbnail size validation does not apply to them. Failure entries must not be written when the original is not currently readable.
 
 Initial behavior: the CLI scans successful thumbnail entries by default and scans failure entries only with `--scope failures` or `--scope all`. This avoids touching application-specific retry state without explicit user intent. Once failure entries are in scope, the CLI should inspect and classify them like successful thumbnails because the user is asking to manage cache entries for the same original URI identity; the special cases are that successful-thumbnail dimension validation does not apply and deletion requires `--delete-failures` in addition to `--delete`.
+
+Failure iteration should treat only immediate real directories below `fail/` as program-version namespaces and should inspect only direct child files inside each namespace. Symlinked namespace directories and nested directories are skipped so failure scanning cannot escape the intended cache shape.

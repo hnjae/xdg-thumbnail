@@ -2,6 +2,8 @@
 
 The repository should be organized as a Cargo workspace with one reusable library crate and one CLI crate.
 
+Initial implementation scope is Unix-like XDG desktop environments. Platform-specific APIs should make Unix path bytes, permissions, file metadata, and XDG cache behavior explicit, and unsupported platforms should fail with clear errors rather than silently approximating incompatible cache identities.
+
 ```text
 xdg-thumbnail/
   Cargo.toml
@@ -37,8 +39,8 @@ The CLI crate is the policy runner. It should translate user input into cleanup 
 - Reject thumbnail creation requests for originals located inside the personal thumbnail cache or a shared `.sh_thumbnails` repository.
 - Treat shared thumbnail repositories as read-only during normal lookup and cleanup; shared-repository writes require an explicit creation mode.
 - Apply spec-compatible permissions for the personal cache: cache directories must be created with mode `700`, and thumbnail files must be created with mode `600`.
-- Apply shared-repository permissions only in explicit shared creation mode. The Freedesktop standard says shared thumbnail permissions should match the original image permissions; this project interprets that for PNG files as preserving read/write visibility with a mode derived from `original_mode & 0o666`, while never adding execute or special permission bits to thumbnail PNG files.
-- Return structured, policy-neutral inspection facts without applying CLI cleanup policy.
+- Apply shared-repository permissions only in explicit shared creation mode. The Freedesktop standard says shared thumbnail permissions should be the same as the original image permissions, but this project intentionally does not follow that text strictly for executable or special permission bits. For PNG thumbnails, shared creation preserves read/write visibility with a mode derived from `original_mode & 0o666`, and never adds execute or special permission bits to thumbnail PNG files.
+- Return structured, policy-neutral inspection facts without applying CLI cleanup policy. Invalid PNG structure, missing required metadata, invalid metadata syntax, stale metadata, nonconforming PNG encoding, and dimension violations must remain distinguishable facts.
 - Provide cache entry handles for entries discovered by library iteration or explicit cache-path resolution, and implement safe removal on those handles with containment checks and no symlink following. The removal design should prefer directory-relative APIs such as `openat` and `unlinkat`, or a capability-style equivalent, so containment and symlink checks are not only string-prefix checks. Any fallback that cannot provide that strength must be documented and reported as best-effort.
 - Avoid exposing user-facing URI classification, age thresholds, deletion reasons, or cleanup decisions from the library API.
 
@@ -84,20 +86,23 @@ pub struct CanonicalThumbnailUri {
     value: String,
 }
 
-pub enum CacheEntryState {
+pub enum CacheEntryProblem {
     OriginalMissing,
-    Outdated,
+    StaleMetadata,
     UnreadableOriginal,
     UnverifiableOriginal,
     MissingRequiredMetadata,
-    Malformed,
+    InvalidMetadataSyntax,
+    InvalidPngStructure,
+    NonconformingPngFormat,
+    DimensionsExceedNamespace,
 }
 
 pub enum ValidationOutcome {
     FullyVerified,
     SharedAcceptedByPolicy,
     UncheckedInspection,
-    Invalid(CacheEntryState),
+    Invalid(Vec<CacheEntryProblem>),
 }
 
 pub struct CacheEntryInspection {
@@ -115,7 +120,7 @@ pub struct CacheEntryHandle {
 }
 ```
 
-The exact names can change during implementation, but the direction should remain: the library describes cache entries and filesystem facts and owns low-level cache path safety, while the CLI classifies entries, decides which cleanup policy to run, and requests destructive changes only through library-provided cache entry handles.
+The exact names can change during implementation, but the direction should remain: the library describes cache entries and filesystem facts with enough precision to avoid accidental cleanup policy, while the CLI classifies entries, decides which cleanup policy to run, and requests destructive changes only through library-provided cache entry handles.
 
 ## URI Classification Boundary
 

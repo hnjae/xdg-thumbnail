@@ -2,6 +2,8 @@
 
 Thumbnail path calculation and `Thumb::URI` metadata must use the same canonical thumbnail URI bytes. The implementation must not hash display paths, shell-expanded paths, lossy path conversions, IRIs, or a different URI string than the one written into standard metadata.
 
+Initial platform support targets Unix-like XDG desktop environments. Local filesystem URI construction depends on Unix path identity and path bytes; unsupported platforms must fail explicitly instead of approximating URI or path behavior that could produce incompatible thumbnail filenames.
+
 ## Personal Cache URIs
 
 Personal-cache thumbnails use absolute canonical URIs. The MD5 input for the thumbnail filename is the exact byte sequence of the canonical URI string after URI percent-encoding. The URI used for hashing is a URI identity, not a user-facing display path.

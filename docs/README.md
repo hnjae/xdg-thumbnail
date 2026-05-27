@@ -2,6 +2,8 @@
 
 This directory contains project-level documentation for the `xdg-thumbnail` workspace.
 
+Initial implementation scope is Unix-like XDG desktop environments.
+
 - `architecture/`: internal design, crate boundaries, data flow, and implementation constraints.
 - `spec/`: externally visible behavior, CLI contract, cleanup policy, and public library API contract.
 

@@ -48,6 +48,8 @@ The command should not scan shared thumbnail repositories by default. Failure en
 
 When failure entries are scanned, the CLI applies the same inspection and classification policy used for successful thumbnails: classify the stored original URI, validate available metadata, and use the configured age basis for remote, virtual, and removable entries. Failure entries are application-specific retry state, so they may become deletion candidates only when `--delete-failures` is passed. Actual deletion still requires `--delete`. Passing `--delete-failures` without scanning failure entries is a usage error. Failure entries do not use successful-thumbnail size validation.
 
+Failure entry scanning is limited to one namespace level below `$XDG_CACHE_HOME/thumbnails/fail/`. Each immediate real directory is treated as one program-version namespace, and only files directly contained in that namespace directory are inspected as failure entries. The CLI must not follow symlinked failure namespace directories, must not recurse into nested directories, and must report visible skipped entries when reporting is requested. A missing `fail` directory is not an error.
+
 By default, deletion decisions apply only to standard thumbnail entry filenames: a 32-character lowercase hexadecimal MD5 digest followed by `.png`. Files with nonstandard names are reported as skipped when visible during scanning and are not deletion candidates. `--include-nonstandard-files` makes them visible in reports. Directories and symlinks remain skipped unless a later design explicitly permits them.
 
 For local `file:` originals, deletion for a missing original requires a reliable local check that distinguishes confirmed absence from permission errors, transient I/O errors, unsupported authorities, and unsupported path conversion. Unverifiable originals are reported and skipped rather than treated as missing.
@@ -62,9 +64,9 @@ Example:
 
 ```text
 would-delete normal/abcdefabcdefabcdefabcdefabcdefab.png uri=http://example.test/a.jpg class=remote reason=remote-older-than-threshold age=45d basis=access-time
-would-delete normal/0123456789abcdef0123456789abcdef.png class=unknown reason=malformed
+would-delete normal/0123456789abcdef0123456789abcdef.png class=unknown reason=missing-required-metadata
 skip normal/bad.png reason=nonstandard-filename
-summary scanned=421 kept=398 would-delete=2 skipped=21 errors=0
+summary scanned=421 kept=398 would-delete=2 skipped=21 errors=0 basis=access-time timestamp-unavailable=0 timestamp-unreliable=0
 ```
 
 When `--delete` is passed and a deletion succeeds, the human output should use `deleted` rather than `would-delete`. JSONL output should keep the cleanup decision separate from an `applied` boolean so dry-run and destructive runs are easy to compare.
@@ -85,6 +87,7 @@ Deletion candidates found during a non-delete report are not errors.
 - The command must not delete or rewrite files unless `--delete` is passed.
 - Deletion should only target files located under the resolved thumbnail cache directories.
 - The CLI should never follow thumbnail path symlinks for deletion without an explicit, reviewed design.
+- The CLI should never follow symlinked failure namespace directories.
 - The CLI should never create or request thumbnails for files located under the personal thumbnail cache or a shared `.sh_thumbnails` repository.
 - Missing size directories are not errors.
 - Unreadable entries should be reported and skipped.
