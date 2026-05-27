@@ -6,18 +6,18 @@ The cleanup tool removes thumbnails that are no longer useful while avoiding del
 
 - Stable local `file:` URI: delete the thumbnail when the original path no longer exists.
 - Stable local `file:` URI with matching original metadata: keep the thumbnail.
-- Stable local `file:` URI with changed original metadata: report it as stale and invalid for lookup; the CLI may leave it for applications to recreate instead of deleting it by default.
+- Stable local `file:` URI with changed original metadata: report it as stale and invalid for lookup; the CLI leaves it for applications to recreate by default and deletes it only when `--delete-stale-local` and `--delete` are both passed.
 - Remote URI such as `http:`, `https:`, `ftp:`, `sftp:`, `smb:`, or `dav:`: delete the thumbnail when it has not been accessed within the configured age threshold and `--delete` is passed.
 - Archive or virtual URI such as `zip:`, `tar:`, `trash:`, `recent:`, `mtp:`, or KIO-style virtual schemes: delete the thumbnail when it has not been accessed within the configured age threshold and `--delete` is passed.
 - Local file under a removable, portal, or desktop-fuse path: treat it like a remote or virtual URI and use age-based cleanup instead of a missing-file check.
 - Malformed thumbnail PNG or thumbnail metadata: delete the thumbnail when `--delete` is passed.
-- Nonstandard filenames in thumbnail cache directories: skip by default; include them in reports and deletion candidates only when `--include-nonstandard-files` is passed.
+- Nonstandard filenames in thumbnail cache directories: skip by default; include them in reports only when `--include-nonstandard-files` is passed; allow deletion decisions only when `--delete-nonstandard-files` and `--delete` are both passed.
 
 The default age threshold is 30 days.
 
 Actual deletion requires `--delete`; without it, the CLI reports the same decisions without mutating the cache.
 
-Standard thumbnail entry filenames are 32 lowercase hexadecimal MD5 characters followed by `.png`. The cleanup tool should not infer that other files under the cache are safe to delete unless the user explicitly opts into nonstandard-file handling.
+Standard thumbnail entry filenames are 32 lowercase hexadecimal MD5 characters followed by `.png`. The cleanup tool should not infer that other files under the cache are safe to delete unless the user explicitly opts into nonstandard-file deletion. Nonstandard directories and symlinks remain skipped unless a later reviewed design explicitly permits them.
 
 ## Removable And Desktop-Fuse Heuristics
 
@@ -34,7 +34,9 @@ Users should be able to add additional prefixes through CLI options or configura
 
 ## Access Time
 
-Age-based cleanup needs a timestamp for "not accessed within the configured period." Initial behavior should use the thumbnail file access time when the filesystem exposes it. The CLI should capture the thumbnail file access time before reading PNG metadata, because opening the thumbnail may update access time. If the platform supports an access-time-preserving open such as `O_NOATIME`, using it is preferred but not required. If access time is unavailable or clearly unsupported, the CLI should not delete age-based candidates by default because modification time is not evidence that the thumbnail was recently accessed.
+Age-based cleanup needs a timestamp for "not accessed within the configured period." Initial behavior should use the thumbnail file access time when the filesystem exposes it. The CLI should capture the thumbnail file access time before reading PNG metadata, because opening the thumbnail may update access time. If the platform supports an access-time-preserving open such as `O_NOATIME`, using it is preferred but not required.
+
+The CLI should classify the timestamp basis per entry instead of trying to globally prove filesystem access-time semantics. Initial timestamp bases are `access-time`, `access-time-untrusted`, `modification-time`, and `unavailable`. Age-based deletion may run only for `access-time` by default. If access time is unavailable or untrusted, the CLI should report the candidate as skipped rather than delete it because modification time is not evidence that the thumbnail was recently accessed.
 
 An explicit future option may allow modification-time fallback for users who prefer aggressive cleanup. If such a fallback is added, verbose and report output must state that the decision is based on thumbnail file modification time rather than access time because many Linux systems use `relatime` or `noatime`.
 
@@ -45,10 +47,12 @@ The CLI should return structured reasons for deletion candidates. The library sh
 ```rust
 pub enum DeleteReason {
     OriginalMissing,
+    StaleLocalMetadata,
     RemoteOlderThanThreshold,
     VirtualOlderThanThreshold,
     RemovableOlderThanThreshold,
     Malformed,
+    NonstandardFile,
 }
 ```
 

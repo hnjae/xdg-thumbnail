@@ -21,6 +21,7 @@ The CLI crate is the policy runner. It should translate user input into cleanup 
 ## Library Responsibilities
 
 - Resolve the thumbnail cache root from the XDG base directory rules, including ignoring relative `$XDG_CACHE_HOME` values.
+- Represent canonical thumbnail URIs as library-owned string newtypes that preserve the exact MD5 and `Thumb::URI` input.
 - Represent thumbnail sizes: `normal`, `large`, `x-large`, and `xx-large`.
 - Represent cache namespaces separately for successful thumbnail sizes and application-specific failure entries.
 - Compute thumbnail filenames from canonical thumbnail URIs using MD5 and the `.png` suffix, including absolute canonical URIs for the personal cache and `./`-prefixed relative URIs for shared repositories, as specified in `docs/spec/uri-canonicalization.md`.
@@ -29,7 +30,8 @@ The CLI crate is the policy runner. It should translate user input into cleanup 
 - Require `Thumb::URI` and `Thumb::MTime` for personal-cache thumbnails, store and compare `Thumb::MTime` as whole Unix epoch seconds, and reject personal-cache writes when the original modification time cannot be obtained.
 - Iterate cache entries from the personal thumbnail cache and optional shared thumbnail repositories.
 - Validate personal and shared thumbnails with separate contexts because shared repositories may omit `Thumb::URI` or `Thumb::MTime` when they use other freshness mechanisms.
-- Validate saved thumbnail PNGs against the required image format and maximum dimensions for the selected size class.
+- Validate saved successful thumbnail PNGs against the required image format and maximum dimensions for the selected size class.
+- Treat failure entries as metadata-carrying PNG files in application-specific failure namespaces, not as successful thumbnail size entries.
 - Save thumbnails atomically by writing a temporary PNG in the target directory and renaming it to the final path.
 - Reject thumbnail creation requests for originals located inside the personal thumbnail cache or a shared `.sh_thumbnails` repository.
 - Treat shared thumbnail repositories as read-only during normal lookup and cleanup; shared-repository writes require an explicit creation mode.
@@ -70,18 +72,29 @@ pub enum CacheNamespace {
     Failure(ApplicationId),
 }
 
+pub struct CanonicalThumbnailUri {
+    value: String,
+}
+
 pub enum CacheEntryState {
-    Valid,
     OriginalMissing,
     Outdated,
     UnreadableOriginal,
     UnverifiableOriginal,
+    MissingRequiredMetadata,
     Malformed,
 }
 
+pub enum ValidationOutcome {
+    FullyVerified,
+    SharedAcceptedByPolicy,
+    UncheckedInspection,
+    Invalid(CacheEntryState),
+}
+
 pub struct CacheEntryInspection {
-    state: CacheEntryState,
-    original_uri: Option<url::Url>,
+    outcome: ValidationOutcome,
+    original_uri: Option<CanonicalThumbnailUri>,
     thumbnail_accessed_at: Option<std::time::SystemTime>,
     namespace: CacheNamespace,
     cache_location: CacheLocation,
@@ -92,7 +105,7 @@ The exact names can change during implementation, but the direction should remai
 
 ## URI Classification Boundary
 
-URI classification should be extensible because desktop environments and mounted filesystems vary. User-facing cleanup classification belongs to the CLI layer. The library may report that an original URI cannot be validated as a directly checkable local file, but it must not label the URI as remote, virtual, removable, or safe to delete by age.
+URI classification should be extensible because desktop environments and mounted filesystems vary. User-facing cleanup classification belongs to the CLI layer. The library may report that an original URI cannot be validated as a directly checkable local file, but it must not label the URI as remote, virtual, removable, or safe to delete by age. The CLI may parse a canonical thumbnail URI for scheme and authority classification, but the parsed form must not replace the library-owned canonical string used for hashing and metadata comparison.
 
 CLI-side classification can use types shaped like this:
 
@@ -106,7 +119,7 @@ pub enum UriClass {
 }
 
 pub trait CleanupClassifier {
-    fn classify(&self, uri: &url::Url) -> UriClass;
+    fn classify(&self, uri: &CanonicalThumbnailUri) -> UriClass;
 }
 ```
 

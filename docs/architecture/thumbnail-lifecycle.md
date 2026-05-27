@@ -10,13 +10,17 @@ flowchart TD
     B --> C{Original readable?}
     C -- no --> L[Do not use, write, or fail-cache]
     C -- yes --> D[MD5 filename]
-    D --> E[Candidate cache paths]
-    E --> F{PNG exists?}
-    F -- no --> G[Generate thumbnail]
+    D --> E[Personal cache path]
+    E --> F{Personal PNG exists?}
+    F -- no --> S{Shared lookup enabled?}
     F -- yes --> H[Read PNG metadata]
     H --> I{Metadata acceptable for context?}
-    I -- yes --> J[Use cached thumbnail]
-    I -- no --> G
+    I -- yes --> J[Use personal thumbnail]
+    I -- no --> S
+    S -- yes --> T{Acceptable shared thumbnail?}
+    T -- yes --> U[Use shared thumbnail]
+    T -- no --> G[Generate personal thumbnail]
+    S -- no --> G
     G --> K[Write temp PNG with metadata]
     K --> M[Atomic rename]
     M --> J
@@ -32,11 +36,13 @@ Validation must verify stored metadata against the original whenever the standar
 
 Shared-repository validation is a separate context. When `Thumb::URI`, `Thumb::MTime`, or `Thumb::Size` is present, the library should compare it with the shared relative URI or original metadata. Missing `Thumb::URI` or `Thumb::MTime` is not automatically invalid for shared thumbnails because shared repositories may use other freshness mechanisms, so callers must decide whether an acceptable but not fully metadata-validated shared thumbnail is good enough for their use case.
 
+The validation result should carry confidence separately from validity. A personal thumbnail with matching required metadata is fully verified. A shared thumbnail accepted despite missing `Thumb::URI` or `Thumb::MTime` is acceptable only under the caller's shared-repository policy and must not be reported as equivalent to a fully verified personal thumbnail. A management-tool inspection that did not read the original is an unchecked inspection result, not a display-valid thumbnail.
+
 The library should compare modification times for equality, not only check whether the original is newer. A replacement file can have an older modification time than the thumbnail metadata, and that still means the thumbnail no longer represents the original.
 
 ## Creation Model
 
-Thumbnail creation should be caller-driven and must start from a currently readable original. The library should provide the cache path, metadata writer, validation logic, and atomic save helper. Image decoding, document rendering, image-orientation handling, and video frame extraction should remain outside the core library unless a dedicated optional feature is added later.
+Thumbnail creation should be caller-driven and must start from a currently readable original. For local files, the library may provide a helper that opens the file and records its metadata. For non-local backends, the caller may provide an explicit original identity containing the canonical thumbnail URI, modification time, optional size, and proof that the original was readable through that backend. The library should provide the cache path, metadata writer, validation logic, and atomic save helper. Image decoding, document rendering, image-orientation handling, and video frame extraction should remain outside the core library unless a dedicated optional feature is added later.
 
 This keeps the library useful for Kiriview without forcing the CLI to depend on image rendering stacks it does not need.
 
@@ -50,6 +56,6 @@ Explicit shared-repository creation mode should use permissions consistent with 
 
 ## Failure Entries
 
-The standard supports per-application failure entries under `thumbnails/fail/<program-version>/`. The library should model these as failure namespaces, not as thumbnail sizes. It should be able to locate and parse failure entries, but writing failure entries should require an explicit application identifier. Failure entries are PNG files saved with the same URI-derived filename procedure as successful thumbnails and must carry at least `Thumb::URI` and `Thumb::MTime` for readable originals. Failure entries must not be written when the original is not currently readable.
+The standard supports per-application failure entries under `thumbnails/fail/<program-version>/`. The library should model these as failure namespaces, not as thumbnail sizes. It should be able to locate and parse failure entries, but writing failure entries should require an explicit application identifier. Failure entries are PNG metadata carriers saved with the same URI-derived filename procedure as successful thumbnails and must carry at least `Thumb::URI` and `Thumb::MTime` for readable originals. They should be written as minimal valid PNG files, not zero-byte files, and successful-thumbnail size validation does not apply to them. Failure entries must not be written when the original is not currently readable.
 
 Initial behavior: the CLI scans successful thumbnail entries by default and scans failure entries only with `--scope failures` or `--scope all`. This avoids deleting application-specific retry state without explicit user intent.

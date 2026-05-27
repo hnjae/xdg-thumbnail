@@ -16,9 +16,10 @@ Candidate options:
 --older-than <DURATION>       Age threshold for remote, virtual, and removable entries. Defaults to 30d.
 --delete                      Apply deletion decisions. Without this option, prune only reports planned actions.
 --delete-stale-local          Delete stale local thumbnails whose originals still exist but no longer match stored metadata.
---size <SIZE>                 Restrict successful thumbnail scan to one size namespace: normal, large, x-large, or xx-large.
+--size <SIZE>                 Restrict successful thumbnail scan to one size namespace: normal, large, x-large, or xx-large. Can be passed multiple times.
 --scope <SCOPE>               Restrict scan scope: thumbnails, failures, or all. Defaults to thumbnails.
---include-nonstandard-files   Include nonstandard filenames in reports and deletion candidates.
+--include-nonstandard-files   Include nonstandard filenames in reports.
+--delete-nonstandard-files    Allow deletion decisions for nonstandard filenames. Requires --include-nonstandard-files and --delete.
 --removable-prefix <PATH>     Add a local path prefix that should use age-based cleanup. Can be passed multiple times.
 --ignore-fhs-media            Do not treat /media as removable by default.
 --format <FORMAT>             Output format: human or jsonl. Defaults to human.
@@ -38,13 +39,13 @@ By default, `prune --scope thumbnails` scans these personal cache directories:
 
 `x-large` and `xx-large` are supported size classes because this project targets the Freedesktop Thumbnail Managing Standard `latest` text, including the December 2020 0.9.0 history entry that adds those sizes.
 
-If `$XDG_CACHE_HOME` is unset, blank, or relative, the fallback is `$HOME/.cache/thumbnails`.
+If `$XDG_CACHE_HOME` is unset, blank, or relative, the fallback is `$HOME/.cache/thumbnails`. If `$HOME` cannot be determined, cache root resolution fails with an actionable diagnostic instead of guessing a relative path.
 
 The command should not scan shared thumbnail repositories by default. Failure entries under `$XDG_CACHE_HOME/thumbnails/fail/<program-version>/` are separate failure namespaces and are scanned only with `--scope failures` or `--scope all`.
 
-`--size` applies only to successful thumbnail size namespaces. Passing `--size` with `--scope failures` or `--scope all` is a usage error because failure entries are scoped by application identifier rather than thumbnail size, and `--scope all` intentionally includes both namespace families.
+`--size` applies only to successful thumbnail size namespaces. With `--scope all`, successful thumbnail entries are restricted to the requested sizes while failure entries are still scanned. Passing `--size` with `--scope failures` is a usage error because no successful thumbnail namespace is being scanned.
 
-By default, deletion decisions apply only to standard thumbnail entry filenames: a 32-character lowercase hexadecimal MD5 digest followed by `.png`. Files with nonstandard names are reported as skipped when visible during scanning and are not deletion candidates unless `--include-nonstandard-files` is passed. Even with `--include-nonstandard-files`, actual deletion still requires `--delete`.
+By default, deletion decisions apply only to standard thumbnail entry filenames: a 32-character lowercase hexadecimal MD5 digest followed by `.png`. Files with nonstandard names are reported as skipped when visible during scanning and are not deletion candidates. `--include-nonstandard-files` makes them visible in reports; `--delete-nonstandard-files` is required before any nonstandard filename may become a deletion candidate. Even then, actual deletion still requires `--delete`, and directories and symlinks remain skipped unless a later design explicitly permits them.
 
 ## Report Output
 
@@ -54,7 +55,7 @@ Example:
 
 ```text
 would-delete normal/abcdefabcdefabcdefabcdefabcdefab.png uri=http://example.test/a.jpg class=remote reason=older-than-threshold age=45d
-keep normal/def456.png uri=file:///home/user/photo.jpg class=local-stable reason=valid
+keep normal/fedcba9876543210fedcba9876543210.png uri=file:///home/user/photo.jpg class=local-stable reason=valid
 would-delete normal/0123456789abcdef0123456789abcdef.png class=unknown reason=malformed-metadata
 skip normal/bad.png reason=nonstandard-filename
 ```
@@ -78,3 +79,4 @@ Deletion candidates found during a non-delete report are not errors.
 - The CLI should never create or request thumbnails for files located under the personal thumbnail cache or a shared `.sh_thumbnails` repository.
 - Missing size directories are not errors.
 - Unreadable entries should be reported and skipped.
+- Nonstandard filename deletion must require both `--delete` and `--delete-nonstandard-files`.
