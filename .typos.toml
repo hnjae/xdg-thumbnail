@@ -6,3 +6,4 @@ locale = "en"
 [default.extend-words]
 PN = "PN"
 PNGs = "PNGs"
+thumbnailers = "thumbnailers"

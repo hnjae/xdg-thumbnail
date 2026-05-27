@@ -1,13 +1,13 @@
-# CLI Behavior
+# Prune CLI Behavior
 
-The CLI manages thumbnails in the user's Freedesktop thumbnail cache. The initial CLI provides a pruning command that reports planned changes by default and deletes files only when explicitly requested.
+The `xdg-thumbnail-prune` CLI manages stale or invalid entries in the user's Freedesktop thumbnail cache. It reports planned changes by default and deletes files only when explicitly requested.
 
 ## Command Shape
 
 Initial command shape:
 
 ```text
-xdg-thumbnail prune [OPTIONS]
+xdg-thumbnail-prune [OPTIONS]
 ```
 
 Options:
@@ -27,7 +27,7 @@ Options:
 --verbose                     Print classification and timestamp details.
 ```
 
-The option names above are the initial CLI contract. Behavior or option-name changes require a spec update.
+The option names above are the initial prune CLI contract. Behavior or option-name changes require a spec update.
 
 ## Default Scan Scope
 
@@ -46,9 +46,9 @@ The command should not scan shared thumbnail repositories by default. Failure en
 
 `--size` applies only to successful thumbnail size namespaces. With `--scope all`, successful thumbnail entries are restricted to the requested sizes while failure entries are still scanned. Passing `--size` with `--scope failures` is a usage error because no successful thumbnail namespace is being scanned.
 
-When failure entries are scanned, the CLI applies the same inspection and classification policy used for successful thumbnails: classify the stored original URI, validate available metadata, and use the configured age basis for remote, virtual, and removable entries. Failure entries are application-specific retry state, so they may become deletion candidates only when `--allow-delete-failures` is passed. Actual deletion still requires `--delete`. Passing `--allow-delete-failures` without `--scope failures` or `--scope all` is a usage error, and the diagnostic must tell the user to add one of those scan scopes. Failure entries do not use successful-thumbnail size validation.
+When failure entries are scanned, the prune CLI applies the same inspection and classification policy used for successful thumbnails: classify the stored original URI, validate available metadata, and use the configured age basis for remote, virtual, and removable entries. Failure entries are application-specific retry state, so they may become deletion candidates only when `--allow-delete-failures` is passed. Actual deletion still requires `--delete`. Passing `--allow-delete-failures` without `--scope failures` or `--scope all` is a usage error, and the diagnostic must tell the user to add one of those scan scopes. Failure entries do not use successful-thumbnail size validation.
 
-Failure entry scanning is limited to one namespace level below `$XDG_CACHE_HOME/thumbnails/fail/`. Each immediate real directory is treated as one program-version namespace, and only files directly contained in that namespace directory are inspected as failure entries. The CLI must not follow symlinked failure namespace directories, must not recurse into nested directories, and must report visible skipped entries when reporting is requested. A missing `fail` directory is not an error.
+Failure entry scanning is limited to one namespace level below `$XDG_CACHE_HOME/thumbnails/fail/`. Each immediate real directory is treated as one program-version namespace, and only files directly contained in that namespace directory are inspected as failure entries. The prune CLI must not follow symlinked failure namespace directories, must not recurse into nested directories, and must report visible skipped entries when reporting is requested. A missing `fail` directory is not an error.
 
 By default, deletion decisions apply only to standard thumbnail entry filenames: a 32-character lowercase hexadecimal MD5 digest followed by `.png`. Files with nonstandard names are reported as skipped when visible during scanning and are not deletion candidates. `--include-nonstandard-files` makes them visible in reports. Directories and symlinks remain skipped unless a later design explicitly permits them.
 
@@ -88,12 +88,12 @@ Deletion candidates found during a non-delete report are not errors.
 - The command must not delete or rewrite files unless `--delete` is passed.
 - When `--age-basis access-time` is active, the command should not read thumbnail contents in a way that can update thumbnail access times. Entries that cannot be inspected without potentially changing access time are reported as skipped rather than treated as age-based deletion candidates.
 - Deletion should only target files located under the resolved thumbnail cache directories.
-- The CLI should never follow thumbnail path symlinks for deletion without an explicit, reviewed design.
-- The CLI should never follow symlinked failure namespace directories.
-- The CLI should never create, update, regenerate, or request thumbnails.
-- The CLI should never create or request thumbnails for files located under the personal thumbnail cache or a shared `.sh_thumbnails` repository.
-- The CLI should never create or update shared thumbnail repositories.
+- The prune CLI should never follow thumbnail path symlinks for deletion without an explicit, reviewed design.
+- The prune CLI should never follow symlinked failure namespace directories.
+- The prune CLI should never create, update, regenerate, or request thumbnails.
+- The prune CLI should never create or request thumbnails for files located under the personal thumbnail cache or a shared `.sh_thumbnails` repository.
+- The prune CLI should never create or update shared thumbnail repositories.
 - Missing size directories are not errors.
 - Unreadable entries should be reported and skipped.
-- Nonstandard filename deletion is not part of the initial CLI contract.
+- Nonstandard filename deletion is not part of the initial prune CLI contract.
 - Failure entry deletion must require `--delete`, `--allow-delete-failures`, and a scan scope that includes failure entries.

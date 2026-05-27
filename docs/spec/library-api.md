@@ -54,7 +54,7 @@ The library removal API must operate only on cache entry handles returned by lib
 
 ## Non-Goals
 
-- Creating, updating, rewriting, or saving successful personal-cache thumbnails is not a project goal; thumbnail generators should live in separate applications or crates that own image, document, and video decoding stacks.
-- Writing failure entries is not a project goal.
+- Creating, updating, rewriting, or saving successful personal-cache thumbnails is not a base library goal; generation belongs in `xdg-thumbnail-generate` or other separate applications and crates that own thumbnailer execution or image, document, and video decoding stacks.
+- Writing failure entries is not a base library goal.
 - The initial library API does not create or update shared thumbnail repositories. Shared repositories are read-only inputs for lookup and inspection.
 - A future explicit shared-repository creation mode may be added only after its externally visible behavior is documented in `docs/spec/`. That future mode must remain opt-in, must use the shared relative URI rules in `docs/spec/uri-canonicalization.md`, and must document a permission model that preserves the original file's intended visibility while explicitly calling out any security-motivated deviation from the Freedesktop shared-repository text.

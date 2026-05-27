@@ -1,6 +1,6 @@
 # Crate Boundaries
 
-The repository should be organized as a Cargo workspace with one reusable library crate and one CLI crate.
+The repository should be organized as a Cargo workspace with one reusable library crate and separate CLI crates for pruning and generation.
 
 Initial implementation scope is Unix-like XDG desktop environments. Platform-specific APIs should make Unix path bytes, permissions, file metadata, and XDG cache behavior explicit, and unsupported platforms should fail with clear errors rather than silently approximating incompatible cache identities.
 
@@ -11,14 +11,17 @@ xdg-thumbnail/
     xdg-thumbnail/
       Cargo.toml
       src/lib.rs
-    xdg-thumbnail-cli/
+    xdg-thumbnail-prune/
+      Cargo.toml
+      src/main.rs
+    xdg-thumbnail-generate/
       Cargo.toml
       src/main.rs
 ```
 
 The library crate is the spec-oriented core. It should implement stable cache inspection and validation concepts from the Freedesktop Thumbnail Managing Standard and expose APIs that can be reused by cleanup tools and thumbnail consumers.
 
-The CLI crate is the policy runner. It should translate user input into cleanup policy, call the library to inspect cache entries, and perform filesystem mutations only after the CLI has made an explicit deletion decision.
+The CLI crates are policy runners. `xdg-thumbnail-prune` should translate user input into cleanup policy, call the library to inspect cache entries, and perform filesystem mutations only after the prune CLI has made an explicit deletion decision. `xdg-thumbnail-generate` should discover and execute installed thumbnailer helpers, validate generated PNG output, and install personal-cache entries only after generation succeeds.
 
 ## Library Responsibilities
 
@@ -41,26 +44,43 @@ The CLI crate is the policy runner. It should translate user input into cleanup 
 - Expose thumbnail file timestamp facts, including modification time, access time when available, and whether metadata inspection preserved access time, without deciding age-based cleanup policy.
 - Avoid exposing user-facing URI classification, age thresholds, deletion reasons, or cleanup decisions from the library API.
 
-The library should avoid depending on CLI-only concerns such as terminal formatting, progress bars, command-line parsing, logging configuration, user-specific cleanup defaults, or user-facing report vocabulary. Image rendering, thumbnail generation, metadata writing, and thumbnail save helpers are outside the base crate scope.
+The library should avoid depending on CLI-only concerns such as terminal formatting, progress bars, command-line parsing, logging configuration, user-specific cleanup defaults, or user-facing report vocabulary. Image rendering, thumbnailer execution, metadata writing, and thumbnail save helpers are outside the base crate scope.
 
 The `x-large` and `xx-large` size classes are treated as supported documented behavior from the Freedesktop Thumbnail Managing Standard `latest` text, including the December 2020 0.9.0 history entry.
 
-## CLI Responsibilities
+## Prune CLI Responsibilities
 
 - Parse command-line options such as `--older-than`, `--delete`, `--delete-stale-local`, `--allow-delete-failures`, `--size`, `--scope`, `--age-basis`, `--include-nonstandard-files`, `--format`, `--ignore-fhs-media`, `--verbose`, and repeated custom removable path hints.
 - Classify URI schemes and path prefixes according to user-facing cleanup policy.
 - Apply age-based cleanup for remote, virtual, and removable-media-like entries.
 - Inspect and classify failure entries when the user includes failure namespaces in the scan scope, while requiring an extra failure-deletion opt-in before treating them as deletion candidates.
 - Own cleanup policy types such as URI classes, deletion reasons, skip reasons, and cleanup decisions.
-- Request removal through library cache entry handles only after the CLI has made an explicit deletion decision, and only when the relevant destructive flags are present.
+- Request removal through library cache entry handles only after the prune CLI has made an explicit deletion decision, and only when the relevant destructive flags are present.
 - Delete successful thumbnail entries only when `--delete` is passed, failure entries only when both `--delete` and `--allow-delete-failures` are passed, and report what was removed, skipped, or left unchanged.
 - Skip nonstandard cache filenames by default and expose them only as reportable skipped entries when the user passes `--include-nonstandard-files`.
 - Provide conservative defaults and clear report output before destructive cleanup.
 - Convert library errors into actionable CLI diagnostics and exit codes.
 
+## Generate CLI Responsibilities
+
+- Parse command-line options such as `--size`, `--force`, `--dry-run`, `--timeout`, `--format`, and `--verbose`.
+- Resolve local input paths into canonical personal-cache thumbnail URIs without hidden symlink normalization.
+- Reject inputs located under the personal thumbnail cache or a shared `.sh_thumbnails` repository.
+- Discover `.thumbnailer` files from `$XDG_DATA_HOME/thumbnailers` and `$XDG_DATA_DIRS` thumbnailer directories.
+- Parse thumbnailer `Exec`, `TryExec`, and `MimeType` keys using desktop-entry-compatible rules where applicable.
+- Determine input MIME types through the platform shared MIME database and select a matching thumbnailer deterministically.
+- Run selected thumbnailer commands directly as argument vectors with `%i`, `%u`, `%o`, `%s`, and `%%` field-code expansion.
+- Use temporary output paths for thumbnailer execution and never expose partial output as a cache entry.
+- Validate generated PNG output against successful-thumbnail namespace requirements before installation.
+- Write required personal-cache metadata such as `Thumb::URI` and `Thumb::MTime`, plus optional metadata when available.
+- Install generated thumbnails atomically under the resolved personal thumbnail cache root.
+- Skip valid existing thumbnails unless `--force` is passed.
+- Report generated, kept, skipped, and failed input-size pairs in human and JSONL formats.
+- Avoid writing shared thumbnail repositories or failure entries in the initial generate CLI.
+
 ## Shared Types
 
-The library should expose policy-neutral types that the CLI can combine into user-facing behavior.
+The library should expose policy-neutral types that CLI crates can combine into user-facing behavior.
 
 ```rust
 pub enum ThumbnailSize {
@@ -130,13 +150,13 @@ pub struct CacheEntryHandle {
 }
 ```
 
-The exact names can change during implementation, but the direction should remain: the library describes cache entries and filesystem facts with enough precision to avoid accidental cleanup policy, while the CLI classifies entries, decides which cleanup policy to run, and requests destructive changes only through library-provided cache entry handles.
+The exact names can change during implementation, but the direction should remain: the library describes cache entries and filesystem facts with enough precision to avoid accidental cleanup policy, while the prune CLI classifies entries, decides which cleanup policy to run, and requests destructive changes only through library-provided cache entry handles.
 
 ## URI Classification Boundary
 
-URI classification should be extensible because desktop environments and mounted filesystems vary. User-facing cleanup classification belongs to the CLI layer. The library may report that an original URI cannot be validated as a directly checkable local file, but it must not label the URI as remote, virtual, removable, or safe to delete by age. The CLI may parse a canonical thumbnail URI for scheme and authority classification, but the parsed form must not replace the library-owned canonical string used for hashing and metadata comparison.
+URI classification should be extensible because desktop environments and mounted filesystems vary. User-facing cleanup classification belongs to the prune CLI layer. The library may report that an original URI cannot be validated as a directly checkable local file, but it must not label the URI as remote, virtual, removable, or safe to delete by age. The prune CLI may parse a canonical thumbnail URI for scheme and authority classification, but the parsed form must not replace the library-owned canonical string used for hashing and metadata comparison.
 
-CLI-side classification can use types shaped like this:
+Prune CLI-side classification can use types shaped like this:
 
 ```rust
 pub enum UriClass {
@@ -152,6 +172,6 @@ pub trait CleanupClassifier {
 }
 ```
 
-The CLI default classifier should handle stable URI scheme categories and user-configurable path prefixes. It should treat `/media`, `/run/media/$UID`, `/run/user/$UID/doc`, GVfs, and KIO FUSE paths as removable, portal, or desktop-managed by default; `/media` can be disabled with `--ignore-fhs-media`; `/mnt` is excluded by default and can be added with repeated `--removable-prefix` options.
+The prune CLI default classifier should handle stable URI scheme categories and user-configurable path prefixes. It should treat `/media`, `/run/media/$UID`, `/run/user/$UID/doc`, GVfs, and KIO FUSE paths as removable, portal, or desktop-managed by default; `/media` can be disabled with `--ignore-fhs-media`; `/mnt` is excluded by default and can be added with repeated `--removable-prefix` options.
 
 For `file:` URIs, the default classifier should only treat empty authority and `localhost` authority as directly checkable local paths. Other authorities should be classified conservatively as remote or unknown unless an implementation-specific resolver is added. Direct local checks must distinguish confirmed absence from permission errors, transient I/O errors, and unsupported path conversion so cleanup policy can skip unverifiable originals instead of deleting them as missing.
