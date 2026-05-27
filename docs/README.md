@@ -14,4 +14,3 @@ Primary references:
 - Modification checks: <https://specifications.freedesktop.org/thumbnail/0.8.0/modifications.html>
 - Deletion guidance: <https://specifications.freedesktop.org/thumbnail/0.8.0/delete.html>
 - Shared thumbnail repositories: <https://specifications.freedesktop.org/thumbnail/0.8.0/shared.html>
-

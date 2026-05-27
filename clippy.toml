@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 KIM Hyunjae
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+msrv = "1.85"
+
+# This workspace is expected to expose a reusable library API, but early development benefits from stricter suggestions.
+avoid-breaking-exported-api = false
+
+# Tests may prioritize clear fixture/setup failures over production-style error handling.
+allow-expect-in-tests = true
+allow-indexing-slicing-in-tests = true
+allow-panic-in-tests = true
+allow-unwrap-in-tests = true
+
+# Const initialization sometimes needs fallible helpers whose failure is a programmer error.
+allow-expect-in-consts = true
+allow-unwrap-in-consts = true
+suppress-restriction-lint-in-const = true

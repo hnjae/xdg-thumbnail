@@ -1,0 +1,16 @@
+[package]
+name = "xdg-thumbnail-cli"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Command-line tools for Freedesktop thumbnail cache management"
+
+[[bin]]
+name = "xdg-thumbnail"
+path = "src/main.rs"
+
+[dependencies]
+xdg-thumbnail = { path = "../xdg-thumbnail" }

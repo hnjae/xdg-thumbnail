@@ -66,4 +66,3 @@ Deletion candidates found during dry-run are not errors.
 - The CLI should never follow thumbnail path symlinks for deletion without an explicit, reviewed design.
 - Missing size directories are not errors.
 - Unreadable entries should be reported and skipped.
-

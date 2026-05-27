@@ -91,4 +91,3 @@ pub trait UriClassifier {
 ```
 
 The default classifier should handle stable, spec-derived behavior. The CLI should layer user-configurable path prefixes and desktop-specific heuristics on top, including GVfs, KIO FUSE, `/media`, `/run/media`, and `/mnt`.
-

@@ -39,4 +39,3 @@ This keeps the library useful for Kiriview without forcing the CLI to depend on 
 The standard supports per-application failure entries under `thumbnails/fail/<program-version>/`. The library should be able to locate and parse failure entries, but writing failure entries should require an explicit application identifier.
 
 Initial behavior: the CLI does not prune failure entries unless `--include-failures` is passed. This avoids deleting application-specific retry state without explicit user intent.
-

@@ -44,4 +44,3 @@ cache.save_png_atomic(&uri, ThumbnailSize::Normal, rendered_png, metadata)?;
 ```
 
 The exact API should be shaped by implementation, but Kiriview should not need to know the hash filename algorithm, cache directory layout, or PNG metadata keys directly.
-
