@@ -2,6 +2,12 @@
 
 - If `typos` reports a false positive for a valid term, update the `typos` configuration in `.typos.toml` instead of rewriting correct documentation or code just to satisfy the hook.
 
+## Tooling
+
+- Run the full CI check with `devenv tasks run ci:check`.
+- Format the repository with `devenv shell -- treefmt`.
+- Run pre-commit checks with `prek`.
+
 ## Compatibility Policy
 
 `xdg-thumbnail` is currently in pre-release. Backward compatibility for configurations, APIs, and internal formats should not be maintained unless explicitly requested.
