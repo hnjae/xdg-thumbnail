@@ -22,5 +22,6 @@ xdg-thumbnail = { path = "../xdg-thumbnail" }
 [dev-dependencies]
 assert_cmd.workspace = true
 predicates.workspace = true
+png.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
