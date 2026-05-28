@@ -56,7 +56,7 @@ For local `file:` originals, deletion for a missing original requires a reliable
 
 ## Report Output
 
-The default human output should report deletion candidates, applied deletions, skipped entries that require user attention, operational errors, and a final summary. Entries kept without issues should be omitted from human output unless `--verbose` is passed. Stable machine-readable output should be available through `--format jsonl`; JSONL emits one record for each visible inspected entry so dry-run and destructive runs can be compared exactly.
+The default human output should report deletion candidates, applied deletions, skipped entries that require user attention, operational errors, and a final summary. Entries kept without issues should be omitted from human output unless `--verbose` is passed. Initial machine-readable output should be available through `--format jsonl`; the initial JSONL schema is unstable and may change before the project reaches a stable release. JSONL emits one record for each visible inspected entry so dry-run and destructive runs can be compared exactly.
 
 Each reported entry should include the thumbnail path, original URI if available, namespace, classification, decision, whether the decision was applied, reason, and the timestamp basis for age-based decisions. When access time is the selected age basis, reports should also expose whether access time was preserved during metadata inspection or why age evaluation was skipped. Verbose human output should include kept entries and classification details.
 

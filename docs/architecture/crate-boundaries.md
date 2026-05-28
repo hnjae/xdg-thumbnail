@@ -68,13 +68,13 @@ The `x-large` and `xx-large` size classes are treated as supported documented be
 
 ## Generate CLI Responsibilities
 
-- Parse command-line options such as `--size`, `--force`, `--dry-run`, `--timeout`, `--format`, and `--verbose`.
+- Parse command-line options such as `--size`, `--force`, `--dry-run`, `--timeout`, `--sandbox`, `--format`, and `--verbose`.
 - Resolve local input paths into canonical personal-cache thumbnail URIs without hidden symlink normalization.
 - Reject inputs located under the personal thumbnail cache or a shared `.sh_thumbnails` repository.
 - Discover `.thumbnailer` files from `$XDG_DATA_HOME/thumbnailers` and `$XDG_DATA_DIRS` thumbnailer directories.
 - Parse thumbnailer `Exec`, `TryExec`, and `MimeType` keys using desktop-entry-compatible rules where applicable.
 - Determine input MIME types through the platform shared MIME database and select a matching thumbnailer deterministically.
-- Run selected thumbnailer commands directly as argument vectors with `%i`, `%u`, `%o`, `%s`, and `%%` field-code expansion.
+- Run selected thumbnailer commands directly as argument vectors with `%i`, `%u`, `%o`, `%s`, and `%%` field-code expansion inside the configured sandbox.
 - Use temporary output paths for thumbnailer execution and never expose partial output as a cache entry.
 - Validate generated PNG output against successful-thumbnail namespace requirements before installation.
 - Ask the library to write required personal-cache metadata such as `Thumb::URI` and `Thumb::MTime`, plus optional metadata when available.
@@ -82,6 +82,20 @@ The `x-large` and `xx-large` size classes are treated as supported documented be
 - Skip valid existing thumbnails unless `--force` is passed.
 - Report generated, kept, skipped, and failed input-size pairs in human and JSONL formats.
 - Avoid writing shared thumbnail repositories or failure entries in the initial generate CLI.
+
+## Thumbnailer Sandbox
+
+The initial generate CLI sandbox backend is `bubblewrap` (`bwrap`). Sandbox setup belongs to the generate CLI crate because it is tied to external thumbnailer execution, command expansion, temporary renderer output, and user-facing `--sandbox` policy rather than Freedesktop cache inspection or installation.
+
+In `--sandbox required` mode, the generate CLI must fail before executing a thumbnailer when `bwrap` is unavailable or when the requested isolation cannot be applied. There is no implicit unsandboxed fallback. `--sandbox off` is an explicit user opt-out and should be reflected in human and JSONL reports.
+
+The sandbox should create a private mount namespace and unshare networking. The thumbnailer should receive read access to the selected input, read access to required system resources such as executable paths, dynamic loader state, MIME data, codecs, and font configuration, and write access only to a private temporary output directory owned by the generate CLI. The sandbox should not expose the user's home, personal thumbnail cache, XDG configuration directories, XDG data directories, or arbitrary writable host paths unless a later spec explicitly defines a compatibility mode.
+
+`%i` and `%o` expand to sandbox-visible paths. `%u` remains the canonical original URI used for cache identity, hashing, and metadata, even when the sandbox-visible input path differs from the host path. The generate CLI owns the mapping between host input and sandbox input, the private temporary output directory, and cleanup of temporary files after it has read the generated PNG into memory.
+
+Executable and `TryExec` lookup should happen before entering the sandbox using desktop-entry-compatible lookup rules. The sandbox must then expose enough read-only system paths for the resolved executable and its runtime dependencies to start. If a thumbnailer explicitly names a shell in `Exec`, that shell still runs inside the sandbox.
+
+Landlock may be considered later as an additional hardening layer or fallback for specific filesystem restrictions, but it is not the initial backend because the generate CLI requires a network namespace and predictable path exposure for external thumbnailer processes.
 
 ## Shared Types
 

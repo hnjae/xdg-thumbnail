@@ -17,6 +17,7 @@ Options:
 --force                       Regenerate even when a valid target thumbnail already exists.
 --dry-run                     Report planned thumbnailer selection and target paths without running thumbnailers or writing cache entries.
 --timeout <DURATION>          Maximum runtime for each thumbnailer invocation. Defaults to 30s.
+--sandbox <MODE>              Thumbnailer sandbox mode: required or off. Defaults to required.
 --format <FORMAT>             Output format: human or jsonl. Defaults to human.
 --verbose                     Print discovery, MIME, command, validation, and cache-write details.
 ```
@@ -46,13 +47,15 @@ Each candidate must contain a `[Thumbnailer Entry]` group with `Exec` and `MimeT
 
 For each input, the generate CLI determines the MIME type using the platform shared MIME database. A thumbnailer matches when the detected MIME type is listed in the entry's semicolon-separated `MimeType` list. When multiple thumbnailers match, selection is deterministic: higher-precedence discovery directories win, then lexical thumbnailer filename order within the same directory.
 
-The `Exec` command is parsed using desktop-entry command-line quoting rules where applicable, then executed directly as an argument vector. The generate CLI must not invoke a shell implicitly. Shell behavior is used only when the selected thumbnailer explicitly names a shell in `Exec`.
+The `Exec` command is parsed using desktop-entry command-line quoting rules where applicable, then executed directly as an argument vector inside a thumbnailer sandbox by default. The generate CLI must not invoke a shell implicitly. Shell behavior is used only when the selected thumbnailer explicitly names a shell in `Exec`.
+
+The default `--sandbox required` mode runs thumbnailers with sandbox isolation that prevents ambient access to the user's home, personal thumbnail cache, configuration directories, and network. The sandbox must allow the thumbnailer to read the selected input, read required system resources, and write only to the CLI-provided temporary output location. If the required sandbox cannot be created, generation fails with an actionable diagnostic before running the thumbnailer. `--sandbox off` disables sandboxing explicitly for users who choose to trust the selected thumbnailer; reports must expose that the thumbnailer ran without sandbox isolation.
 
 The initial field codes are:
 
-- `%i`: local input path.
+- `%i`: sandbox-visible local input path for the original.
 - `%u`: canonical original file URI.
-- `%o`: temporary output PNG path supplied by the generate CLI.
+- `%o`: sandbox-visible temporary output PNG path supplied by the generate CLI.
 - `%s`: requested thumbnail size in pixels.
 - `%%`: literal percent sign.
 
@@ -68,9 +71,9 @@ Generated thumbnails must obey the same maximum dimensions as successful cache e
 
 ## Report Output
 
-The default human output should report generated entries, kept valid entries, skipped inputs, thumbnailer failures, validation failures, and a final summary. Stable machine-readable output should be available through `--format jsonl`; JSONL emits one record for each requested input and size so dry-run and write runs can be compared.
+The default human output should report generated entries, kept valid entries, skipped inputs, thumbnailer failures, validation failures, and a final summary. Initial machine-readable output should be available through `--format jsonl`; the initial JSONL schema is unstable and may change before the project reaches a stable release. JSONL emits one record for each requested input and size so dry-run and write runs can be compared.
 
-Each reported entry should include the input path, canonical original URI, MIME type when known, selected thumbnailer when one was selected, target namespace, target cache path, decision, whether the decision was applied, and reason.
+Each reported entry should include the input path, canonical original URI, MIME type when known, selected thumbnailer when one was selected, sandbox mode and whether sandbox isolation was applied, target namespace, target cache path, decision, whether the decision was applied, and reason.
 
 Example:
 
@@ -86,7 +89,7 @@ summary inputs=3 requested=3 generated=1 kept=1 skipped=1 failed=0
 - `0`: generation completed and no requested input-size pair failed.
 - `1`: one or more requested input-size pairs failed during thumbnailer execution, output validation, metadata writing, or cache installation.
 - `2`: command-line usage error.
-- `3`: thumbnailer discovery or cache root resolution failed before producing reliable results.
+- `3`: thumbnailer discovery, sandbox setup, or cache root resolution failed before producing reliable results.
 - `4`: generation completed but one or more nonfatal inspection or matching errors occurred, such as unreadable inputs or invalid thumbnailer entries that did not prevent other requested work.
 
 ## Safety Requirements
@@ -97,4 +100,6 @@ summary inputs=3 requested=3 generated=1 kept=1 skipped=1 failed=0
 - The generate CLI must not generate thumbnails for files inside the personal thumbnail cache or a shared `.sh_thumbnails` repository.
 - The generate CLI must not create or update shared thumbnail repositories.
 - The generate CLI must not write failure entries unless a later spec explicitly defines failure-entry ownership and opt-in behavior.
-- The generate CLI must not contact remote servers or mount filesystems on its own. Any external access performed by a thumbnailer process is the thumbnailer's behavior and must be visible in verbose reporting when possible.
+- The generate CLI must not contact remote servers or mount remote or removable source filesystems on its own. Sandbox namespace setup and bind mounts used only to isolate a local thumbnailer invocation are allowed.
+- With `--sandbox required`, the generate CLI must not run a thumbnailer unless the sandbox can restrict network access and ambient filesystem access as documented above.
+- With `--sandbox off`, the generate CLI may run the selected thumbnailer without isolation only because the user explicitly requested that mode.

@@ -89,4 +89,4 @@ Support `TryExec` for GNOME compatibility, even though the generated API prose o
 
 Do not assume `GnomeDesktopThumbnailFactory` is a stable library dependency. Reimplementing the small discovery and invocation subset may be preferable for `xdg-thumbnail-generate`, especially because this project is pre-release and already has its own CLI behavior spec.
 
-Treat direct execution of external thumbnailers as security-sensitive. If the CLI initially runs thumbnailers without a GNOME-equivalent sandbox, document that behavior explicitly and keep `%o` pointed at an isolated temporary output path, never the final cache path.
+Treat direct execution of external thumbnailers as security-sensitive. The project architecture uses `bubblewrap` as the initial sandbox backend for `xdg-thumbnail-generate`; any explicit unsandboxed mode should be documented as a user opt-out and must keep `%o` pointed at an isolated temporary output path, never the final cache path.
