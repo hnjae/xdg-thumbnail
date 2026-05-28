@@ -1,0 +1,572 @@
+// SPDX-FileCopyrightText: 2026 KIM Hyunjae
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+use std::collections::BTreeMap;
+use std::io::Cursor;
+
+use crate::{
+    OriginalIdentity, PersonalThumbnailUri, Result, SharedRelativeThumbnailUri,
+    SharedRepositoryContext, ThumbnailError, ThumbnailSize, UnixMTimeSeconds,
+};
+
+/// Policy-neutral problem found while validating or inspecting a cache entry.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum CacheEntryProblem {
+    /// The original local file is missing.
+    OriginalMissing,
+    /// Metadata is well-formed but no longer matches the original.
+    StaleMetadata,
+    /// The original could not be read well enough to validate the entry.
+    UnreadableOriginal,
+    /// The original cannot be verified in this validation context.
+    UnverifiableOriginal,
+    /// Required metadata is missing for this validation context.
+    MissingRequiredMetadata,
+    /// Present metadata has invalid syntax.
+    InvalidMetadataSyntax,
+    /// PNG structure could not be decoded.
+    InvalidPngStructure,
+    /// PNG encoding does not conform to the successful-thumbnail requirements.
+    NonconformingPngFormat,
+    /// PNG dimensions exceed the requested namespace.
+    DimensionsExceedNamespace,
+    /// The cache directory entry is not a standard thumbnail filename.
+    NonstandardFilename,
+    /// The standard cache filename does not match the stored thumbnail URI identity.
+    UriFilenameMismatch,
+}
+
+/// Validation confidence and validity for a cache entry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ValidationOutcome {
+    /// Required metadata and PNG constraints are fully verified.
+    FullyVerified,
+    /// Shared thumbnail metadata is standard-allowed but incomplete.
+    SharedMetadataIncomplete,
+    /// Inspection did not validate the entry against an original.
+    UncheckedInspection,
+    /// The entry is invalid for the requested validation context.
+    Invalid(Vec<CacheEntryProblem>),
+}
+
+/// Freedesktop thumbnail PNG text metadata.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ThumbnailMetadata {
+    values: BTreeMap<String, String>,
+}
+
+impl ThumbnailMetadata {
+    /// Returns a raw metadata value by key.
+    #[must_use]
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.values.get(key).map(String::as_str)
+    }
+
+    /// Returns `Thumb::URI` when present.
+    #[must_use]
+    pub fn thumb_uri(&self) -> Option<&str> {
+        self.get("Thumb::URI")
+    }
+
+    /// Returns parsed `Thumb::MTime` when present and syntactically valid.
+    #[must_use]
+    pub fn thumb_mtime(&self) -> Option<i64> {
+        self.thumb_mtime_result().ok().flatten()
+    }
+
+    pub(crate) fn thumb_mtime_result(
+        &self,
+    ) -> std::result::Result<Option<i64>, std::num::ParseIntError> {
+        self.get("Thumb::MTime").map(str::parse::<i64>).transpose()
+    }
+
+    /// Returns parsed `Thumb::Size` when present and syntactically valid.
+    #[must_use]
+    pub fn thumb_size(&self) -> Option<u64> {
+        self.thumb_size_result().ok().flatten()
+    }
+
+    pub(crate) fn thumb_size_result(
+        &self,
+    ) -> std::result::Result<Option<u64>, std::num::ParseIntError> {
+        self.get("Thumb::Size").map(str::parse::<u64>).transpose()
+    }
+
+    /// Returns `Thumb::Mimetype` when present.
+    #[must_use]
+    pub fn thumb_mimetype(&self) -> Option<&str> {
+        self.get("Thumb::Mimetype")
+    }
+}
+
+/// Decoded facts from a thumbnail PNG.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ParsedThumbnailPng {
+    width: u32,
+    height: u32,
+    bit_depth: png::BitDepth,
+    color_type: png::ColorType,
+    interlaced: bool,
+    metadata: ThumbnailMetadata,
+}
+
+impl ParsedThumbnailPng {
+    /// Parses PNG structure and Freedesktop text metadata.
+    pub fn parse(bytes: &[u8]) -> Result<Self> {
+        let decoder = png::Decoder::new(Cursor::new(bytes));
+        let mut reader = decoder
+            .read_info()
+            .map_err(|err| ThumbnailError::Png(err.to_string()))?;
+        let Some(output_buffer_size) = reader.output_buffer_size() else {
+            return Err(ThumbnailError::Png(
+                "png output buffer size is unavailable".to_owned(),
+            ));
+        };
+        let mut buffer = vec![0; output_buffer_size];
+        reader
+            .next_frame(&mut buffer)
+            .map_err(|err| ThumbnailError::Png(err.to_string()))?;
+
+        let info = reader.info();
+        let mut values = BTreeMap::new();
+        for chunk in &info.uncompressed_latin1_text {
+            values.insert(chunk.keyword.clone(), chunk.text.clone());
+        }
+        for chunk in &info.compressed_latin1_text {
+            let text = chunk
+                .get_text()
+                .map_err(|err| ThumbnailError::Png(err.to_string()))?;
+            values.insert(chunk.keyword.clone(), text);
+        }
+        for chunk in &info.utf8_text {
+            let text = chunk
+                .get_text()
+                .map_err(|err| ThumbnailError::Png(err.to_string()))?;
+            values.insert(chunk.keyword.clone(), text);
+        }
+
+        Ok(Self {
+            width: info.width,
+            height: info.height,
+            bit_depth: info.bit_depth,
+            color_type: info.color_type,
+            interlaced: info.interlaced,
+            metadata: ThumbnailMetadata { values },
+        })
+    }
+
+    /// Returns the image width in pixels.
+    #[must_use]
+    pub const fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// Returns the image height in pixels.
+    #[must_use]
+    pub const fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// Returns the image bit depth.
+    #[must_use]
+    pub const fn bit_depth(&self) -> png::BitDepth {
+        self.bit_depth
+    }
+
+    /// Returns the image color type.
+    #[must_use]
+    pub const fn color_type(&self) -> png::ColorType {
+        self.color_type
+    }
+
+    /// Returns whether the PNG is interlaced.
+    #[must_use]
+    pub const fn interlaced(&self) -> bool {
+        self.interlaced
+    }
+
+    /// Returns parsed Freedesktop thumbnail metadata.
+    #[must_use]
+    pub const fn metadata(&self) -> &ThumbnailMetadata {
+        &self.metadata
+    }
+
+    pub(crate) fn into_metadata(self) -> ThumbnailMetadata {
+        self.metadata
+    }
+
+    pub(crate) fn conformance_problems(&self, size: ThumbnailSize) -> Vec<CacheEntryProblem> {
+        let mut problems = Vec::new();
+        if self.bit_depth != png::BitDepth::Eight
+            || self.interlaced
+            || !matches!(
+                self.color_type,
+                png::ColorType::Rgba | png::ColorType::GrayscaleAlpha
+            )
+        {
+            push_problem(&mut problems, CacheEntryProblem::NonconformingPngFormat);
+        }
+        if self.width > size.max_dimension() || self.height > size.max_dimension() {
+            push_problem(&mut problems, CacheEntryProblem::DimensionsExceedNamespace);
+        }
+        problems
+    }
+}
+
+/// Validates a personal-cache successful thumbnail PNG against a readable original identity.
+#[must_use]
+pub fn validate_personal_thumbnail(
+    bytes: &[u8],
+    original: &OriginalIdentity,
+    size: ThumbnailSize,
+) -> ValidationOutcome {
+    let parsed = match ParsedThumbnailPng::parse(bytes) {
+        Ok(parsed) => parsed,
+        Err(_) => {
+            return ValidationOutcome::Invalid(vec![CacheEntryProblem::InvalidPngStructure]);
+        }
+    };
+
+    let mut problems = parsed.conformance_problems(size);
+    compare_personal_metadata(&mut problems, parsed.metadata(), original);
+
+    if problems.is_empty() {
+        ValidationOutcome::FullyVerified
+    } else {
+        ValidationOutcome::Invalid(problems)
+    }
+}
+
+/// Validates a personal-cache failure entry PNG against a readable original identity.
+///
+/// Failure entries carry the same required personal-cache metadata as successful thumbnails, but
+/// they are not successful-thumbnail size entries and are not checked against size-class dimension
+/// limits.
+#[must_use]
+pub fn validate_personal_failure_entry(
+    bytes: &[u8],
+    original: &OriginalIdentity,
+) -> ValidationOutcome {
+    let parsed = match ParsedThumbnailPng::parse(bytes) {
+        Ok(parsed) => parsed,
+        Err(_) => {
+            return ValidationOutcome::Invalid(vec![CacheEntryProblem::InvalidPngStructure]);
+        }
+    };
+
+    let mut problems = Vec::new();
+    compare_personal_metadata(&mut problems, parsed.metadata(), original);
+
+    if problems.is_empty() {
+        ValidationOutcome::FullyVerified
+    } else {
+        ValidationOutcome::Invalid(problems)
+    }
+}
+
+/// Validates a shared-repository successful thumbnail PNG against explicit shared context.
+#[must_use]
+pub fn validate_shared_thumbnail(
+    bytes: &[u8],
+    context: &SharedRepositoryContext,
+    mtime: Option<UnixMTimeSeconds>,
+    original_size: Option<u64>,
+    size: ThumbnailSize,
+) -> ValidationOutcome {
+    let parsed = match ParsedThumbnailPng::parse(bytes) {
+        Ok(parsed) => parsed,
+        Err(_) => {
+            return ValidationOutcome::Invalid(vec![CacheEntryProblem::InvalidPngStructure]);
+        }
+    };
+
+    let mut problems = parsed.conformance_problems(size);
+    let mut incomplete = false;
+    let metadata = parsed.metadata();
+
+    match metadata.thumb_uri() {
+        Some(uri) if uri == context.shared_uri().as_str() => {}
+        Some(uri) if SharedRelativeThumbnailUri::parse(uri).is_err() => {
+            push_problem(&mut problems, CacheEntryProblem::InvalidMetadataSyntax);
+        }
+        Some(_) => push_problem(&mut problems, CacheEntryProblem::StaleMetadata),
+        None => incomplete = true,
+    }
+
+    match (metadata.thumb_mtime_result(), mtime) {
+        (Ok(Some(stored)), Some(expected)) if stored == expected.as_i64() => {}
+        (Ok(Some(_)), Some(_)) => push_problem(&mut problems, CacheEntryProblem::StaleMetadata),
+        (Ok(Some(_)), None) => push_problem(&mut problems, CacheEntryProblem::UnverifiableOriginal),
+        (Ok(None), _) => incomplete = true,
+        (Err(_), _) => push_problem(&mut problems, CacheEntryProblem::InvalidMetadataSyntax),
+    }
+
+    compare_optional_size(&mut problems, metadata, original_size);
+
+    if !problems.is_empty() {
+        ValidationOutcome::Invalid(problems)
+    } else if incomplete {
+        ValidationOutcome::SharedMetadataIncomplete
+    } else {
+        ValidationOutcome::FullyVerified
+    }
+}
+
+fn compare_personal_metadata(
+    problems: &mut Vec<CacheEntryProblem>,
+    metadata: &ThumbnailMetadata,
+    original: &OriginalIdentity,
+) {
+    match metadata.thumb_uri() {
+        Some(uri) if uri == original.uri().as_str() => {}
+        Some(uri) if PersonalThumbnailUri::from_absolute_uri(uri).is_err() => {
+            push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax);
+        }
+        Some(_) => push_problem(problems, CacheEntryProblem::StaleMetadata),
+        None => push_problem(problems, CacheEntryProblem::MissingRequiredMetadata),
+    }
+
+    match metadata.thumb_mtime_result() {
+        Ok(Some(mtime)) if mtime == original.mtime().as_i64() => {}
+        Ok(Some(_)) => push_problem(problems, CacheEntryProblem::StaleMetadata),
+        Ok(None) => push_problem(problems, CacheEntryProblem::MissingRequiredMetadata),
+        Err(_) => push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax),
+    }
+
+    compare_optional_size(problems, metadata, original.size());
+    compare_optional_mimetype(problems, metadata, original.mime_type());
+}
+
+fn compare_optional_size(
+    problems: &mut Vec<CacheEntryProblem>,
+    metadata: &ThumbnailMetadata,
+    expected: Option<u64>,
+) {
+    match (metadata.thumb_size_result(), expected) {
+        (Ok(Some(stored)), Some(expected)) if stored == expected => {}
+        (Ok(Some(_)), Some(_)) => push_problem(problems, CacheEntryProblem::StaleMetadata),
+        (Ok(_), _) => {}
+        (Err(_), _) => push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax),
+    }
+}
+
+fn compare_optional_mimetype(
+    problems: &mut Vec<CacheEntryProblem>,
+    metadata: &ThumbnailMetadata,
+    expected: Option<&str>,
+) {
+    let Some(stored) = metadata.thumb_mimetype() else {
+        return;
+    };
+    if validate_mime_type(stored).is_err() {
+        push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax);
+    } else if let Some(expected) = expected {
+        if stored != expected {
+            push_problem(problems, CacheEntryProblem::StaleMetadata);
+        }
+    }
+}
+
+pub(crate) fn push_problem(problems: &mut Vec<CacheEntryProblem>, problem: CacheEntryProblem) {
+    if !problems.contains(&problem) {
+        problems.push(problem);
+    }
+}
+
+struct RgbaImage {
+    width: u32,
+    height: u32,
+    pixels: Vec<u8>,
+}
+
+pub(crate) fn normalized_personal_thumbnail_png(
+    rendered_png: &[u8],
+    original: &OriginalIdentity,
+    size: ThumbnailSize,
+) -> Result<Vec<u8>> {
+    let image = decode_rendered_png_to_rgba8(rendered_png)?;
+    let image = downscale_to_namespace(image, size)?;
+    let metadata = thumbnail_metadata_pairs(original);
+    let png = encode_rgba_png(image.width, image.height, &image.pixels, &metadata)?;
+    match validate_personal_thumbnail(&png, original, size) {
+        ValidationOutcome::FullyVerified => Ok(png),
+        ValidationOutcome::Invalid(problems) => Err(ThumbnailError::UnsupportedRenderedThumbnail(
+            rendered_validation_error(problems.as_slice()),
+        )),
+        ValidationOutcome::SharedMetadataIncomplete | ValidationOutcome::UncheckedInspection => {
+            Err(ThumbnailError::UnsupportedRenderedThumbnail(
+                "normalized thumbnail could not be verified",
+            ))
+        }
+    }
+}
+
+fn rendered_validation_error(problems: &[CacheEntryProblem]) -> &'static str {
+    if problems.contains(&CacheEntryProblem::DimensionsExceedNamespace) {
+        "dimensions exceed namespace"
+    } else if problems.contains(&CacheEntryProblem::NonconformingPngFormat) {
+        "nonconforming final PNG"
+    } else if problems.contains(&CacheEntryProblem::InvalidPngStructure) {
+        "invalid final PNG structure"
+    } else {
+        "metadata validation failed"
+    }
+}
+
+pub(crate) fn thumbnail_metadata_pairs(original: &OriginalIdentity) -> Vec<(String, String)> {
+    let mut metadata = vec![
+        ("Thumb::URI".to_owned(), original.uri().as_str().to_owned()),
+        ("Thumb::MTime".to_owned(), original.mtime().to_string()),
+    ];
+    if let Some(size) = original.size() {
+        metadata.push(("Thumb::Size".to_owned(), size.to_string()));
+    }
+    if let Some(mime_type) = original.mime_type() {
+        metadata.push(("Thumb::Mimetype".to_owned(), mime_type.to_owned()));
+    }
+    metadata
+}
+
+fn decode_rendered_png_to_rgba8(bytes: &[u8]) -> Result<RgbaImage> {
+    let mut decoder = png::Decoder::new(Cursor::new(bytes));
+    decoder.set_transformations(
+        png::Transformations::EXPAND | png::Transformations::STRIP_16 | png::Transformations::ALPHA,
+    );
+    let mut reader = decoder
+        .read_info()
+        .map_err(|err| ThumbnailError::Png(err.to_string()))?;
+    let Some(output_buffer_size) = reader.output_buffer_size() else {
+        return Err(ThumbnailError::Png(
+            "png output buffer size is unavailable".to_owned(),
+        ));
+    };
+    let mut buffer = vec![0; output_buffer_size];
+    let output = reader
+        .next_frame(&mut buffer)
+        .map_err(|err| ThumbnailError::Png(err.to_string()))?;
+    let frame = &buffer[..output.buffer_size()];
+    if output.bit_depth != png::BitDepth::Eight {
+        return Err(ThumbnailError::UnsupportedRenderedThumbnail(
+            "decoded PNG did not normalize to 8-bit samples",
+        ));
+    }
+
+    let pixels = match output.color_type {
+        png::ColorType::Rgba => frame.to_vec(),
+        png::ColorType::Rgb => {
+            let mut out = Vec::with_capacity(output.width as usize * output.height as usize * 4);
+            for pixel in frame.chunks_exact(3) {
+                out.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 255]);
+            }
+            out
+        }
+        png::ColorType::GrayscaleAlpha => {
+            let mut out = Vec::with_capacity(output.width as usize * output.height as usize * 4);
+            for pixel in frame.chunks_exact(2) {
+                out.extend_from_slice(&[pixel[0], pixel[0], pixel[0], pixel[1]]);
+            }
+            out
+        }
+        png::ColorType::Grayscale | png::ColorType::Indexed => {
+            let mut out = Vec::with_capacity(output.width as usize * output.height as usize * 4);
+            for &gray in frame {
+                out.extend_from_slice(&[gray, gray, gray, 255]);
+            }
+            out
+        }
+    };
+
+    Ok(RgbaImage {
+        width: output.width,
+        height: output.height,
+        pixels,
+    })
+}
+
+fn downscale_to_namespace(image: RgbaImage, size: ThumbnailSize) -> Result<RgbaImage> {
+    let max = size.max_dimension();
+    if image.width <= max && image.height <= max {
+        return Ok(image);
+    }
+    let (width, height) = constrain_dimensions(image.width, image.height, max);
+    let source = image
+        .pixels
+        .chunks_exact(4)
+        .map(|pixel| resize::px::RGBA::new(pixel[0], pixel[1], pixel[2], pixel[3]))
+        .collect::<Vec<_>>();
+    let mut dest = vec![resize::px::RGBA::new(0, 0, 0, 0); width as usize * height as usize];
+    let mut resizer = resize::new(
+        image.width as usize,
+        image.height as usize,
+        width as usize,
+        height as usize,
+        resize::Pixel::RGBA8P,
+        resize::Type::Lanczos3,
+    )
+    .map_err(|_| ThumbnailError::UnsupportedRenderedThumbnail("resize setup failed"))?;
+    resizer
+        .resize(&source, &mut dest)
+        .map_err(|_| ThumbnailError::UnsupportedRenderedThumbnail("resize failed"))?;
+    let mut pixels = Vec::with_capacity(dest.len() * 4);
+    for pixel in dest {
+        pixels.extend_from_slice(&[pixel.r, pixel.g, pixel.b, pixel.a]);
+    }
+    Ok(RgbaImage {
+        width,
+        height,
+        pixels,
+    })
+}
+
+fn constrain_dimensions(width: u32, height: u32, max: u32) -> (u32, u32) {
+    if width >= height {
+        let scaled_height = (u64::from(height) * u64::from(max) / u64::from(width)).max(1) as u32;
+        (max, scaled_height)
+    } else {
+        let scaled_width = (u64::from(width) * u64::from(max) / u64::from(height)).max(1) as u32;
+        (scaled_width, max)
+    }
+}
+
+pub(crate) fn encode_rgba_png(
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    metadata: &[(String, String)],
+) -> Result<Vec<u8>> {
+    let expected_len = width as usize * height as usize * 4;
+    if pixels.len() != expected_len {
+        return Err(ThumbnailError::UnsupportedRenderedThumbnail(
+            "RGBA buffer length does not match dimensions",
+        ));
+    }
+    let mut output = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut output, width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        for (key, value) in metadata {
+            encoder
+                .add_text_chunk(key.clone(), value.clone())
+                .map_err(|err| ThumbnailError::Png(err.to_string()))?;
+        }
+        let mut writer = encoder
+            .write_header()
+            .map_err(|err| ThumbnailError::Png(err.to_string()))?;
+        writer
+            .write_image_data(pixels)
+            .map_err(|err| ThumbnailError::Png(err.to_string()))?;
+    }
+    Ok(output)
+}
+
+pub(crate) fn validate_mime_type(mime_type: &str) -> Result<()> {
+    if mime_type.is_empty()
+        || !mime_type.is_ascii()
+        || mime_type.bytes().any(|byte| byte.is_ascii_control())
+        || !mime_type.contains('/')
+    {
+        return Err(ThumbnailError::InvalidMetadata("invalid MIME type"));
+    }
+    Ok(())
+}
