@@ -31,7 +31,7 @@ The library keeps a flat public API through `lib.rs` re-exports, but internal mo
 - `namespace` owns successful thumbnail sizes, failure namespaces, and cache namespace path joining.
 - `uri` owns canonical personal and shared thumbnail URI identity construction, validation, percent encoding, and MD5 filename derivation.
 - `identity` owns original freshness facts, readability-confirmed identities, Unix mtime conversion, and shared-repository lookup context.
-- `lib.rs` owns higher-level cache root operations, PNG metadata parsing and validation, inspection handles, installation, and removal until those domains are split into dedicated modules.
+- `lib.rs` owns higher-level cache root operations, PNG metadata parsing, personal-cache metadata validation, inspection handles, installation, and removal until those domains are split into dedicated modules.
 
 ## Library Responsibilities
 
@@ -58,7 +58,7 @@ The library keeps a flat public API through `lib.rs` re-exports, but internal mo
 - Normalize supported caller-provided rendered PNG payloads into Freedesktop-conforming 8-bit non-interlaced RGBA PNG output before successful personal-cache installation, downscale rendered output when needed to fit the requested cache namespace, optionally encode explicitly described raw pixel buffers through the same final PNG path, and return the installed path plus optional final normalized PNG bytes when requested.
 - Install successful personal-cache thumbnails atomically from caller-provided rendered thumbnail payloads and readability-confirmed original identities, after normalizing the final PNG encoding and cache-size dimensions for the requested size namespace.
 - Create missing personal thumbnail cache directories with mode `0700` and final thumbnail files with mode `0600`; reject existing standard personal-cache directories that are not owned by the current user or that grant group/other access, while reporting explicit permission errors instead of silently rewriting existing directory permissions.
-- Treat failure entries as metadata-carrying PNG files in program-version failure namespaces, not as successful thumbnail size entries.
+- Treat failure entries as metadata-carrying PNG files in program-version failure namespaces, not as successful thumbnail size entries, and validate their required personal-cache metadata without applying successful-thumbnail dimension limits.
 - Provide opt-in failure-entry writing when the caller supplies an explicit validated program-version namespace and a readability-confirmed original identity, without deciding application retry policy. The initial writer should generate a deterministic minimal 1x1 transparent RGBA PNG instead of accepting caller-rendered failure payloads.
 - Treat shared thumbnail repositories as read-only during initial lookup, cleanup, and application generation; shared-repository writes are outside the initial library and CLI responsibilities.
 - Return structured, policy-neutral inspection facts without applying CLI cleanup policy. Invalid PNG structure, missing required metadata, invalid metadata syntax, stale metadata, nonconforming PNG encoding, and dimension violations must remain distinguishable facts.
@@ -77,7 +77,7 @@ The `x-large` and `xx-large` size classes are treated as supported documented be
 - Parse command-line options such as `--older-than`, `--delete`, `--delete-stale-local`, `--allow-delete-failures`, `--size`, `--scope`, `--age-basis`, `--include-nonstandard-files`, `--format`, `--ignore-fhs-media`, `--verbose`, and repeated custom removable path hints.
 - Classify URI schemes and path prefixes according to user-facing cleanup policy.
 - Apply age-based cleanup for remote, virtual, and removable-media-like entries.
-- Inspect and classify failure entries when the user includes failure namespaces in the scan scope, while requiring an extra failure-deletion opt-in before treating them as deletion candidates.
+- Inspect and classify failure entries when the user includes failure namespaces in the scan scope, while relying on library-owned failure-entry metadata validation and requiring an extra failure-deletion opt-in before treating them as deletion candidates.
 - Own cleanup policy types such as URI classes, deletion reasons, skip reasons, and cleanup decisions.
 - Request removal through library cache entry handles only after the prune CLI has made an explicit deletion decision, and only when the relevant destructive flags are present.
 - Delete successful thumbnail entries only when `--delete` is passed, failure entries only when both `--delete` and `--allow-delete-failures` are passed, and report what was removed, skipped, or left unchanged.
