@@ -6,7 +6,7 @@ This document describes the intended data flow for reading, validating, inspecti
 
 ```mermaid
 flowchart TD
-    A[Original URI] --> B[Canonical thumbnail URI]
+    A[Original identity input] --> B[Accepted thumbnail URI identity]
     B --> C{Original readable?}
     C -- no --> L[Not display-valid]
     C -- yes --> D[MD5 filename]
@@ -15,10 +15,10 @@ flowchart TD
     F -- no --> S{Shared lookup enabled?}
     F -- yes --> H[Read PNG metadata]
     H --> I{Metadata valid for context?}
-    I -- yes --> J[Use personal thumbnail]
+    I -- yes --> J[Return validated path or payload]
     I -- no --> S
     S -- yes --> T{Acceptable shared thumbnail?}
-    T -- yes --> U[Use shared thumbnail]
+    T -- yes --> U[Return validated shared path or payload]
     T -- no --> N[Cache miss]
     S -- no --> N
 ```
@@ -49,6 +49,12 @@ Shared-repository writes remain outside the initial lifecycle. Failure entry wri
 
 Application lookup must not use existing thumbnails when the original is not currently readable. Separate management-tool inspection may still parse thumbnail files and metadata without opening the original, but such inspection must report facts rather than validate the thumbnail for display.
 
+## Lookup Result Surfaces
+
+The library exposes cache reuse through layered result surfaces. A computed path is only the MD5-derived cache location for an accepted URI identity and namespace; it is useful for reports, dry-run output, and install targeting, but it does not mean a thumbnail exists or is valid. A validated path means the library opened the cache PNG and verified it against the original identity and namespace before returning the path; it is a convenience for toolkits that require a filename, but callers that reopen the path accept that the file can be replaced after validation. A validated payload or handle means the library returns the exact bytes or opened file handle that passed validation, plus the cache path and metadata facts; this is the preferred surface for application thumbnail views.
+
+Lookup results should distinguish valid, missing, invalid, and unverifiable originals. Missing and invalid results let an application decide whether to render and install a new thumbnail. Unverifiable results mean the caller did not or could not provide readability and modification-time proof for the original, so the library must not present an existing cache entry as display-valid.
+
 ## Personal Install Flow
 
 ```mermaid
@@ -61,9 +67,10 @@ flowchart TD
     F --> G[Write temp file in target directory]
     G --> H[Set 0600 file permissions]
     H --> I[Atomic rename to final path]
+    I --> J[Return installed path and optional final payload or handle]
 ```
 
-Applications that embed their own renderer should use this install flow instead of reimplementing the Freedesktop cache filename, metadata, permission, and atomic-save rules. The library should not know whether the payload came from Qt image decoding, a Rust image decoder, a document renderer, a video frame extractor, or an external thumbnailer.
+Applications that embed their own renderer should use this install flow instead of reimplementing the Freedesktop cache filename, metadata, permission, and atomic-save rules. The library should not know whether the payload came from Qt image decoding, a Rust image decoder, a document renderer, a video frame extractor, or an external thumbnailer. Install results should at least report the installed cache path. When the caller requests display-ready output, the library may return the final normalized PNG bytes or an opened handle for the installed entry; that payload represents the cache entry after metadata writing and normalization, not the original renderer input.
 
 ## Pruning Model
 
@@ -79,22 +86,26 @@ A thumbnail consumer that only wants to reuse existing thumbnails should be able
 let uri = ThumbnailUri::from_file_path(path)?;
 let original = OriginalFile::open_readable(path)?;
 let identity = ReadableOriginalIdentity::from_readable_file(&uri, &original)?;
-let cache_path = cache.thumbnail_path(&uri, CacheNamespace::Size(ThumbnailSize::Normal));
+let computed_path = cache.thumbnail_path(&uri, CacheNamespace::Size(ThumbnailSize::Normal));
 
-if cache.is_valid(&cache_path, &identity)?.is_fully_verified() {
-    return Ok(Some(cache_path));
+match cache.read_valid_thumbnail(&identity, ThumbnailSize::Normal)? {
+    ThumbnailLookup::Valid(thumbnail) => return Ok(Some(thumbnail)),
+    ThumbnailLookup::Missing | ThumbnailLookup::Invalid(_) => {}
+    ThumbnailLookup::Unverifiable(_) => return Ok(None),
 }
 
 let shared = SharedRepositoryContext::for_direct_child(path)?;
 let shared_policy = SharedLookupPolicy::RequireFreshnessMetadata;
-if let Some(shared_path) = cache.find_shared(&shared, &identity, shared_policy)? {
-    return Ok(Some(shared_path));
+match cache.read_valid_shared_thumbnail(&shared, &identity, shared_policy)? {
+    ThumbnailLookup::Valid(thumbnail) => return Ok(Some(thumbnail)),
+    ThumbnailLookup::Missing | ThumbnailLookup::Invalid(_) => {}
+    ThumbnailLookup::Unverifiable(_) => return Ok(None),
 }
 
 Ok(None)
 ```
 
-The exact API should be shaped by implementation, but applications should not need to know the hash filename algorithm, cache directory layout, or PNG metadata keys directly. A cache miss is returned to the caller; lookup does not perform rendering, and callers that render a thumbnail use the separate install flow. The example uses a safety-oriented shared policy that can decline standard-allowed shared thumbnails with incomplete freshness metadata. Applications that intentionally accept shared thumbnails with incomplete freshness metadata should pass an explicit shared policy tied to their own trust or freshness model.
+The exact API should be shaped by implementation, but applications should not need to know the hash filename algorithm, cache directory layout, or PNG metadata keys directly. `computed_path` is available for diagnostics or reports, while `read_valid_thumbnail` returns a display-grade validated payload or handle rather than asking the caller to reopen a path and reparse metadata. A cache miss is returned to the caller; lookup does not perform rendering, and callers that render a thumbnail use the separate install flow. The example uses a safety-oriented shared policy that can decline standard-allowed shared thumbnails with incomplete freshness metadata. Applications that intentionally accept shared thumbnails with incomplete freshness metadata should pass an explicit shared policy tied to their own trust or freshness model.
 
 ## Failure Entries
 
