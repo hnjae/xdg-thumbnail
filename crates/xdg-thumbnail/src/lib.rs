@@ -55,6 +55,9 @@ pub enum ThumbnailError {
     /// Rendered thumbnail payload is unsupported.
     #[error("unsupported rendered thumbnail: {0}")]
     UnsupportedRenderedThumbnail(&'static str),
+    /// Cache entry removal was refused by safety checks.
+    #[error("refused to remove cache entry: {0}")]
+    UnsafeRemoval(&'static str),
 }
 
 impl ThumbnailError {
@@ -257,6 +260,135 @@ impl CacheRoot {
         )?;
         self.write_personal_entry(&path, &namespace, &bytes)?;
         Ok(InstalledThumbnail { path, bytes })
+    }
+
+    /// Inspects standard successful thumbnail size directories.
+    pub fn inspect_thumbnails(
+        &self,
+        sizes: &[ThumbnailSize],
+        include_nonstandard: bool,
+    ) -> Result<Vec<CacheEntryInspection>> {
+        let mut inspections = Vec::new();
+        for &size in sizes {
+            let namespace = CacheNamespace::Size(size);
+            let dir = self.path.join(size.directory_name());
+            self.inspect_namespace_dir(
+                &dir,
+                namespace,
+                include_nonstandard,
+                Some(size),
+                &mut inspections,
+            )?;
+        }
+        Ok(inspections)
+    }
+
+    /// Inspects direct files in immediate real failure-entry namespaces.
+    pub fn inspect_failure_entries(
+        &self,
+        include_nonstandard: bool,
+    ) -> Result<Vec<CacheEntryInspection>> {
+        let fail_root = self.path.join("fail");
+        let mut inspections = Vec::new();
+        let entries = match fs::read_dir(&fail_root) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(inspections),
+            Err(source) => {
+                return Err(ThumbnailError::Io {
+                    context: "read failure thumbnail directory",
+                    source,
+                });
+            }
+        };
+
+        for entry in entries {
+            let entry = entry.map_err(|source| ThumbnailError::Io {
+                context: "read failure namespace directory entry",
+                source,
+            })?;
+            let file_type = entry.file_type().map_err(|source| ThumbnailError::Io {
+                context: "read failure namespace file type",
+                source,
+            })?;
+            if file_type.is_symlink() || !file_type.is_dir() {
+                continue;
+            }
+            let Some(namespace_name) = entry.file_name().to_str().map(ToOwned::to_owned) else {
+                continue;
+            };
+            let Ok(namespace) = FailureNamespace::new(namespace_name) else {
+                continue;
+            };
+            self.inspect_namespace_dir(
+                &entry.path(),
+                CacheNamespace::Failure(namespace),
+                include_nonstandard,
+                None,
+                &mut inspections,
+            )?;
+        }
+        Ok(inspections)
+    }
+
+    fn inspect_namespace_dir(
+        &self,
+        dir: &Path,
+        namespace: CacheNamespace,
+        include_nonstandard: bool,
+        successful_size: Option<ThumbnailSize>,
+        inspections: &mut Vec<CacheEntryInspection>,
+    ) -> Result<()> {
+        let entries = match fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(source) => {
+                return Err(ThumbnailError::Io {
+                    context: "read thumbnail namespace directory",
+                    source,
+                });
+            }
+        };
+
+        for entry in entries {
+            let entry = entry.map_err(|source| ThumbnailError::Io {
+                context: "read thumbnail directory entry",
+                source,
+            })?;
+            let path = entry.path();
+            let filename = entry.file_name();
+            let standard = filename
+                .to_str()
+                .is_some_and(is_standard_thumbnail_filename);
+            if !standard && !include_nonstandard {
+                continue;
+            }
+
+            let handle = CacheEntryHandle {
+                cache_dir: dir.to_owned(),
+                path: path.clone(),
+            };
+            if standard {
+                inspections.push(inspect_cache_entry(
+                    path,
+                    namespace.clone(),
+                    handle,
+                    successful_size,
+                ));
+            } else {
+                let timestamps = thumbnail_timestamps(&path, AccessTimePreservation::NotNeeded);
+                inspections.push(CacheEntryInspection {
+                    outcome: ValidationOutcome::Invalid(vec![
+                        CacheEntryProblem::NonstandardFilename,
+                    ]),
+                    original_uri: None,
+                    timestamps,
+                    namespace: namespace.clone(),
+                    path,
+                    handle,
+                });
+            }
+        }
+        Ok(())
     }
 
     fn write_personal_entry(
@@ -928,6 +1060,8 @@ pub enum CacheEntryProblem {
     NonconformingPngFormat,
     /// PNG dimensions exceed the requested namespace.
     DimensionsExceedNamespace,
+    /// The cache directory entry is not a standard thumbnail filename.
+    NonstandardFilename,
 }
 
 /// Validation confidence and validity for a cache entry.
@@ -990,6 +1124,143 @@ pub struct ValidatedThumbnailPayload {
 pub struct InstalledThumbnail {
     path: PathBuf,
     bytes: Vec<u8>,
+}
+
+/// Original URI identity parsed from a cache entry.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum ThumbnailUriIdentity {
+    /// Absolute personal-cache URI identity.
+    Personal(PersonalThumbnailUri),
+    /// Shared repository relative URI identity.
+    Shared(SharedRelativeThumbnailUri),
+}
+
+/// Whether access time was preserved while inspecting an entry.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum AccessTimePreservation {
+    /// Inspection preserved access time.
+    Preserved,
+    /// Inspection may have updated access time.
+    NotPreserved,
+    /// No content read was needed.
+    NotNeeded,
+    /// Access-time preservation is unsupported.
+    Unsupported,
+}
+
+/// Timestamp facts captured for a thumbnail cache entry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ThumbnailTimestamps {
+    accessed_at: Option<SystemTime>,
+    modified_at: Option<SystemTime>,
+    access_time_preserved_during_inspection: AccessTimePreservation,
+}
+
+impl ThumbnailTimestamps {
+    /// Returns the thumbnail file access time when available.
+    #[must_use]
+    pub const fn accessed_at(&self) -> Option<SystemTime> {
+        self.accessed_at
+    }
+
+    /// Returns the thumbnail file modification time when available.
+    #[must_use]
+    pub const fn modified_at(&self) -> Option<SystemTime> {
+        self.modified_at
+    }
+
+    /// Returns whether metadata inspection preserved access time.
+    #[must_use]
+    pub const fn access_time_preserved_during_inspection(&self) -> AccessTimePreservation {
+        self.access_time_preserved_during_inspection
+    }
+}
+
+/// Policy-neutral inspection facts for a cache entry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CacheEntryInspection {
+    outcome: ValidationOutcome,
+    original_uri: Option<ThumbnailUriIdentity>,
+    timestamps: ThumbnailTimestamps,
+    namespace: CacheNamespace,
+    path: PathBuf,
+    handle: CacheEntryHandle,
+}
+
+impl CacheEntryInspection {
+    /// Returns the validation or inspection outcome.
+    #[must_use]
+    pub const fn outcome(&self) -> &ValidationOutcome {
+        &self.outcome
+    }
+
+    /// Returns the original URI parsed from metadata when present and valid.
+    #[must_use]
+    pub const fn original_uri(&self) -> Option<&ThumbnailUriIdentity> {
+        self.original_uri.as_ref()
+    }
+
+    /// Returns timestamp facts.
+    #[must_use]
+    pub const fn timestamps(&self) -> &ThumbnailTimestamps {
+        &self.timestamps
+    }
+
+    /// Returns the cache namespace.
+    #[must_use]
+    pub const fn namespace(&self) -> &CacheNamespace {
+        &self.namespace
+    }
+
+    /// Returns the inspected cache path.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Returns a handle that can safely remove this cache entry.
+    #[must_use]
+    pub const fn handle(&self) -> &CacheEntryHandle {
+        &self.handle
+    }
+}
+
+/// A handle for a discovered cache entry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CacheEntryHandle {
+    cache_dir: PathBuf,
+    path: PathBuf,
+}
+
+impl CacheEntryHandle {
+    /// Removes the handled entry after containment and symlink checks.
+    pub fn remove(&self) -> Result<()> {
+        if self.path.parent() != Some(self.cache_dir.as_path()) {
+            return Err(ThumbnailError::UnsafeRemoval(
+                "entry is not a direct child of its cache directory",
+            ));
+        }
+        let metadata = fs::symlink_metadata(&self.path).map_err(|source| ThumbnailError::Io {
+            context: "inspect cache entry before removal",
+            source,
+        })?;
+        if metadata.file_type().is_symlink() {
+            return Err(ThumbnailError::UnsafeRemoval("entry is a symlink"));
+        }
+        if !metadata.is_file() {
+            return Err(ThumbnailError::UnsafeRemoval("entry is not a regular file"));
+        }
+        fs::remove_file(&self.path).map_err(|source| ThumbnailError::Io {
+            context: "remove cache entry",
+            source,
+        })
+    }
+
+    /// Returns the handled path.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
 }
 
 impl InstalledThumbnail {
@@ -1296,6 +1567,134 @@ fn push_problem(problems: &mut Vec<CacheEntryProblem>, problem: CacheEntryProble
     if !problems.contains(&problem) {
         problems.push(problem);
     }
+}
+
+fn inspect_cache_entry(
+    path: PathBuf,
+    namespace: CacheNamespace,
+    handle: CacheEntryHandle,
+    successful_size: Option<ThumbnailSize>,
+) -> CacheEntryInspection {
+    let mut timestamps = thumbnail_timestamps(&path, AccessTimePreservation::NotNeeded);
+    let metadata = match fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(_) => {
+            return CacheEntryInspection {
+                outcome: ValidationOutcome::Invalid(vec![CacheEntryProblem::UnreadableOriginal]),
+                original_uri: None,
+                timestamps,
+                namespace,
+                path,
+                handle,
+            };
+        }
+    };
+
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return CacheEntryInspection {
+            outcome: ValidationOutcome::Invalid(vec![CacheEntryProblem::UnreadableOriginal]),
+            original_uri: None,
+            timestamps,
+            namespace,
+            path,
+            handle,
+        };
+    }
+
+    timestamps = thumbnail_timestamps(&path, AccessTimePreservation::NotPreserved);
+    let bytes = match fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return CacheEntryInspection {
+                outcome: ValidationOutcome::Invalid(vec![CacheEntryProblem::UnreadableOriginal]),
+                original_uri: None,
+                timestamps,
+                namespace,
+                path,
+                handle,
+            };
+        }
+    };
+
+    let parsed = match ParsedThumbnailPng::parse(&bytes) {
+        Ok(parsed) => parsed,
+        Err(_) => {
+            return CacheEntryInspection {
+                outcome: ValidationOutcome::Invalid(vec![CacheEntryProblem::InvalidPngStructure]),
+                original_uri: None,
+                timestamps,
+                namespace,
+                path,
+                handle,
+            };
+        }
+    };
+
+    let mut problems =
+        successful_size.map_or_else(Vec::new, |size| parsed.conformance_problems(size));
+    inspect_required_metadata(&mut problems, parsed.metadata());
+    let original_uri = parsed.metadata().thumb_uri().and_then(parse_thumbnail_uri);
+    let outcome = if problems.is_empty() {
+        ValidationOutcome::UncheckedInspection
+    } else {
+        ValidationOutcome::Invalid(problems)
+    };
+
+    CacheEntryInspection {
+        outcome,
+        original_uri,
+        timestamps,
+        namespace,
+        path,
+        handle,
+    }
+}
+
+fn inspect_required_metadata(problems: &mut Vec<CacheEntryProblem>, metadata: &ThumbnailMetadata) {
+    if metadata.thumb_uri().is_none() {
+        push_problem(problems, CacheEntryProblem::MissingRequiredMetadata);
+    }
+    match metadata.thumb_mtime_result() {
+        Ok(Some(_)) => {}
+        Ok(None) => push_problem(problems, CacheEntryProblem::MissingRequiredMetadata),
+        Err(_) => push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax),
+    }
+    if metadata.thumb_size_result().is_err() {
+        push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax);
+    }
+}
+
+fn parse_thumbnail_uri(uri: &str) -> Option<ThumbnailUriIdentity> {
+    if uri.starts_with("./") {
+        SharedRelativeThumbnailUri::parse(uri)
+            .ok()
+            .map(ThumbnailUriIdentity::Shared)
+    } else {
+        PersonalThumbnailUri::from_absolute_uri(uri)
+            .ok()
+            .map(ThumbnailUriIdentity::Personal)
+    }
+}
+
+fn thumbnail_timestamps(path: &Path, preservation: AccessTimePreservation) -> ThumbnailTimestamps {
+    let (accessed_at, modified_at) = fs::symlink_metadata(path).map_or((None, None), |metadata| {
+        (metadata.accessed().ok(), metadata.modified().ok())
+    });
+    ThumbnailTimestamps {
+        accessed_at,
+        modified_at,
+        access_time_preserved_during_inspection: preservation,
+    }
+}
+
+fn is_standard_thumbnail_filename(name: &str) -> bool {
+    let Some(stem) = name.strip_suffix(".png") else {
+        return false;
+    };
+    stem.len() == 32
+        && stem
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 struct RgbaImage {
