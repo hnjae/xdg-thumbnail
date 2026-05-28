@@ -709,19 +709,51 @@ fn execute_thumbnailer(
 }
 
 fn check_required_sandbox_eligibility(thumbnailer: &Thumbnailer) -> Result<(), ExecutionError> {
+    if !cfg!(target_os = "linux") {
+        return Err(ExecutionError {
+            reason: "sandbox-unavailable",
+            message: "default mode requires Linux bubblewrap support; rerun with --sandbox off only if you trust the thumbnailer".to_owned(),
+        });
+    }
     if resolve_executable("bwrap").is_none() {
         return Err(ExecutionError {
             reason: "sandbox-unavailable",
             message: "default mode requires Linux bubblewrap support; rerun with --sandbox off only if you trust the thumbnailer".to_owned(),
         });
     }
-    let program = thumbnailer_program(thumbnailer)?;
+    let words = exec_words(&thumbnailer.exec)?;
+    let Some((_, args)) = words.split_first() else {
+        return Err(ExecutionError {
+            reason: "thumbnailer-entry-invalid",
+            message: "thumbnailer Exec is empty".to_owned(),
+        });
+    };
+    let program = thumbnailer_program_from_words(&words)?;
     if is_shell(&program) {
         return Err(ExecutionError {
             reason: "sandbox-ineligible",
             message: "shell-based thumbnailer entries are not eligible for the required sandbox"
                 .to_owned(),
         });
+    }
+    if let Some(command) = env_wrapped_command(&program, args) {
+        if is_shell(&command) {
+            return Err(ExecutionError {
+                reason: "sandbox-ineligible",
+                message:
+                    "shell-based thumbnailer entries are not eligible for the required sandbox"
+                        .to_owned(),
+            });
+        }
+        if !is_system_runtime_path(&command) {
+            return Err(ExecutionError {
+                reason: "sandbox-ineligible",
+                message: format!(
+                    "thumbnailer env-wrapped command {} is outside the required sandbox runtime profile",
+                    command.display()
+                ),
+            });
+        }
     }
     if !is_system_runtime_path(&program) {
         return Err(ExecutionError {
@@ -732,14 +764,33 @@ fn check_required_sandbox_eligibility(thumbnailer: &Thumbnailer) -> Result<(), E
             ),
         });
     }
+    for literal_path in args.iter().filter_map(|word| literal_host_path(word)) {
+        if !is_system_runtime_path(literal_path) {
+            return Err(ExecutionError {
+                reason: "sandbox-ineligible",
+                message: format!(
+                    "thumbnailer literal host path {} is outside the required sandbox runtime profile",
+                    literal_path.display()
+                ),
+            });
+        }
+    }
     Ok(())
 }
 
 fn thumbnailer_program(thumbnailer: &Thumbnailer) -> Result<PathBuf, ExecutionError> {
-    let words = shell_words::split(&thumbnailer.exec).map_err(|error| ExecutionError {
+    let words = exec_words(&thumbnailer.exec)?;
+    thumbnailer_program_from_words(&words)
+}
+
+fn exec_words(exec: &str) -> Result<Vec<String>, ExecutionError> {
+    shell_words::split(exec).map_err(|error| ExecutionError {
         reason: "thumbnailer-entry-invalid",
         message: error.to_string(),
-    })?;
+    })
+}
+
+fn thumbnailer_program_from_words(words: &[String]) -> Result<PathBuf, ExecutionError> {
     let program = words.first().ok_or_else(|| ExecutionError {
         reason: "thumbnailer-entry-invalid",
         message: "thumbnailer Exec is empty".to_owned(),
@@ -748,6 +799,69 @@ fn thumbnailer_program(thumbnailer: &Thumbnailer) -> Result<PathBuf, ExecutionEr
         reason: "thumbnailer-entry-invalid",
         message: format!("thumbnailer executable {program} was not found"),
     })
+}
+
+fn env_wrapped_command(program: &Path, args: &[String]) -> Option<PathBuf> {
+    if program.file_name().and_then(|name| name.to_str()) != Some("env") {
+        return None;
+    }
+    let mut index = 0;
+    while index < args.len() {
+        let arg = &args[index];
+        if arg == "-" || is_env_assignment(arg) {
+            index += 1;
+            continue;
+        }
+        if let Some(split_string) = arg.strip_prefix("--split-string=") {
+            let split = shell_words::split(split_string).ok()?;
+            return split
+                .first()
+                .and_then(|command| resolve_executable(command));
+        }
+        if arg == "-S" || arg == "--split-string" {
+            let split = shell_words::split(args.get(index + 1)?).ok()?;
+            return split
+                .first()
+                .and_then(|command| resolve_executable(command));
+        }
+        if arg == "-u" || arg == "--unset" || arg == "-C" || arg == "--chdir" {
+            index += 2;
+            continue;
+        }
+        if arg.starts_with("--unset=") || arg.starts_with("--chdir=") {
+            index += 1;
+            continue;
+        }
+        if arg.starts_with('-') {
+            index += 1;
+            continue;
+        }
+        return resolve_executable(arg);
+    }
+    None
+}
+
+fn is_env_assignment(value: &str) -> bool {
+    let Some((name, _)) = value.split_once('=') else {
+        return false;
+    };
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn literal_host_path(word: &str) -> Option<&Path> {
+    if word.contains('%') {
+        return None;
+    }
+    if word.starts_with('/') {
+        return Some(Path::new(word));
+    }
+    let (_, value) = word.split_once('=')?;
+    value.starts_with('/').then(|| Path::new(value))
 }
 
 fn is_shell(path: &Path) -> bool {

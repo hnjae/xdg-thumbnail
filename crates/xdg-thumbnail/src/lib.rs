@@ -1275,35 +1275,7 @@ pub struct CacheEntryHandle {
 impl CacheEntryHandle {
     /// Removes the handled entry after containment and symlink checks.
     pub fn remove(&self) -> Result<()> {
-        if self.path.parent() != Some(self.cache_dir.as_path()) {
-            return Err(ThumbnailError::UnsafeRemoval(
-                "entry is not a direct child of its cache directory",
-            ));
-        }
-        let cache_dir_metadata =
-            fs::symlink_metadata(&self.cache_dir).map_err(|source| ThumbnailError::Io {
-                context: "inspect cache directory before removal",
-                source,
-            })?;
-        if cache_dir_metadata.file_type().is_symlink() || !cache_dir_metadata.is_dir() {
-            return Err(ThumbnailError::UnsafeRemoval(
-                "cache directory is not a real directory",
-            ));
-        }
-        let metadata = fs::symlink_metadata(&self.path).map_err(|source| ThumbnailError::Io {
-            context: "inspect cache entry before removal",
-            source,
-        })?;
-        if metadata.file_type().is_symlink() {
-            return Err(ThumbnailError::UnsafeRemoval("entry is a symlink"));
-        }
-        if !metadata.is_file() {
-            return Err(ThumbnailError::UnsafeRemoval("entry is not a regular file"));
-        }
-        fs::remove_file(&self.path).map_err(|source| ThumbnailError::Io {
-            context: "remove cache entry",
-            source,
-        })
+        remove_cache_entry_handle(self)
     }
 
     /// Returns the handled path.
@@ -1311,6 +1283,91 @@ impl CacheEntryHandle {
     pub fn path(&self) -> &Path {
         &self.path
     }
+}
+
+#[cfg(unix)]
+fn remove_cache_entry_handle(handle: &CacheEntryHandle) -> Result<()> {
+    let filename = handle
+        .path
+        .file_name()
+        .ok_or(ThumbnailError::UnsafeRemoval("entry has no filename"))?;
+    let filename_path = Path::new(filename);
+    if filename_path.components().count() != 1
+        || filename == OsStr::new(".")
+        || filename == OsStr::new("..")
+        || handle.path.parent() != Some(handle.cache_dir.as_path())
+    {
+        return Err(ThumbnailError::UnsafeRemoval(
+            "entry is not a direct child of its cache directory",
+        ));
+    }
+
+    let dir = rustix::fs::open(
+        &handle.cache_dir,
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::CLOEXEC
+            | rustix::fs::OFlags::DIRECTORY
+            | rustix::fs::OFlags::NOFOLLOW,
+        rustix::fs::Mode::empty(),
+    )
+    .map_err(|source| ThumbnailError::Io {
+        context: "open cache directory before removal",
+        source: std::io::Error::from(source),
+    })?;
+
+    let stat = rustix::fs::statat(&dir, filename, rustix::fs::AtFlags::SYMLINK_NOFOLLOW).map_err(
+        |source| ThumbnailError::Io {
+            context: "inspect cache entry before removal",
+            source: std::io::Error::from(source),
+        },
+    )?;
+    let file_type = rustix::fs::FileType::from_raw_mode(stat.st_mode);
+    if file_type.is_symlink() {
+        return Err(ThumbnailError::UnsafeRemoval("entry is a symlink"));
+    }
+    if !file_type.is_file() {
+        return Err(ThumbnailError::UnsafeRemoval("entry is not a regular file"));
+    }
+
+    rustix::fs::unlinkat(&dir, filename, rustix::fs::AtFlags::empty()).map_err(|source| {
+        ThumbnailError::Io {
+            context: "remove cache entry",
+            source: std::io::Error::from(source),
+        }
+    })
+}
+
+#[cfg(not(unix))]
+fn remove_cache_entry_handle(handle: &CacheEntryHandle) -> Result<()> {
+    if handle.path.parent() != Some(handle.cache_dir.as_path()) {
+        return Err(ThumbnailError::UnsafeRemoval(
+            "entry is not a direct child of its cache directory",
+        ));
+    }
+    let cache_dir_metadata =
+        fs::symlink_metadata(&handle.cache_dir).map_err(|source| ThumbnailError::Io {
+            context: "inspect cache directory before removal",
+            source,
+        })?;
+    if cache_dir_metadata.file_type().is_symlink() || !cache_dir_metadata.is_dir() {
+        return Err(ThumbnailError::UnsafeRemoval(
+            "cache directory is not a real directory",
+        ));
+    }
+    let metadata = fs::symlink_metadata(&handle.path).map_err(|source| ThumbnailError::Io {
+        context: "inspect cache entry before removal",
+        source,
+    })?;
+    if metadata.file_type().is_symlink() {
+        return Err(ThumbnailError::UnsafeRemoval("entry is a symlink"));
+    }
+    if !metadata.is_file() {
+        return Err(ThumbnailError::UnsafeRemoval("entry is not a regular file"));
+    }
+    fs::remove_file(&handle.path).map_err(|source| ThumbnailError::Io {
+        context: "remove cache entry",
+        source,
+    })
 }
 
 impl InstalledThumbnail {

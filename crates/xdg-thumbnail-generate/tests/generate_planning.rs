@@ -3,6 +3,7 @@
 
 use assert_cmd::Command;
 use serde_json::Value;
+use std::ffi::OsString;
 use tempfile::TempDir;
 use xdg_thumbnail::{
     CacheRoot, OriginalIdentity, PersonalThumbnailUri, ReadableOriginalIdentity, ThumbnailSize,
@@ -112,6 +113,83 @@ fn try_exec_without_execute_permission_is_ignored() {
         .stdout(predicates::str::contains("no-matching-thumbnailer"));
 }
 
+#[cfg(unix)]
+#[test]
+fn required_sandbox_rejects_env_wrapped_shell_entries_before_execution() {
+    let fixture = Fixture::new();
+    fixture.write_executable("bwrap", "#!/bin/sh\nexit 99\n");
+    let input = fixture.write_png_input("photo.png");
+    fixture.write_thumbnailer("shell.thumbnailer", "env -u FOO sh -c true", "image/png;");
+
+    let records = fixture.run_jsonl_code(
+        ["--dry-run", "--format", "jsonl", input.to_str().unwrap()],
+        1,
+    );
+
+    assert_eq!(records[0]["decision"], "failed");
+    assert_eq!(records[0]["reason"], "sandbox-ineligible");
+    assert_eq!(
+        records[0]["sandbox_eligibility"],
+        "runtime-exposure-unavailable"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn required_sandbox_rejects_literal_user_host_paths_before_execution() {
+    let fixture = Fixture::new();
+    fixture.write_executable("bwrap", "#!/bin/sh\nexit 99\n");
+    let input = fixture.write_png_input("photo.png");
+    let helper = fixture.write_executable("user-helper", "#!/bin/sh\nexit 0\n");
+    fixture.write_thumbnailer(
+        "host-path.thumbnailer",
+        &format!("/bin/true {} %i %o %s", helper.display()),
+        "image/png;",
+    );
+
+    let records = fixture.run_jsonl_code(
+        ["--dry-run", "--format", "jsonl", input.to_str().unwrap()],
+        1,
+    );
+
+    assert_eq!(records[0]["decision"], "failed");
+    assert_eq!(records[0]["reason"], "sandbox-ineligible");
+    assert!(
+        records[0]["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("literal host path")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn required_sandbox_rejects_env_wrapped_user_commands_before_execution() {
+    let fixture = Fixture::new();
+    fixture.write_executable("bwrap", "#!/bin/sh\nexit 99\n");
+    let input = fixture.write_png_input("photo.png");
+    fixture.write_executable("user-helper", "#!/bin/sh\nexit 0\n");
+    fixture.write_thumbnailer(
+        "env-user.thumbnailer",
+        "env user-helper %i %o %s",
+        "image/png;",
+    );
+
+    let records = fixture.run_jsonl_code(
+        ["--dry-run", "--format", "jsonl", input.to_str().unwrap()],
+        1,
+    );
+
+    assert_eq!(records[0]["decision"], "failed");
+    assert_eq!(records[0]["reason"], "sandbox-ineligible");
+    assert!(
+        records[0]["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("env-wrapped command")
+    );
+}
+
 struct Fixture {
     root: TempDir,
     cache_home: TempDir,
@@ -131,27 +209,40 @@ impl Fixture {
 
     fn command<const N: usize>(&self, args: [&str; N]) -> assert_cmd::assert::Assert {
         let mut command = Command::cargo_bin("xdg-thumbnail-generate").unwrap();
+        let mut path = OsString::from(self.root.path());
+        path.push(":");
+        path.push(std::env::var_os("PATH").unwrap_or_default());
         command
             .env("XDG_CACHE_HOME", self.cache_home.path())
             .env("HOME", self.home.path())
             .env("XDG_DATA_HOME", self.data_home.path())
             .env("XDG_DATA_DIRS", "")
+            .env("PATH", path)
             .args(args);
         command.assert()
     }
 
     fn run_jsonl<const N: usize>(&self, args: [&str; N]) -> Vec<Value> {
         let output = self.command(args).success().get_output().stdout.clone();
-        String::from_utf8(output)
-            .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str::<Value>(line).unwrap())
-            .collect()
+        parse_jsonl(output)
+    }
+
+    fn run_jsonl_code<const N: usize>(&self, args: [&str; N], code: i32) -> Vec<Value> {
+        let output = self.command(args).code(code).get_output().stdout.clone();
+        parse_jsonl(output)
     }
 
     fn write_png_input(&self, name: &str) -> std::path::PathBuf {
         let path = self.root.path().join(name);
         std::fs::write(&path, rendered_png()).unwrap();
+        path
+    }
+
+    #[cfg(unix)]
+    fn write_executable(&self, name: &str, content: &str) -> std::path::PathBuf {
+        let path = self.root.path().join(name);
+        std::fs::write(&path, content).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
         path
     }
 
@@ -195,6 +286,14 @@ impl Fixture {
             .install_personal_thumbnail(&original, ThumbnailSize::Normal, &rendered_png())
             .unwrap();
     }
+}
+
+fn parse_jsonl(output: Vec<u8>) -> Vec<Value> {
+    String::from_utf8(output)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect()
 }
 
 fn rendered_png() -> Vec<u8> {

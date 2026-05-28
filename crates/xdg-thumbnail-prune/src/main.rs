@@ -242,7 +242,7 @@ fn run(cli: Cli) -> std::result::Result<u8, String> {
     }
 
     match cli.format {
-        FormatArg::Human => write_human(&records, &summary, cli.age_basis),
+        FormatArg::Human => write_human(&records, &summary, cli.age_basis, cli.verbose),
         FormatArg::Jsonl => write_jsonl(&records, &summary, cli.age_basis),
     }
 
@@ -599,9 +599,9 @@ fn evaluate_age_based(
     }
 }
 
-fn write_human(records: &[EntryRecord], summary: &Summary, age_basis: AgeBasisArg) {
+fn write_human(records: &[EntryRecord], summary: &Summary, age_basis: AgeBasisArg, verbose: bool) {
     for record in records {
-        if record.decision == "keep" {
+        if record.decision == "keep" && !verbose {
             continue;
         }
         let action = if record.decision == "delete" && record.applied {

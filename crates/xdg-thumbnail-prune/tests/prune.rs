@@ -145,6 +145,22 @@ fn deletes_entries_whose_filename_does_not_match_stored_uri() {
     assert_eq!(records[0]["reason"], "uri-filename-mismatch");
 }
 
+#[test]
+fn verbose_human_output_includes_kept_entries() {
+    let fixture = Fixture::new();
+    fixture.install_valid_local_thumbnail();
+
+    Command::cargo_bin("xdg-thumbnail-prune")
+        .unwrap()
+        .env("XDG_CACHE_HOME", fixture.cache_home.path())
+        .env("HOME", fixture.home.path())
+        .args(["--verbose", "--age-basis", "modification-time"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("keep"))
+        .stdout(predicates::str::contains("local-stable-file"));
+}
+
 struct Fixture {
     cache_home: TempDir,
     home: TempDir,
@@ -220,6 +236,27 @@ impl Fixture {
             root.personal_path(&wrong_uri, &CacheNamespace::Size(ThumbnailSize::Normal));
         std::fs::rename(installed.path(), &mismatched).unwrap();
         mismatched
+    }
+
+    fn install_valid_local_thumbnail(&self) -> std::path::PathBuf {
+        let original_path = self.home.path().join("original.png");
+        std::fs::write(&original_path, b"original").unwrap();
+        let metadata = std::fs::metadata(&original_path).unwrap();
+        let uri = PersonalThumbnailUri::from_absolute_path_bytes(
+            original_path.as_os_str().as_encoded_bytes(),
+        )
+        .unwrap();
+        let mtime = UnixMTimeSeconds::from_system_time(metadata.modified().unwrap()).unwrap();
+        let original = ReadableOriginalIdentity::new(
+            OriginalIdentity::new(uri, mtime, Some(metadata.len()), Some("image/png")).unwrap(),
+        );
+        let root = CacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
+        root.install_personal_thumbnail(&original, ThumbnailSize::Normal, &rendered_png())
+            .unwrap();
+        root.personal_path(
+            original.identity().uri(),
+            &CacheNamespace::Size(ThumbnailSize::Normal),
+        )
     }
 }
 
