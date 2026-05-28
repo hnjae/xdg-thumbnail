@@ -31,7 +31,8 @@ The library keeps a flat public API through `lib.rs` re-exports, but internal mo
 - `namespace` owns successful thumbnail sizes, failure namespaces, and cache namespace path joining.
 - `uri` owns canonical personal and shared thumbnail URI identity construction, validation, percent encoding, and MD5 filename derivation.
 - `identity` owns original freshness facts, readability-confirmed identities, Unix mtime conversion, and shared-repository lookup context.
-- `lib.rs` owns higher-level cache root operations, PNG metadata parsing, personal-cache metadata validation, inspection handles, installation, and removal until those domains are split into dedicated modules.
+- `png` owns PNG metadata parsing, successful-thumbnail conformance checks, personal and shared metadata validation, rendered PNG normalization, and final Freedesktop RGBA PNG encoding.
+- `lib.rs` owns higher-level cache root operations, inspection handles, installation orchestration, and removal until those domains are split into dedicated modules.
 
 ## Library Responsibilities
 
