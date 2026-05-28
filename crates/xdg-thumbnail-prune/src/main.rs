@@ -1,77 +1,767 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use xdg_thumbnail::ThumbnailSize;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-#[allow(dead_code)]
-mod policy {
-    /// A cleanup-oriented URI classification owned by the prune policy layer.
-    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-    pub enum UriClass {
-        /// A local file whose path can be checked directly.
-        LocalStableFile,
-        /// A local-looking file whose backing storage may be temporarily unavailable.
-        LocalRemovableOrPortal,
-        /// A network or internet-related URI.
-        Remote,
-        /// A virtual, archive, or desktop-environment-specific URI.
-        ArchiveOrVirtual,
-        /// A URI that cannot be classified confidently.
-        Unknown,
-    }
+use base64::Engine;
+use clap::{Parser, ValueEnum};
+use serde::Serialize;
+use xdg_thumbnail::{
+    AccessTimePreservation, CacheEntryInspection, CacheEntryProblem, CacheNamespace, CacheRoot,
+    OriginalIdentity, PersonalThumbnailUri, ThumbnailSize, ThumbnailUriIdentity, UnixMTimeSeconds,
+    ValidationOutcome, validate_personal_thumbnail,
+};
 
-    /// A deletion reason returned by cleanup policy evaluation.
-    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-    pub enum DeleteReason {
-        /// The original stable local file is missing.
-        OriginalMissing,
-        /// The original exists but stored metadata no longer matches it.
-        StaleLocalMetadata,
-        /// A remote thumbnail is older than the configured threshold.
-        RemoteOlderThanThreshold,
-        /// A virtual or archive thumbnail is older than the configured threshold.
-        VirtualOlderThanThreshold,
-        /// A removable-media-like thumbnail is older than the configured threshold.
-        RemovableOlderThanThreshold,
-        /// The thumbnail file or required metadata is malformed.
-        Malformed,
-    }
+#[cfg(unix)]
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
 
-    /// A reason for skipping a cache entry.
-    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-    pub enum SkipReason {
-        /// The entry is outside the current scan policy.
-        OutOfScope,
-        /// The original cannot be checked reliably enough for deletion.
-        OriginalUnverifiable,
-        /// The cache filename is not part of the standard thumbnail namespace.
-        NonstandardFilename,
-        /// The entry could not be inspected because of filesystem permissions or I/O errors.
-        Unreadable,
-    }
+#[derive(Parser, Debug)]
+#[command(version, about)]
+struct Cli {
+    #[arg(long, default_value = "30d", value_parser = parse_duration)]
+    older_than: Duration,
+    #[arg(long)]
+    delete: bool,
+    #[arg(long)]
+    delete_stale_local: bool,
+    #[arg(long)]
+    allow_delete_failures: bool,
+    #[arg(long, value_enum)]
+    size: Vec<SizeArg>,
+    #[arg(long, value_enum, default_value_t = ScopeArg::Thumbnails)]
+    scope: ScopeArg,
+    #[arg(long)]
+    include_nonstandard_files: bool,
+    #[arg(long)]
+    removable_prefix: Vec<PathBuf>,
+    #[arg(long)]
+    ignore_fhs_media: bool,
+    #[arg(long, value_enum, default_value_t = AgeBasisArg::AccessTime)]
+    age_basis: AgeBasisArg,
+    #[arg(long, value_enum, default_value_t = FormatArg::Human)]
+    format: FormatArg,
+    #[arg(long)]
+    verbose: bool,
+}
 
-    /// A cleanup decision produced from cache state and caller policy.
-    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-    pub enum CleanupDecision {
-        /// Keep the thumbnail as-is.
-        Keep,
-        /// Delete the thumbnail for the given reason.
-        Delete(DeleteReason),
-        /// The thumbnail is stale and should be recreated by an application.
-        Recreate,
-        /// Skip the thumbnail for the given reason.
-        Skip(SkipReason),
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum SizeArg {
+    Normal,
+    Large,
+    #[value(name = "x-large")]
+    XLarge,
+    #[value(name = "xx-large")]
+    XxLarge,
+}
+
+impl From<SizeArg> for ThumbnailSize {
+    fn from(value: SizeArg) -> Self {
+        match value {
+            SizeArg::Normal => Self::Normal,
+            SizeArg::Large => Self::Large,
+            SizeArg::XLarge => Self::XLarge,
+            SizeArg::XxLarge => Self::XxLarge,
+        }
     }
 }
 
-fn main() {
-    let sizes = ThumbnailSize::all()
-        .map(ThumbnailSize::directory_name)
-        .join(", ");
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum ScopeArg {
+    Thumbnails,
+    Failures,
+    All,
+}
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum AgeBasisArg {
+    #[value(name = "access-time")]
+    AccessTime,
+    #[value(name = "modification-time")]
+    ModificationTime,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum FormatArg {
+    Human,
+    Jsonl,
+}
+
+#[derive(Default)]
+struct Summary {
+    scanned: u64,
+    kept: u64,
+    would_delete: u64,
+    deleted: u64,
+    skipped: u64,
+    errors: u64,
+    deletion_failed: bool,
+    nonfatal_error: bool,
+    timestamp_unavailable: u64,
+    timestamp_unreliable: u64,
+    timestamp_preservation_unavailable: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum UriClass {
+    LocalStableFile,
+    LocalRemovableOrPortal,
+    Remote,
+    ArchiveOrVirtual,
+    Unknown,
+}
+
+impl UriClass {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::LocalStableFile => "local-stable-file",
+            Self::LocalRemovableOrPortal => "local-removable-or-portal",
+            Self::Remote => "remote",
+            Self::ArchiveOrVirtual => "archive-or-virtual",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Decision {
+    Keep,
+    Delete,
+    Recreate,
+    Skip,
+}
+
+impl Decision {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Keep => "keep",
+            Self::Delete => "delete",
+            Self::Recreate => "recreate",
+            Self::Skip => "skip",
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct EntryRecord {
+    schema_version: u8,
+    event: &'static str,
+    thumbnail_path_display: String,
+    thumbnail_path_bytes_b64: Option<String>,
+    uri: Option<String>,
+    namespace: String,
+    classification: &'static str,
+    decision: &'static str,
+    applied: bool,
+    reason: Option<&'static str>,
+    age_basis: &'static str,
+    timestamp: Option<i64>,
+    access_time_preservation: &'static str,
+    error: Option<ErrorRecord>,
+}
+
+#[derive(Serialize)]
+struct ErrorRecord {
+    kind: &'static str,
+    message: String,
+}
+
+#[derive(Serialize)]
+struct SummaryRecord {
+    schema_version: u8,
+    event: &'static str,
+    scanned: u64,
+    kept: u64,
+    would_delete: u64,
+    deleted: u64,
+    skipped: u64,
+    errors: u64,
+    age_basis: &'static str,
+    timestamp_unavailable: u64,
+    timestamp_unreliable: u64,
+    timestamp_preservation_unavailable: u64,
+}
+
+fn main() -> ExitCode {
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(error) => {
+            let _ = error.print();
+            return ExitCode::from(2);
+        }
+    };
+
+    if cli.allow_delete_failures && matches!(cli.scope, ScopeArg::Thumbnails) {
+        eprintln!("--allow-delete-failures requires --scope failures or --scope all");
+        return ExitCode::from(2);
+    }
+    if !cli.size.is_empty() && matches!(cli.scope, ScopeArg::Failures) {
+        eprintln!("--size cannot be used with --scope failures");
+        return ExitCode::from(2);
+    }
+
+    match run(cli) {
+        Ok(code) => ExitCode::from(code),
+        Err(message) => {
+            eprintln!("{message}");
+            ExitCode::from(3)
+        }
+    }
+}
+
+fn run(cli: Cli) -> std::result::Result<u8, String> {
+    let root = CacheRoot::resolve_from_env().map_err(|error| error.to_string())?;
+    let sizes = if cli.size.is_empty() {
+        ThumbnailSize::all().to_vec()
+    } else {
+        cli.size.iter().copied().map(ThumbnailSize::from).collect()
+    };
+
+    let mut entries = Vec::new();
+    if matches!(cli.scope, ScopeArg::Thumbnails | ScopeArg::All) {
+        entries.extend(
+            root.inspect_thumbnails(&sizes, cli.include_nonstandard_files)
+                .map_err(|error| error.to_string())?,
+        );
+    }
+    if matches!(cli.scope, ScopeArg::Failures | ScopeArg::All) {
+        entries.extend(
+            root.inspect_failure_entries(cli.include_nonstandard_files)
+                .map_err(|error| error.to_string())?,
+        );
+    }
+
+    let classifier = Classifier::new(&cli);
+    let mut summary = Summary::default();
+    let mut records = Vec::new();
+    for entry in entries {
+        let record = evaluate_entry(&root, &cli, &classifier, &entry, &mut summary);
+        records.push(record);
+    }
+
+    match cli.format {
+        FormatArg::Human => write_human(&records, &summary, cli.age_basis),
+        FormatArg::Jsonl => write_jsonl(&records, &summary, cli.age_basis),
+    }
+
+    if summary.deletion_failed {
+        Ok(1)
+    } else if summary.nonfatal_error {
+        Ok(4)
+    } else {
+        Ok(0)
+    }
+}
+
+fn evaluate_entry(
+    _root: &CacheRoot,
+    cli: &Cli,
+    classifier: &Classifier,
+    entry: &CacheEntryInspection,
+    summary: &mut Summary,
+) -> EntryRecord {
+    summary.scanned += 1;
+    let uri = personal_uri(entry).cloned();
+    let uri_text = uri.as_ref().map(|uri| uri.as_str().to_owned());
+    let classification = uri
+        .as_ref()
+        .map_or(UriClass::Unknown, |uri| classifier.classify(uri));
+    let timestamp = selected_timestamp(entry, cli.age_basis);
+    let mut decision = Decision::Keep;
+    let mut reason = None;
+    let mut error = None;
+
+    if let ValidationOutcome::Invalid(problems) = entry.outcome() {
+        if problems.contains(&CacheEntryProblem::NonstandardFilename) {
+            decision = Decision::Skip;
+            reason = Some("nonstandard-filename");
+        } else if problems.contains(&CacheEntryProblem::InvalidPngStructure) {
+            decision = Decision::Delete;
+            reason = Some("invalid-png-structure");
+        } else if problems.contains(&CacheEntryProblem::MissingRequiredMetadata) {
+            decision = Decision::Delete;
+            reason = Some("missing-required-metadata");
+        } else if problems.contains(&CacheEntryProblem::InvalidMetadataSyntax) {
+            decision = Decision::Delete;
+            reason = Some("invalid-metadata-syntax");
+        } else if problems.contains(&CacheEntryProblem::NonconformingPngFormat) {
+            decision = Decision::Skip;
+            reason = Some("nonconforming-format");
+        } else if problems.contains(&CacheEntryProblem::DimensionsExceedNamespace) {
+            decision = Decision::Skip;
+            reason = Some("nonconforming-dimensions");
+        } else {
+            decision = Decision::Skip;
+            reason = Some("unreadable-entry");
+            summary.nonfatal_error = true;
+        }
+    } else if let Some(uri) = &uri {
+        match classification {
+            UriClass::LocalStableFile => {
+                evaluate_local_file(
+                    uri,
+                    entry,
+                    cli,
+                    &mut decision,
+                    &mut reason,
+                    &mut error,
+                    summary,
+                );
+            }
+            UriClass::Remote | UriClass::ArchiveOrVirtual | UriClass::LocalRemovableOrPortal => {
+                evaluate_age_based(
+                    entry,
+                    cli,
+                    classification,
+                    timestamp,
+                    &mut decision,
+                    &mut reason,
+                    summary,
+                );
+            }
+            UriClass::Unknown => {
+                decision = Decision::Skip;
+                reason = Some("original-unverifiable");
+            }
+        }
+    } else {
+        decision = Decision::Skip;
+        reason = Some("original-unverifiable");
+    }
+
+    if is_failure_namespace(entry.namespace())
+        && decision == Decision::Delete
+        && !cli.allow_delete_failures
+    {
+        decision = Decision::Skip;
+        reason = Some("failure-deletion-not-enabled");
+    }
+
+    let mut applied = false;
+    if decision == Decision::Delete {
+        if cli.delete {
+            match entry.handle().remove() {
+                Ok(()) => {
+                    applied = true;
+                    summary.deleted += 1;
+                }
+                Err(remove_error) => {
+                    summary.errors += 1;
+                    summary.deletion_failed = true;
+                    error = Some(ErrorRecord {
+                        kind: "delete-failed",
+                        message: remove_error.to_string(),
+                    });
+                }
+            }
+        } else {
+            summary.would_delete += 1;
+        }
+    } else if decision == Decision::Skip {
+        summary.skipped += 1;
+    } else {
+        summary.kept += 1;
+    }
+
+    EntryRecord {
+        schema_version: 0,
+        event: "entry",
+        thumbnail_path_display: entry.path().display().to_string(),
+        thumbnail_path_bytes_b64: path_bytes_b64(entry.path()),
+        uri: uri_text,
+        namespace: entry.namespace().name(),
+        classification: classification.as_str(),
+        decision: decision.as_str(),
+        applied,
+        reason,
+        age_basis: age_basis_name(cli.age_basis),
+        timestamp: timestamp.and_then(system_time_seconds),
+        access_time_preservation: access_preservation_name(
+            entry.timestamps().access_time_preserved_during_inspection(),
+        ),
+        error,
+    }
+}
+
+fn evaluate_local_file(
+    uri: &PersonalThumbnailUri,
+    entry: &CacheEntryInspection,
+    cli: &Cli,
+    decision: &mut Decision,
+    reason: &mut Option<&'static str>,
+    error: &mut Option<ErrorRecord>,
+    summary: &mut Summary,
+) {
+    let Some(path) = local_file_uri_to_path(uri.as_str()) else {
+        *decision = Decision::Skip;
+        *reason = Some("original-unverifiable");
+        return;
+    };
+    let metadata = match std::fs::metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(io_error) if io_error.kind() == std::io::ErrorKind::NotFound => {
+            *decision = Decision::Delete;
+            *reason = Some("original-missing");
+            return;
+        }
+        Err(io_error) => {
+            *decision = Decision::Skip;
+            *reason = Some("original-unverifiable");
+            *error = Some(ErrorRecord {
+                kind: "original-unverifiable",
+                message: io_error.to_string(),
+            });
+            summary.nonfatal_error = true;
+            return;
+        }
+    };
+    let Ok(modified) = metadata.modified() else {
+        *decision = Decision::Skip;
+        *reason = Some("original-unverifiable");
+        summary.nonfatal_error = true;
+        return;
+    };
+    let Ok(mtime) = UnixMTimeSeconds::from_system_time(modified) else {
+        *decision = Decision::Skip;
+        *reason = Some("original-unverifiable");
+        summary.nonfatal_error = true;
+        return;
+    };
+    let Ok(bytes) = std::fs::read(entry.path()) else {
+        *decision = Decision::Skip;
+        *reason = Some("unreadable-entry");
+        summary.nonfatal_error = true;
+        return;
+    };
+    let original =
+        match OriginalIdentity::new(uri.clone(), mtime, Some(metadata.len()), None::<String>) {
+            Ok(original) => original,
+            Err(_) => {
+                *decision = Decision::Skip;
+                *reason = Some("original-unverifiable");
+                summary.nonfatal_error = true;
+                return;
+            }
+        };
+    let Some(size) = successful_size(entry.namespace()) else {
+        *decision = Decision::Keep;
+        return;
+    };
+    match validate_personal_thumbnail(&bytes, &original, size) {
+        ValidationOutcome::FullyVerified => {
+            *decision = Decision::Keep;
+            *reason = None;
+        }
+        ValidationOutcome::Invalid(problems)
+            if problems.contains(&CacheEntryProblem::StaleMetadata) =>
+        {
+            if cli.delete_stale_local {
+                *decision = Decision::Delete;
+                *reason = Some("stale-local-metadata");
+            } else {
+                *decision = Decision::Recreate;
+                *reason = Some("stale-local-metadata");
+            }
+        }
+        ValidationOutcome::Invalid(problems)
+            if problems.contains(&CacheEntryProblem::InvalidMetadataSyntax) =>
+        {
+            *decision = Decision::Delete;
+            *reason = Some("invalid-metadata-syntax");
+        }
+        ValidationOutcome::Invalid(problems)
+            if problems.contains(&CacheEntryProblem::MissingRequiredMetadata) =>
+        {
+            *decision = Decision::Delete;
+            *reason = Some("missing-required-metadata");
+        }
+        _ => {
+            *decision = Decision::Skip;
+            *reason = Some("original-unverifiable");
+        }
+    }
+}
+
+fn evaluate_age_based(
+    entry: &CacheEntryInspection,
+    cli: &Cli,
+    classification: UriClass,
+    timestamp: Option<SystemTime>,
+    decision: &mut Decision,
+    reason: &mut Option<&'static str>,
+    summary: &mut Summary,
+) {
+    if cli.age_basis == AgeBasisArg::AccessTime
+        && entry.timestamps().access_time_preserved_during_inspection()
+            != AccessTimePreservation::Preserved
+    {
+        *decision = Decision::Skip;
+        *reason = Some("timestamp-preservation-unavailable");
+        summary.timestamp_preservation_unavailable += 1;
+        return;
+    }
+    let Some(timestamp) = timestamp else {
+        *decision = Decision::Skip;
+        *reason = Some("timestamp-unavailable");
+        summary.timestamp_unavailable += 1;
+        return;
+    };
+    let older_than_threshold = SystemTime::now()
+        .duration_since(timestamp)
+        .is_ok_and(|age| age >= cli.older_than);
+    if older_than_threshold {
+        *decision = Decision::Delete;
+        *reason = Some(match classification {
+            UriClass::Remote => "remote-older-than-threshold",
+            UriClass::ArchiveOrVirtual => "virtual-older-than-threshold",
+            UriClass::LocalRemovableOrPortal => "removable-older-than-threshold",
+            UriClass::LocalStableFile | UriClass::Unknown => "older-than-threshold",
+        });
+    }
+}
+
+fn write_human(records: &[EntryRecord], summary: &Summary, age_basis: AgeBasisArg) {
+    for record in records {
+        if record.decision == "keep" {
+            continue;
+        }
+        let action = if record.decision == "delete" && record.applied {
+            "deleted"
+        } else if record.decision == "delete" {
+            "would-delete"
+        } else {
+            record.decision
+        };
+        println!(
+            "{action} {} uri={} class={} reason={} basis={}",
+            record.thumbnail_path_display,
+            record.uri.as_deref().unwrap_or(""),
+            record.classification,
+            record.reason.unwrap_or("none"),
+            record.age_basis
+        );
+    }
     println!(
-        "{} {} ({sizes})",
-        env!("CARGO_PKG_NAME"),
-        env!("CARGO_PKG_VERSION")
+        "summary scanned={} kept={} would-delete={} deleted={} skipped={} errors={} basis={} timestamp-unavailable={} timestamp-unreliable={} timestamp-preservation-unavailable={}",
+        summary.scanned,
+        summary.kept,
+        summary.would_delete,
+        summary.deleted,
+        summary.skipped,
+        summary.errors,
+        age_basis_name(age_basis),
+        summary.timestamp_unavailable,
+        summary.timestamp_unreliable,
+        summary.timestamp_preservation_unavailable
     );
+    if age_basis == AgeBasisArg::AccessTime && summary.timestamp_preservation_unavailable > 0 {
+        println!(
+            "hint: modification-time cleanup is more portable and more aggressive; for example: xdg-thumbnail-prune --older-than 30d --age-basis modification-time"
+        );
+    }
+}
+
+fn write_jsonl(records: &[EntryRecord], summary: &Summary, age_basis: AgeBasisArg) {
+    for record in records {
+        println!(
+            "{}",
+            serde_json::to_string(record).expect("serialize entry record")
+        );
+    }
+    let summary_record = SummaryRecord {
+        schema_version: 0,
+        event: "summary",
+        scanned: summary.scanned,
+        kept: summary.kept,
+        would_delete: summary.would_delete,
+        deleted: summary.deleted,
+        skipped: summary.skipped,
+        errors: summary.errors,
+        age_basis: age_basis_name(age_basis),
+        timestamp_unavailable: summary.timestamp_unavailable,
+        timestamp_unreliable: summary.timestamp_unreliable,
+        timestamp_preservation_unavailable: summary.timestamp_preservation_unavailable,
+    };
+    println!(
+        "{}",
+        serde_json::to_string(&summary_record).expect("serialize summary record")
+    );
+}
+
+struct Classifier {
+    removable_prefixes: Vec<PathBuf>,
+    ignore_fhs_media: bool,
+}
+
+impl Classifier {
+    fn new(cli: &Cli) -> Self {
+        let mut removable_prefixes = cli.removable_prefix.clone();
+        let uid = rustix::process::getuid().as_raw();
+        removable_prefixes.extend([
+            PathBuf::from(format!("/run/media/{uid}")),
+            PathBuf::from(format!("/run/user/{uid}/doc")),
+            PathBuf::from(format!("/run/user/{uid}/gvfs")),
+            PathBuf::from(format!("/run/user/{uid}/kio-fuse")),
+        ]);
+        if !cli.ignore_fhs_media {
+            removable_prefixes.push(PathBuf::from("/media"));
+        }
+        Self {
+            removable_prefixes,
+            ignore_fhs_media: cli.ignore_fhs_media,
+        }
+    }
+
+    fn classify(&self, uri: &PersonalThumbnailUri) -> UriClass {
+        let text = uri.as_str();
+        let scheme = text.split_once(':').map_or("", |(scheme, _)| scheme);
+        match scheme {
+            "file" => {
+                let Some(path) = local_file_uri_to_path(text) else {
+                    return UriClass::Unknown;
+                };
+                if self
+                    .removable_prefixes
+                    .iter()
+                    .any(|prefix| path.starts_with(prefix))
+                {
+                    UriClass::LocalRemovableOrPortal
+                } else {
+                    let _ = self.ignore_fhs_media;
+                    UriClass::LocalStableFile
+                }
+            }
+            "http" | "https" | "ftp" | "sftp" | "smb" | "dav" => UriClass::Remote,
+            "zip" | "tar" | "trash" | "recent" | "mtp" => UriClass::ArchiveOrVirtual,
+            _ => UriClass::Unknown,
+        }
+    }
+}
+
+fn personal_uri(entry: &CacheEntryInspection) -> Option<&PersonalThumbnailUri> {
+    match entry.original_uri() {
+        Some(ThumbnailUriIdentity::Personal(uri)) => Some(uri),
+        _ => None,
+    }
+}
+
+fn successful_size(namespace: &CacheNamespace) -> Option<ThumbnailSize> {
+    match namespace {
+        CacheNamespace::Size(size) => Some(*size),
+        CacheNamespace::Failure(_) => None,
+    }
+}
+
+fn is_failure_namespace(namespace: &CacheNamespace) -> bool {
+    matches!(namespace, CacheNamespace::Failure(_))
+}
+
+fn selected_timestamp(entry: &CacheEntryInspection, basis: AgeBasisArg) -> Option<SystemTime> {
+    match basis {
+        AgeBasisArg::AccessTime => entry.timestamps().accessed_at(),
+        AgeBasisArg::ModificationTime => entry.timestamps().modified_at(),
+    }
+}
+
+fn age_basis_name(age_basis: AgeBasisArg) -> &'static str {
+    match age_basis {
+        AgeBasisArg::AccessTime => "access-time",
+        AgeBasisArg::ModificationTime => "modification-time",
+    }
+}
+
+fn access_preservation_name(value: AccessTimePreservation) -> &'static str {
+    match value {
+        AccessTimePreservation::Preserved => "preserved",
+        AccessTimePreservation::NotPreserved => "not-preserved",
+        AccessTimePreservation::NotNeeded => "not-needed",
+        AccessTimePreservation::Unsupported => "unsupported",
+    }
+}
+
+fn system_time_seconds(time: SystemTime) -> Option<i64> {
+    time.duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| i64::try_from(duration.as_secs()).ok())
+}
+
+#[cfg(unix)]
+fn path_bytes_b64(path: &Path) -> Option<String> {
+    Some(base64::engine::general_purpose::STANDARD_NO_PAD.encode(path.as_os_str().as_bytes()))
+}
+
+#[cfg(not(unix))]
+fn path_bytes_b64(_path: &Path) -> Option<String> {
+    None
+}
+
+#[cfg(unix)]
+fn local_file_uri_to_path(uri: &str) -> Option<PathBuf> {
+    let rest = uri.strip_prefix("file:")?;
+    let path = if let Some(path) = rest.strip_prefix("///") {
+        format!("/{path}")
+    } else if let Some(path) = rest.strip_prefix("//localhost/") {
+        format!("/{path}")
+    } else {
+        return None;
+    };
+    let bytes = percent_decode(path.as_bytes())?;
+    Some(PathBuf::from(OsString::from_vec(bytes)))
+}
+
+#[cfg(not(unix))]
+fn local_file_uri_to_path(_uri: &str) -> Option<PathBuf> {
+    None
+}
+
+fn percent_decode(input: &[u8]) -> Option<Vec<u8>> {
+    let mut output = Vec::with_capacity(input.len());
+    let mut i = 0;
+    while i < input.len() {
+        if input[i] == b'%' {
+            let high = hex_value(*input.get(i + 1)?)?;
+            let low = hex_value(*input.get(i + 2)?)?;
+            output.push(high << 4 | low);
+            i += 3;
+        } else {
+            output.push(input[i]);
+            i += 1;
+        }
+    }
+    Some(output)
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn parse_duration(input: &str) -> Result<Duration, String> {
+    if input.len() < 2 {
+        return Err("duration must include a unit suffix".to_owned());
+    }
+    let (number, unit) = input.split_at(input.len() - 1);
+    let value = number
+        .parse::<u64>()
+        .map_err(|_| "duration must be a positive integer followed by s, m, h, or d".to_owned())?;
+    if value == 0 {
+        return Err("duration must be greater than zero".to_owned());
+    }
+    let multiplier = match unit {
+        "s" => 1,
+        "m" => 60,
+        "h" => 60 * 60,
+        "d" => 24 * 60 * 60,
+        _ => return Err("duration unit must be one of s, m, h, or d".to_owned()),
+    };
+    value
+        .checked_mul(multiplier)
+        .map(Duration::from_secs)
+        .ok_or_else(|| "duration is too large".to_owned())
 }

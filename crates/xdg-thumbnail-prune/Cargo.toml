@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 base64.workspace = true
 clap.workspace = true
+rustix.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 xdg-thumbnail = { path = "../xdg-thumbnail" }
