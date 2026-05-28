@@ -1,0 +1,222 @@
+// SPDX-FileCopyrightText: 2026 KIM Hyunjae
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+use std::ffi::{OsStr, OsString};
+use std::fmt;
+use std::fs::File;
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
+
+use crate::{
+    PersonalThumbnailUri, Result, SharedRelativeThumbnailUri, ThumbnailError, ThumbnailSize,
+    validate_mime_type,
+};
+
+/// Whole Unix epoch seconds used by `Thumb::MTime`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct UnixMTimeSeconds {
+    seconds: i64,
+}
+
+impl UnixMTimeSeconds {
+    /// Creates a timestamp from whole Unix epoch seconds.
+    #[must_use]
+    pub const fn new(seconds: i64) -> Self {
+        Self { seconds }
+    }
+
+    /// Converts a [`SystemTime`] to whole non-negative Unix epoch seconds.
+    pub fn from_system_time(time: SystemTime) -> Result<Self> {
+        let duration = time
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| ThumbnailError::InvalidMetadata("mtime is before the Unix epoch"))?;
+        let seconds = i64::try_from(duration.as_secs())
+            .map_err(|_| ThumbnailError::InvalidMetadata("mtime overflows i64 seconds"))?;
+        Ok(Self { seconds })
+    }
+
+    /// Returns whole Unix epoch seconds.
+    #[must_use]
+    pub const fn as_i64(self) -> i64 {
+        self.seconds
+    }
+}
+
+impl fmt::Display for UnixMTimeSeconds {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.seconds)
+    }
+}
+
+/// Original identity and freshness facts needed for validation and writes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OriginalIdentity {
+    uri: PersonalThumbnailUri,
+    mtime: UnixMTimeSeconds,
+    size: Option<u64>,
+    mime_type: Option<String>,
+}
+
+impl OriginalIdentity {
+    /// Creates an original identity from caller-confirmed facts.
+    pub fn new(
+        uri: PersonalThumbnailUri,
+        mtime: UnixMTimeSeconds,
+        size: Option<u64>,
+        mime_type: Option<impl Into<String>>,
+    ) -> Result<Self> {
+        let mime_type = mime_type.map(Into::into);
+        if let Some(mime_type) = mime_type.as_deref() {
+            validate_mime_type(mime_type)?;
+        }
+        Ok(Self {
+            uri,
+            mtime,
+            size,
+            mime_type,
+        })
+    }
+
+    /// Returns the canonical personal-cache URI.
+    #[must_use]
+    pub fn uri(&self) -> &PersonalThumbnailUri {
+        &self.uri
+    }
+
+    /// Returns the original modification time.
+    #[must_use]
+    pub const fn mtime(&self) -> UnixMTimeSeconds {
+        self.mtime
+    }
+
+    /// Returns the original byte size when known.
+    #[must_use]
+    pub const fn size(&self) -> Option<u64> {
+        self.size
+    }
+
+    /// Returns the original MIME type when known.
+    #[must_use]
+    pub fn mime_type(&self) -> Option<&str> {
+        self.mime_type.as_deref()
+    }
+}
+
+/// An original identity whose source has been confirmed readable by the caller.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReadableOriginalIdentity {
+    identity: OriginalIdentity,
+}
+
+impl ReadableOriginalIdentity {
+    /// Marks caller-confirmed original identity facts as readable.
+    #[must_use]
+    pub const fn new(identity: OriginalIdentity) -> Self {
+        Self { identity }
+    }
+
+    /// Opens a local original for reading and derives its identity facts.
+    #[cfg(unix)]
+    pub fn from_local_path(
+        path: impl AsRef<Path>,
+        mime_type: Option<impl Into<String>>,
+    ) -> Result<Self> {
+        let path = path.as_ref();
+        let file = File::open(path).map_err(|source| ThumbnailError::Io {
+            context: "open original for reading",
+            source,
+        })?;
+        let metadata = file.metadata().map_err(|source| ThumbnailError::Io {
+            context: "read original metadata",
+            source,
+        })?;
+        let uri = PersonalThumbnailUri::from_absolute_path_bytes(path.as_os_str().as_bytes())?;
+        let mtime = UnixMTimeSeconds::from_system_time(metadata.modified().map_err(|source| {
+            ThumbnailError::Io {
+                context: "read original modification time",
+                source,
+            }
+        })?)?;
+        let identity = OriginalIdentity::new(uri, mtime, Some(metadata.len()), mime_type)?;
+        Ok(Self { identity })
+    }
+
+    /// Opens a local original for reading and derives its identity facts.
+    #[cfg(not(unix))]
+    pub fn from_local_path(
+        _path: impl AsRef<Path>,
+        _mime_type: Option<impl Into<String>>,
+    ) -> Result<Self> {
+        Err(ThumbnailError::UnsupportedPlatform)
+    }
+
+    /// Returns the readable identity facts.
+    #[must_use]
+    pub const fn identity(&self) -> &OriginalIdentity {
+        &self.identity
+    }
+}
+
+/// Explicit context for read-only shared repository lookup.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SharedRepositoryContext {
+    repository_root: PathBuf,
+    original_child_name: OsString,
+    shared_uri: SharedRelativeThumbnailUri,
+}
+
+impl SharedRepositoryContext {
+    /// Creates a shared repository context for one direct child of `repository_root`.
+    #[cfg(unix)]
+    pub fn new(repository_root: impl AsRef<Path>, original_child_name: &OsStr) -> Result<Self> {
+        let repository_root = repository_root.as_ref();
+        if !repository_root.is_absolute() {
+            return Err(ThumbnailError::CacheRootUnavailable(
+                "shared repository root must be absolute",
+            ));
+        }
+        let shared_uri =
+            SharedRelativeThumbnailUri::from_raw_child_name(original_child_name.as_bytes())?;
+        Ok(Self {
+            repository_root: repository_root.to_owned(),
+            original_child_name: original_child_name.to_owned(),
+            shared_uri,
+        })
+    }
+
+    /// Creates a shared repository context for one direct child of `repository_root`.
+    #[cfg(not(unix))]
+    pub fn new(_repository_root: impl AsRef<Path>, _original_child_name: &OsStr) -> Result<Self> {
+        Err(ThumbnailError::UnsupportedPlatform)
+    }
+
+    /// Returns the shared repository root directory.
+    #[must_use]
+    pub fn repository_root(&self) -> &Path {
+        &self.repository_root
+    }
+
+    /// Returns the direct child original filename.
+    #[must_use]
+    pub fn original_child_name(&self) -> &OsStr {
+        &self.original_child_name
+    }
+
+    /// Returns the shared URI used for hashing and optional metadata comparison.
+    #[must_use]
+    pub const fn shared_uri(&self) -> &SharedRelativeThumbnailUri {
+        &self.shared_uri
+    }
+
+    /// Computes the shared repository path for a successful thumbnail size.
+    #[must_use]
+    pub fn thumbnail_path(&self, size: ThumbnailSize) -> PathBuf {
+        self.repository_root
+            .join(".sh_thumbnails")
+            .join(size.directory_name())
+            .join(self.shared_uri.thumbnail_filename())
+    }
+}

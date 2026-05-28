@@ -23,6 +23,16 @@ The library crate is the spec-oriented core. It should implement stable cache in
 
 The CLI crates are policy runners. `xdg-thumbnail-prune` should translate user input into cleanup policy, call the library to inspect cache entries, and perform filesystem mutations only after the prune CLI has made an explicit deletion decision. `xdg-thumbnail-generate` should discover and execute installed thumbnailer helpers, then call library installation APIs only after generation succeeds.
 
+## Library Module Ownership
+
+The library keeps a flat public API through `lib.rs` re-exports, but internal modules own distinct concepts so cache behavior, identity construction, and CLI policy do not drift together during future changes.
+
+- `error` owns the crate error and result types.
+- `namespace` owns successful thumbnail sizes, failure namespaces, and cache namespace path joining.
+- `uri` owns canonical personal and shared thumbnail URI identity construction, validation, percent encoding, and MD5 filename derivation.
+- `identity` owns original freshness facts, readability-confirmed identities, Unix mtime conversion, and shared-repository lookup context.
+- `lib.rs` owns higher-level cache root operations, PNG metadata parsing and validation, inspection handles, installation, and removal until those domains are split into dedicated modules.
+
 ## Library Responsibilities
 
 - Resolve the thumbnail cache root from the XDG base directory rules, including ignoring relative `$XDG_CACHE_HOME` values.
