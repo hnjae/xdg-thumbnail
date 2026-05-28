@@ -19,7 +19,7 @@ Options:
 --allow-delete-failures       Allow failure entries scanned by --scope failures or --scope all to become deletion candidates. Actual deletion still requires --delete.
 --size <SIZE>                 Restrict successful thumbnail scan to one size namespace: normal, large, x-large, or xx-large. Can be passed multiple times.
 --scope <SCOPE>               Restrict scan scope: thumbnails, failures, or all. Defaults to thumbnails.
---include-nonstandard-files   Include nonstandard filenames in reports.
+--include-nonstandard-files   Include nonstandard filenames in reports as skipped entries.
 --removable-prefix <PATH>     Add a local path prefix that should use age-based cleanup. Can be passed multiple times.
 --ignore-fhs-media            Do not treat /media as removable by default.
 --age-basis <BASIS>           Timestamp basis for age-based cleanup: access-time or modification-time. Defaults to access-time.
@@ -50,17 +50,19 @@ When failure entries are scanned, the prune CLI applies the same inspection and 
 
 Failure entry scanning is limited to one namespace level below `$XDG_CACHE_HOME/thumbnails/fail/`. Each immediate real directory is treated as one program-version namespace, and only files directly contained in that namespace directory are inspected as failure entries. The prune CLI must not follow symlinked failure namespace directories, must not recurse into nested directories, and must report visible skipped entries when reporting is requested. A missing `fail` directory is not an error.
 
-By default, deletion decisions apply only to standard thumbnail entry filenames: a 32-character lowercase hexadecimal MD5 digest followed by `.png`. Files with nonstandard names are reported as skipped when visible during scanning and are not deletion candidates. `--include-nonstandard-files` makes them visible in reports. Directories and symlinks remain skipped unless a later design explicitly permits them.
+By default, deletion decisions and reports include only standard thumbnail entry filenames: a 32-character lowercase hexadecimal MD5 digest followed by `.png`. Files with nonstandard names are not visible in default reports and are not deletion candidates. `--include-nonstandard-files` makes them visible as skipped entries in reports. Directories and symlinks remain skipped unless a later design explicitly permits them.
 
 For local `file:` originals, deletion for a missing original requires a reliable local check that distinguishes confirmed absence from permission errors, transient I/O errors, unsupported authorities, and unsupported path conversion. Unverifiable originals are reported and skipped rather than treated as missing.
 
 ## Report Output
 
-The default human output should report deletion candidates, applied deletions, skipped entries that require user attention, operational errors, and a final summary. Entries kept without issues should be omitted from human output unless `--verbose` is passed. Initial machine-readable output should be available through `--format jsonl`; the initial JSONL schema is unstable and may change before the project reaches a stable release. JSONL emits one record for each visible inspected entry so dry-run and destructive runs can be compared exactly.
+The default human output should report deletion candidates, applied deletions, skipped entries that require user attention, operational errors, and a final summary. Entries kept without issues should be omitted from human output unless `--verbose` is passed. Initial machine-readable output should be available through `--format jsonl`. JSONL emits one record for each visible inspected entry so dry-run and destructive runs can be compared exactly, plus summary records when needed. Because the project is pre-release, additive JSONL fields may be added without a compatibility promise, but removing or renaming the v0 fields below requires a spec update.
 
-Each reported entry should include the thumbnail path, original URI if available, namespace, classification, decision, whether the decision was applied, reason, and the timestamp basis for age-based decisions. When access time is the selected age basis, reports should also expose whether access time was preserved during metadata inspection or why age evaluation was skipped. Verbose human output should include kept entries and classification details.
+Each JSONL entry record must include at least `schema_version: 0`, `event: "entry"`, `thumbnail_path`, `uri`, `namespace`, `classification`, `decision`, `applied`, `reason`, `age_basis`, `timestamp`, `access_time_preservation`, and `error`. Nullable fields are represented as `null` rather than omitted when the value could not be computed. `error` is either `null` or an object with stable `kind` and human-oriented `message` fields. Summary records use `event: "summary"` with counters for scanned, kept, would_delete, deleted, skipped, errors, and the selected age basis.
 
-Example:
+Each reported human entry should include the thumbnail path, original URI if available, namespace, classification, decision, whether the decision was applied, reason, and the timestamp basis for age-based decisions. When access time is the selected age basis, reports should also expose whether access time was preserved during metadata inspection or why age evaluation was skipped. Verbose human output should include kept entries and classification details.
+
+Example with `--include-nonstandard-files` enabled:
 
 ```text
 would-delete normal/abcdefabcdefabcdefabcdefabcdefab.png uri=http://example.test/a.jpg class=remote reason=remote-older-than-threshold age=45d basis=access-time
@@ -79,7 +81,7 @@ When `--age-basis modification-time` is used, human and JSONL output must expose
 - `1`: one or more deletions failed.
 - `2`: command-line usage error.
 - `3`: cache scan failed before producing reliable results.
-- `4`: scan completed but one or more nonfatal inspection errors occurred, such as unreadable entries, entries whose metadata could not be read without changing access time in an access-time cleanup run, or per-entry I/O errors that did not invalidate the whole scan.
+- `4`: scan completed but one or more nonfatal inspection errors occurred, such as unreadable entries or per-entry I/O errors that did not invalidate the whole scan. Entries skipped only because access time is unavailable, unreliable, or cannot be preserved are normal access-time policy outcomes and do not by themselves contribute to exit code `4`.
 
 Deletion candidates found during a non-delete report are not errors.
 
