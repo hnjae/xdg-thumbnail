@@ -41,9 +41,9 @@ The library should compare modification times for equality, not only check wheth
 
 Thumbnail source creation is outside the base library and prune CLI scope. The generate CLI or embedding application owns generation orchestration: it discovers or selects the renderer, decodes source formats, applies source metadata such as orientation, scales image data, and decides whether generation should be attempted. Source-format decoding and rendering for inputs such as PNG, WebP, documents, and video remain the responsibility of the selected thumbnailer helper or embedding application.
 
-When the generate CLI runs external `.thumbnailer` helpers, it runs them in the configured thumbnailer sandbox before reading their temporary output. The initial sandbox backend is `bubblewrap`: it provides a private mount namespace, unshared networking, read-only access to the selected input and required system resources, and write access only to the CLI-owned temporary output directory. If the selected executable, interpreter, or runtime files cannot be made available read-only in the required sandbox, the helper is not run. Sandbox setup is not part of the base library because it belongs to external process execution rather than cache validation or installation.
+When the generate CLI runs external `.thumbnailer` helpers, it runs them in the configured thumbnailer sandbox before reading their temporary output. The initial sandbox backend is Linux `bubblewrap`: it provides a private mount namespace, unshared networking, read-only access to the selected input and required read-only system resources, and write access only to the CLI-owned temporary output directory. User-controlled home, cache, config, and data directories are not exposed in the required sandbox unless a later compatibility mode explicitly changes that behavior. If the selected executable, interpreter, or runtime files cannot be made available read-only in the required sandbox, the helper is not run. Sandbox setup is not part of the base library because it belongs to external process execution rather than cache validation or installation.
 
-The library owns the Freedesktop installation mechanics for personal-cache entries once a caller supplies a complete original identity and an already rendered in-memory thumbnail payload. The initial install API should accept PNG bytes as the primary payload and may later expose narrow raw pixel convenience inputs. The caller owns renderer temporary files, including external thumbnailer `%o` outputs, and reads them before calling the library. The install path normalizes the rendered payload to an 8-bit non-interlaced RGBA PNG, validates the normalized PNG against the target namespace, writes standard metadata, creates private cache directories and final files, writes temporary files in the target directory, and publishes the result with an atomic rename.
+The library owns the Freedesktop installation mechanics for personal-cache entries once a caller supplies a readability-confirmed original identity and an already rendered in-memory thumbnail payload. The initial install API should accept PNG bytes as the primary payload and may later expose narrow raw pixel convenience inputs. The caller owns renderer temporary files, including external thumbnailer `%o` outputs, and reads them before calling the library. The install path normalizes the rendered payload to an 8-bit non-interlaced RGBA PNG, validates the normalized PNG against the target namespace, writes standard metadata, creates missing cache directories with mode `0700`, writes temporary files in the target directory, installs final files with mode `0600`, and publishes the result with an atomic rename.
 
 Shared-repository writes remain outside the initial lifecycle. Failure entry writing is an explicit library primitive because it uses the same Freedesktop filename, metadata, permission, and atomic-install rules, but callers own the policy for when a failure should be recorded.
 
@@ -53,13 +53,13 @@ Application lookup must not use existing thumbnails when the original is not cur
 
 ```mermaid
 flowchart TD
-    A[Caller rendered thumbnail payload] --> B{Original identity has URI and mtime?}
+    A[Caller rendered thumbnail payload] --> B{Readable original identity has URI and mtime?}
     B -- no --> C[Reject write]
     B -- yes --> D[Compute personal cache path]
     D --> E[Validate final PNG for namespace]
     E --> F[Write standard metadata]
     F --> G[Write temp file in target directory]
-    G --> H[Set private file permissions]
+    G --> H[Set 0600 file permissions]
     H --> I[Atomic rename to final path]
 ```
 
@@ -78,7 +78,7 @@ A thumbnail consumer that only wants to reuse existing thumbnails should be able
 ```rust
 let uri = ThumbnailUri::from_file_path(path)?;
 let original = OriginalFile::open_readable(path)?;
-let identity = OriginalIdentity::from_readable_file(&uri, &original)?;
+let identity = ReadableOriginalIdentity::from_readable_file(&uri, &original)?;
 let cache_path = cache.thumbnail_path(&uri, CacheNamespace::Size(ThumbnailSize::Normal));
 
 if cache.is_valid(&cache_path, &identity)?.is_fully_verified() {
@@ -96,7 +96,7 @@ The exact API should be shaped by implementation, but applications should not ne
 
 ## Failure Entries
 
-The standard supports per-program-version failure entries under `thumbnails/fail/<program-version>/`. The library should model these as failure namespaces, not as thumbnail sizes. It should be able to locate, parse, inspect, and explicitly write failure entries. Failure-entry writes require the caller to provide a validated direct directory namespace and original identity; the library must not decide when a failed render should suppress future attempts. Failure entries are PNG metadata carriers named with the same URI-derived filename procedure as successful thumbnails, and successful-thumbnail size validation does not apply to them.
+The standard supports per-program-version failure entries under `thumbnails/fail/<program-version>/`. The library should model these as failure namespaces, not as thumbnail sizes. It should be able to locate, parse, inspect, and explicitly write failure entries. Failure-entry writes require the caller to provide a validated direct directory namespace and a readability-confirmed original identity; the library must not decide when a failed render should suppress future attempts. Failure entries are PNG metadata carriers named with the same URI-derived filename procedure as successful thumbnails, and successful-thumbnail size validation does not apply to them.
 
 Initial behavior: the prune CLI scans successful thumbnail entries by default and scans failure entries only with `--scope failures` or `--scope all`. This avoids touching application-specific retry state without explicit user intent. Once failure entries are in scope, the prune CLI should inspect and classify them like successful thumbnails because the user is asking to manage cache entries for the same original URI identity; the special cases are that successful-thumbnail dimension validation does not apply and deletion requires `--allow-delete-failures` in addition to `--delete`.
 

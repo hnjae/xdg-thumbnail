@@ -1,6 +1,6 @@
 # Crate Boundaries
 
-The repository should be organized as a Cargo workspace with one reusable library crate and separate CLI crates for pruning and generation.
+The target repository shape is a Cargo workspace with one reusable library crate and separate CLI crates for pruning and generation. The current skeleton may omit planned crates until their implementation work starts; the target layout below documents intended ownership boundaries rather than a guarantee that every crate exists in the initial skeleton.
 
 Initial implementation scope is Unix-like XDG desktop environments. Platform-specific APIs should make Unix path bytes, permissions, file metadata, and XDG cache behavior explicit, and unsupported platforms should fail with clear errors rather than silently approximating incompatible cache identities.
 
@@ -35,15 +35,15 @@ The CLI crates are policy runners. `xdg-thumbnail-prune` should translate user i
 - Read standard PNG text metadata such as `Thumb::URI`, `Thumb::MTime`, `Thumb::Size`, and `Thumb::Mimetype`.
 - Write standard PNG text metadata such as required `Thumb::URI` and `Thumb::MTime`, plus optional `Thumb::Size`, `Thumb::Mimetype`, and media-specific keys when the caller supplies them.
 - Require `Thumb::URI` and `Thumb::MTime` for personal-cache validation and compare `Thumb::MTime` as whole Unix epoch seconds.
-- Reject personal-cache successful thumbnail and failure-entry writes when the caller cannot provide an original modification time, because such entries cannot satisfy global-cache freshness checks.
+- Reject personal-cache successful thumbnail and failure-entry writes when the caller cannot provide a readability-confirmed original identity with an original modification time, because such entries violate the Freedesktop write preconditions or cannot satisfy global-cache freshness checks.
 - Iterate cache entries from the personal thumbnail cache and optional shared thumbnail repositories.
 - Validate personal and shared thumbnails with separate contexts because shared repositories may omit `Thumb::URI` or `Thumb::MTime` when they use other freshness mechanisms.
 - Inspect successful thumbnail PNGs against the required image format and maximum dimensions for the selected size class.
 - Normalize caller-provided rendered thumbnail payloads to 8-bit non-interlaced RGBA PNG output before successful personal-cache installation.
-- Install successful personal-cache thumbnails atomically from caller-provided in-memory thumbnail payloads, after validating the normalized final PNG encoding and dimensions against the requested size namespace.
-- Create personal thumbnail cache directories and final thumbnail files with the private permissions required by the Freedesktop standard.
+- Install successful personal-cache thumbnails atomically from caller-provided in-memory thumbnail payloads and readability-confirmed original identities, after validating the normalized final PNG encoding and dimensions against the requested size namespace.
+- Create missing personal thumbnail cache directories with mode `0700` and final thumbnail files with mode `0600`, while reporting explicit permission errors instead of silently rewriting existing directory permissions.
 - Treat failure entries as metadata-carrying PNG files in program-version failure namespaces, not as successful thumbnail size entries.
-- Provide opt-in failure-entry writing when the caller supplies an explicit validated program-version namespace and original identity, without deciding application retry policy.
+- Provide opt-in failure-entry writing when the caller supplies an explicit validated program-version namespace and a readability-confirmed original identity, without deciding application retry policy.
 - Treat shared thumbnail repositories as read-only during initial lookup, cleanup, and application generation; shared-repository writes are outside the initial library and CLI responsibilities.
 - Return structured, policy-neutral inspection facts without applying CLI cleanup policy. Invalid PNG structure, missing required metadata, invalid metadata syntax, stale metadata, nonconforming PNG encoding, and dimension violations must remain distinguishable facts.
 - Provide cache entry handles for entries discovered by library iteration or explicit cache-path resolution, and implement safe removal on those handles with containment checks and no symlink following. The removal design should prefer directory-relative APIs such as `openat` and `unlinkat`, or a capability-style equivalent, so containment and symlink checks are not only string-prefix checks. Any fallback that cannot provide that strength must be documented and reported as best-effort.
@@ -72,25 +72,25 @@ The `x-large` and `xx-large` size classes are treated as supported documented be
 - Parse command-line options such as `--size`, `--force`, `--dry-run`, `--timeout`, `--sandbox`, `--format`, and `--verbose`.
 - Resolve relative local input paths against the current working directory into absolute paths, apply generate CLI input policy such as recursive-cache rejection, and call the library to construct canonical personal-cache thumbnail URIs without hidden symlink normalization.
 - Reject inputs located under the personal thumbnail cache or a shared `.sh_thumbnails` repository.
+- Confirm local input readability and obtain original metadata before keeping an existing thumbnail as valid or asking the library to install a generated thumbnail.
 - Discover `.thumbnailer` files from `$XDG_DATA_HOME/thumbnailers` and `$XDG_DATA_DIRS` thumbnailer directories.
 - Parse thumbnailer `Exec`, `TryExec`, and `MimeType` keys using key-file parsing, desktop-entry-style command tokenization, and thumbnailer-specific field-code expansion.
 - Determine input MIME types through the platform shared MIME database, including canonical aliases and subtype relationships exposed by that database, and select a matching thumbnailer deterministically.
 - Run selected thumbnailer commands directly as argument vectors with thumbnailer-specific `%i`, `%u`, `%o`, `%s`, and `%%` field-code expansion inside the configured sandbox.
 - Use temporary output paths for thumbnailer execution and never expose partial output as a cache entry.
-- Validate generated PNG output against successful-thumbnail namespace requirements before installation.
-- Ask the library to write required personal-cache metadata such as `Thumb::URI` and `Thumb::MTime`, plus optional metadata when available.
-- Ask the library to install generated thumbnails atomically under the resolved personal thumbnail cache root.
+- Verify that thumbnailer output exists and is readable before handing it to the library.
+- Ask the library to normalize the rendered payload, validate successful-thumbnail namespace requirements, write required personal-cache metadata such as `Thumb::URI` and `Thumb::MTime`, write optional metadata when available, and install generated thumbnails atomically under the resolved personal thumbnail cache root.
 - Skip valid existing thumbnails unless `--force` is passed.
 - Report generated, kept, skipped, and failed input-size pairs in human and JSONL formats.
 - Avoid writing shared thumbnail repositories or failure entries in the initial generate CLI.
 
 ## Thumbnailer Sandbox
 
-The initial generate CLI sandbox backend is `bubblewrap` (`bwrap`). Sandbox setup belongs to the generate CLI crate because it is tied to external thumbnailer execution, command expansion, temporary renderer output, and user-facing `--sandbox` policy rather than Freedesktop cache inspection or installation.
+The initial generate CLI sandbox backend is `bubblewrap` (`bwrap`) on Linux. Sandbox setup belongs to the generate CLI crate because it is tied to external thumbnailer execution, command expansion, temporary renderer output, and user-facing `--sandbox` policy rather than Freedesktop cache inspection or installation.
 
-In `--sandbox required` mode, the generate CLI must fail before executing a thumbnailer when `bwrap` is unavailable or when the requested isolation cannot be applied. There is no implicit unsandboxed fallback. `--sandbox off` is an explicit user opt-out and should be reflected in human and JSONL reports.
+In `--sandbox required` mode, the generate CLI must fail before executing a thumbnailer when `bwrap` is unavailable, when the host is not Linux, or when the requested isolation cannot be applied. There is no implicit unsandboxed fallback. `--sandbox off` is an explicit user opt-out and should be reflected in human and JSONL reports.
 
-The sandbox should create a private mount namespace and unshare networking. The thumbnailer should receive read access to the selected input, read access to required system resources such as executable paths, interpreters, dynamic loader state, MIME data, codecs, and font configuration, and write access only to a private temporary output directory owned by the generate CLI. The sandbox should not expose the user's home, personal thumbnail cache, XDG configuration directories, XDG data directories, or arbitrary writable host paths unless a later spec explicitly defines a compatibility mode. If the selected executable, interpreter, or required runtime files cannot be exposed read-only under `--sandbox required`, the generate CLI reports a sandbox eligibility failure and does not run that thumbnailer unsandboxed.
+The sandbox should create a private mount namespace and unshare networking. The thumbnailer should receive read access to the selected input, read access to required read-only system resources such as executable paths, interpreters, dynamic loader state, MIME data, codecs, and font configuration, and write access only to a private temporary output directory owned by the generate CLI. System locations such as `/usr`, `/lib`, and `/etc` may be exposed read-only when needed for the selected thumbnailer to start. User-controlled locations such as the user's home, personal thumbnail cache, `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`, user entries from `$XDG_CONFIG_DIRS` or `$XDG_DATA_DIRS`, and arbitrary writable host paths should not be exposed unless a later spec explicitly defines a compatibility mode. If the selected executable, interpreter, or required runtime files cannot be exposed read-only under `--sandbox required`, the generate CLI reports a sandbox eligibility failure and does not run that thumbnailer unsandboxed.
 
 `%i` and `%o` expand to sandbox-visible paths. `%u` remains the canonical original URI used for cache identity, hashing, and metadata, even when the sandbox-visible input path differs from the host path. The generate CLI owns the mapping between host input and sandbox input, the private temporary output directory, and cleanup of temporary files after it has read the generated PNG into memory.
 
@@ -121,6 +121,16 @@ pub struct FailureNamespace {
 
 pub struct CanonicalThumbnailUri {
     value: String,
+}
+
+pub struct OriginalIdentity {
+    uri: CanonicalThumbnailUri,
+    mtime: std::time::SystemTime,
+    size: Option<u64>,
+}
+
+pub struct ReadableOriginalIdentity {
+    identity: OriginalIdentity,
 }
 
 pub enum CacheEntryProblem {

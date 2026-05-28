@@ -24,11 +24,17 @@ Options:
 
 The option names above are the initial generate CLI contract. Behavior or option-name changes require a spec update.
 
+## Platform And Sandbox Support
+
+The initial sandboxed generate CLI supports Linux systems where `bubblewrap` (`bwrap`) is available and can create the required mount and network namespaces. On other Unix-like systems, or on Linux systems where `bwrap` is unavailable or cannot provide the requested isolation, `--sandbox required` fails before invoking a thumbnailer and reports the missing sandbox capability. The command must not fall back to unsandboxed execution unless the user explicitly passes `--sandbox off`.
+
 ## Input Scope
 
-The initial generate CLI accepts local filesystem paths only. Relative input paths are resolved against the current working directory into absolute paths before URI construction, but the generate CLI must not perform hidden symlink canonicalization as a URI normalization step. The generate CLI owns CLI input policy such as recursive-cache rejection, while the `xdg-thumbnail` library owns encoding the resulting absolute path bytes into the canonical personal-cache `file:` URI described in `docs/spec/uri-canonicalization.md`.
+The initial generate CLI accepts local filesystem paths only. Relative input paths are resolved against the current working directory into absolute paths before URI construction, but the generate CLI must not perform hidden symlink canonicalization as a URI normalization step. The resulting absolute path bytes are encoded into the canonical personal-cache `file:` URI described in `docs/spec/uri-canonicalization.md`.
 
 Inputs located inside the resolved personal thumbnail cache or a shared `.sh_thumbnails` repository are rejected. This prevents recursive thumbnail generation and keeps generated cache entries tied to original user content rather than cache artifacts.
+
+Before keeping an existing thumbnail as valid or installing a newly generated thumbnail, the generate CLI must confirm that the local input can be opened for reading and that the original modification time can be obtained. If this cannot be confirmed, the input-size pair fails or is skipped according to the reporting policy, and the generate CLI must not treat an existing cache entry as display-valid or write a successful or failure cache entry for that input.
 
 The generate CLI writes only to the user's personal thumbnail cache under `$XDG_CACHE_HOME/thumbnails/<size>/`, with the same `$XDG_CACHE_HOME` fallback behavior documented for the library and prune CLI. The initial generate CLI must not create or update shared thumbnail repositories and must not write failure entries under `thumbnails/fail/`.
 
@@ -49,7 +55,7 @@ For each input, the generate CLI determines the MIME type using the platform sha
 
 The `Exec` value uses thumbnailer command syntax: desktop-entry-style string unescaping and command-line tokenization, followed by thumbnailer-specific field-code expansion. The generate CLI must not apply Desktop Entry field-code meanings to `.thumbnailer` entries; in this format `%i`, `%u`, `%o`, and `%s` have the thumbnailer meanings documented below. The expanded command is executed directly as an argument vector inside a thumbnailer sandbox by default. The generate CLI must not invoke a shell implicitly. Shell behavior is used only when the selected thumbnailer explicitly names a shell in `Exec`.
 
-The default `--sandbox required` mode runs thumbnailers with sandbox isolation that prevents ambient access to the user's home, personal thumbnail cache, configuration directories, and network. The sandbox must allow the thumbnailer to read the selected input, read required system resources, execute the resolved thumbnailer program or interpreter, and write only to the CLI-provided temporary output location. If the required sandbox cannot be created or cannot expose the selected executable and required runtime files read-only, generation fails with an actionable diagnostic before running the thumbnailer. The generate CLI must not silently retry without sandboxing. `--sandbox off` disables sandboxing explicitly for users who choose to trust the selected thumbnailer; reports must expose that the thumbnailer ran without sandbox isolation.
+The default `--sandbox required` mode runs thumbnailers with sandbox isolation that prevents ambient access to the user's home, personal thumbnail cache, user configuration directories, user data directories, and network. The sandbox must allow the thumbnailer to read the selected input, read required read-only system resources, execute the resolved thumbnailer program or interpreter, and write only to the CLI-provided temporary output location. Required system resources may include executable paths, interpreters, dynamic loader state, MIME data, codecs, font configuration, and other read-only files under system locations such as `/usr`, `/lib`, or `/etc`. User-controlled XDG data and configuration directories are not exposed unless a later compatibility mode explicitly documents that behavior. If the required sandbox cannot be created or cannot expose the selected executable and required runtime files read-only, generation fails with an actionable diagnostic before running the thumbnailer. The generate CLI must not silently retry without sandboxing. `--sandbox off` disables sandboxing explicitly for users who choose to trust the selected thumbnailer; reports must expose that the thumbnailer ran without sandbox isolation.
 
 The initial field codes are:
 
@@ -63,11 +69,11 @@ Unknown field codes are usage errors for that thumbnailer entry and must be repo
 
 ## Cache Write Policy
 
-For each requested size, the generate CLI computes the target cache filename from the canonical original URI. If a valid existing thumbnail already matches the original identity and requested size, the generate CLI keeps it and does not run a thumbnailer unless `--force` is passed.
+For each requested size, the generate CLI computes the target cache filename from the canonical original URI. If a valid existing thumbnail already matches the readability-confirmed original identity and requested size, the generate CLI keeps it and does not run a thumbnailer unless `--force` is passed.
 
-When a thumbnailer runs successfully, the generate CLI validates the temporary output as a PNG suitable for the requested size namespace. It then writes or rewrites the final PNG metadata required for personal-cache validation, including at least `Thumb::URI` and `Thumb::MTime`, and including `Thumb::Size` and `Thumb::Mimetype` when those values are available. The final cache entry is installed atomically under the resolved personal thumbnail cache directory.
+When a thumbnailer exits successfully, the generate CLI verifies that the temporary output exists, is readable, and can be handed to the library as rendered thumbnail input. The library performs final PNG conformance validation, namespace dimension validation, metadata writing, permission-controlled temporary-file creation, and atomic installation under the resolved personal thumbnail cache directory. The installed PNG must contain the personal-cache metadata required for validation, including at least `Thumb::URI` and `Thumb::MTime`, and including `Thumb::Size` and `Thumb::Mimetype` when those values are available.
 
-Generated thumbnails must obey the same maximum dimensions as successful cache entries in the requested namespace. Non-PNG output, invalid PNG structure, dimension violations, missing temporary output, nonzero thumbnailer exit status, timeout, or metadata-write failure are generation failures for that input and size.
+Generated thumbnails must obey the same maximum dimensions as successful cache entries in the requested namespace. Non-PNG output, invalid PNG structure, dimension violations, missing temporary output, nonzero thumbnailer exit status, timeout, metadata-write failure, permission failure, or cache-installation failure are generation failures for that input and size.
 
 ## Report Output
 
@@ -89,7 +95,7 @@ summary inputs=3 requested=3 generated=1 kept=1 skipped=1 failed=0
 - `0`: generation completed and no requested input-size pair failed.
 - `1`: one or more requested input-size pairs failed during sandbox eligibility checks for the selected thumbnailer, thumbnailer execution, output validation, metadata writing, or cache installation.
 - `2`: command-line usage error.
-- `3`: thumbnailer discovery, global sandbox backend setup, or cache root resolution failed before producing reliable results.
+- `3`: thumbnailer discovery, sandbox backend setup, or cache root resolution failed before producing reliable results.
 - `4`: generation completed but one or more nonfatal inspection or matching errors occurred, such as unreadable inputs or invalid thumbnailer entries that did not prevent other requested work.
 
 ## Safety Requirements
