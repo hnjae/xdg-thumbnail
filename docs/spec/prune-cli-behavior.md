@@ -13,7 +13,7 @@ xdg-thumbnail-prune [OPTIONS]
 Options:
 
 ```text
---older-than <DURATION>       Age threshold for remote, virtual, and removable entries. Defaults to 30d.
+--older-than <DURATION>       Age threshold for remote, virtual, and removable entries. Defaults to 30d. See Duration Syntax.
 --delete                      Apply deletion decisions. Without this option, prune only reports planned actions.
 --delete-stale-local          Include stale local thumbnails whose originals still exist but no longer match stored metadata as deletion candidates. Actual deletion still requires --delete.
 --allow-delete-failures       Allow failure entries scanned by --scope failures or --scope all to become deletion candidates. Actual deletion still requires --delete.
@@ -28,6 +28,10 @@ Options:
 ```
 
 The option names above are the initial prune CLI contract. Behavior or option-name changes require a spec update.
+
+## Duration Syntax
+
+`<DURATION>` values are positive base-10 integers followed by a unit suffix with no whitespace. Supported units are `s` for seconds, `m` for minutes, `h` for hours, and `d` for 24-hour days. `0`, negative values, fractional values, missing units, unknown units, and values too large to represent safely are usage errors.
 
 ## Default Scan Scope
 
@@ -61,6 +65,8 @@ The default human output should report deletion candidates, applied deletions, s
 Each JSONL entry record must include at least `schema_version: 0`, `event: "entry"`, `thumbnail_path`, `uri`, `namespace`, `classification`, `decision`, `applied`, `reason`, `age_basis`, `timestamp`, `access_time_preservation`, and `error`. Nullable fields are represented as `null` rather than omitted when the value could not be computed. `error` is either `null` or an object with stable `kind` and human-oriented `message` fields. Summary records use `event: "summary"` with counters for scanned, kept, would_delete, deleted, skipped, errors, and the selected age basis.
 
 Each reported human entry should include the thumbnail path, original URI if available, namespace, classification, decision, whether the decision was applied, reason, and the timestamp basis for age-based decisions. When access time is the selected age basis, reports should also expose whether access time was preserved during metadata inspection or why age evaluation was skipped. Verbose human output should include kept entries and classification details.
+
+When `--age-basis access-time` is active and one or more age-based candidates are skipped because access time is unavailable, unreliable, or cannot be preserved during inspection, the human summary must include a short hint that `--age-basis modification-time` is available as a more portable and more aggressive explicit choice. JSONL summaries expose this through the timestamp skip counters and selected age basis rather than through prose hints.
 
 Example with `--include-nonstandard-files` enabled:
 
