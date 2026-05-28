@@ -13,7 +13,7 @@ xdg-thumbnail-prune [OPTIONS]
 Options:
 
 ```text
---older-than <DURATION>       Age threshold for remote, virtual, and removable entries. Defaults to 30d. See Duration Syntax.
+--older-than <DURATION>       Age threshold for remote, virtual, and removable entries under the selected age basis. Defaults to 30d. See Duration Syntax.
 --delete                      Apply deletion decisions. Without this option, prune only reports planned actions.
 --delete-stale-local          Include stale local thumbnails whose originals still exist but no longer match stored metadata as deletion candidates. Actual deletion still requires --delete.
 --allow-delete-failures       Allow failure entries scanned by --scope failures or --scope all to become deletion candidates. Actual deletion still requires --delete.
@@ -60,7 +60,7 @@ For `file:` originals classified as stable local files, deletion for a missing o
 
 ## Age Basis
 
-Age-based cleanup defaults to thumbnail file modification time because it is portable and does not require reading thumbnail metadata through access-time-preserving filesystem operations. This default is more aggressive than access-time cleanup: a thumbnail that was recently read but not recently rewritten can still become an age-based deletion candidate.
+Age-based cleanup defaults to thumbnail file modification time because it is portable and avoids making the prune command's own inspection reads affect later cleanup decisions. This default intentionally differs from the Freedesktop deletion guidance for internet-related and removable-media thumbnails, which describes cleanup in terms of whether the thumbnail has been accessed recently. This default is more aggressive than access-time cleanup: a thumbnail that was recently read but not recently rewritten can still become an age-based deletion candidate.
 
 Users who want age-based cleanup to avoid deleting recently read thumbnails may pass `--age-basis access-time`. In that mode, the prune CLI must avoid reading thumbnail contents in a way that can update thumbnail access times. Entries that cannot be inspected without potentially changing access time are reported as skipped rather than treated as age-based deletion candidates. These skips are normal conservative access-time policy outcomes and do not by themselves make the command fail.
 
