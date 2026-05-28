@@ -3,8 +3,8 @@
 
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
-use std::process::ExitCode;
-use std::time::Duration;
+use std::process::{Command as ProcessCommand, ExitCode};
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 use clap::{Parser, ValueEnum};
@@ -299,10 +299,23 @@ fn plan_one(
         return record;
     }
 
-    record.decision = "generate";
-    record.reason = "created";
-    record.applied = false;
-    summary.generated += 1;
+    match execute_thumbnailer(&cli, root, thumbnailer, &original, path, size) {
+        Ok(()) => {
+            record.decision = "generated";
+            record.reason = "created";
+            record.applied = true;
+            summary.generated += 1;
+        }
+        Err(error) => {
+            record.decision = "failed";
+            record.reason = error.reason;
+            record.error = Some(ErrorRecord {
+                kind: error.reason,
+                message: error.message,
+            });
+            summary.failed += 1;
+        }
+    }
     record
 }
 
@@ -504,6 +517,144 @@ fn select_thumbnailer<'a>(
             .iter()
             .any(|candidate| candidate == mime_type)
     })
+}
+
+struct ExecutionError {
+    reason: &'static str,
+    message: String,
+}
+
+fn execute_thumbnailer(
+    cli: &Cli,
+    root: &CacheRoot,
+    thumbnailer: &Thumbnailer,
+    original: &ReadableOriginalIdentity,
+    input_path: &Path,
+    size: ThumbnailSize,
+) -> Result<(), ExecutionError> {
+    let output_dir = tempfile::tempdir().map_err(|error| ExecutionError {
+        reason: "thumbnailer-output-missing",
+        message: error.to_string(),
+    })?;
+    let output_path = output_dir.path().join("thumbnail.png");
+    let argv = expand_exec(
+        &thumbnailer.exec,
+        input_path,
+        original.identity().uri().as_str(),
+        &output_path,
+        size,
+    )?;
+    let (program, args) = argv.split_first().ok_or_else(|| ExecutionError {
+        reason: "thumbnailer-entry-invalid",
+        message: "thumbnailer Exec expanded to an empty command".to_owned(),
+    })?;
+
+    let mut child = ProcessCommand::new(program)
+        .args(args)
+        .spawn()
+        .map_err(|error| ExecutionError {
+            reason: "thumbnailer-exit",
+            message: error.to_string(),
+        })?;
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started.elapsed() >= cli.timeout => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(ExecutionError {
+                    reason: "thumbnailer-timeout",
+                    message: "thumbnailer exceeded configured timeout".to_owned(),
+                });
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+            Err(error) => {
+                let _ = child.kill();
+                return Err(ExecutionError {
+                    reason: "thumbnailer-exit",
+                    message: error.to_string(),
+                });
+            }
+        }
+    };
+    if !status.success() {
+        return Err(ExecutionError {
+            reason: "thumbnailer-exit",
+            message: status.to_string(),
+        });
+    }
+    let rendered = std::fs::read(&output_path).map_err(|error| {
+        let reason = if error.kind() == std::io::ErrorKind::NotFound {
+            "thumbnailer-output-missing"
+        } else {
+            "thumbnailer-output-unreadable"
+        };
+        ExecutionError {
+            reason,
+            message: error.to_string(),
+        }
+    })?;
+    root.install_personal_thumbnail(original, size, &rendered)
+        .map(|_| ())
+        .map_err(|error| ExecutionError {
+            reason: "cache-install-failed",
+            message: error.to_string(),
+        })
+}
+
+fn expand_exec(
+    exec: &str,
+    input_path: &Path,
+    input_uri: &str,
+    output_path: &Path,
+    size: ThumbnailSize,
+) -> Result<Vec<String>, ExecutionError> {
+    let words = shell_words::split(exec).map_err(|error| ExecutionError {
+        reason: "thumbnailer-entry-invalid",
+        message: error.to_string(),
+    })?;
+    words
+        .into_iter()
+        .map(|word| expand_field_codes(&word, input_path, input_uri, output_path, size))
+        .collect()
+}
+
+fn expand_field_codes(
+    word: &str,
+    input_path: &Path,
+    input_uri: &str,
+    output_path: &Path,
+    size: ThumbnailSize,
+) -> Result<String, ExecutionError> {
+    let mut output = String::new();
+    let mut chars = word.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '%' {
+            output.push(ch);
+            continue;
+        }
+        let Some(code) = chars.next() else {
+            return Err(ExecutionError {
+                reason: "thumbnailer-entry-invalid",
+                message: "dangling percent field code".to_owned(),
+            });
+        };
+        match code {
+            'i' => output.push_str(&input_path.display().to_string()),
+            'u' => output.push_str(input_uri),
+            'o' => output.push_str(&output_path.display().to_string()),
+            's' => output.push_str(&size.max_dimension().to_string()),
+            '%' => output.push('%'),
+            _ => {
+                return Err(ExecutionError {
+                    reason: "thumbnailer-entry-invalid",
+                    message: format!("unknown thumbnailer field code %{code}"),
+                });
+            }
+        }
+    }
+    Ok(output)
 }
 
 fn valid_data_home() -> Option<PathBuf> {
