@@ -24,7 +24,7 @@ The library should avoid filesystem canonicalization as a hidden URI normalizati
 
 Shared thumbnail repositories are scoped to the directory that contains the original. A shared thumbnail URI must be `./` followed by one canonical, minimally percent-encoded path segment for the direct child filename.
 
-Shared URI construction must reject empty filenames, `.` and `..`, path separators, parent segments, nested paths, encoded `/`, encoded `\`, and any input that decodes to multiple path segments. The rejected forms must not be normalized into an accepted shared URI because doing so can alias different originals.
+Shared URI construction must reject empty filenames, `.` and `..`, slash path separators, parent segments, nested paths, encoded `/`, and any input that decodes to multiple path segments. The rejected forms must not be normalized into an accepted shared URI because doing so can alias different originals. On the initial Unix-like target platforms, backslash is a filename byte rather than a path separator and must be preserved through percent-encoding when needed.
 
 When `Thumb::URI` is present in a shared thumbnail, it must match the shared relative URI used for filename hashing. Missing `Thumb::URI` or `Thumb::MTime` does not automatically invalidate a shared thumbnail because shared repositories may use external freshness mechanisms.
 
@@ -34,7 +34,7 @@ Thumbnail filenames are the lowercase hexadecimal MD5 digest of the canonical th
 
 The same canonical thumbnail URI string must be used for filename calculation, `Thumb::URI` metadata when that metadata is present, and validation comparisons. Divergence between those strings is a cache miss or invalid metadata, not an implementation detail to repair silently.
 
-APIs may expose helper methods for scheme classification, display formatting, or conversion to a parsed URL where that is lossless for the specific URI. Those helpers must not replace the stored canonical string as the source of truth for hashing or metadata comparison.
+APIs may expose lossless syntactic helpers such as scheme access, authority access, display formatting, or conversion to a parsed URL where that is lossless for the specific URI. Those helpers must not classify user-facing cleanup policy and must not replace the stored canonical string as the source of truth for hashing or metadata comparison.
 
 ## Compatibility Vectors
 
@@ -51,5 +51,6 @@ The URI bytes in these examples are part of the compatibility contract for hashi
 | non-local caller-provided URI                             | `smb://server/share/My%20Photo.png`      | preserved exactly as `smb://server/share/My%20Photo.png` |
 | shared direct child                                       | `picture.png`                            | `./picture.png`                                          |
 | shared direct child with space                            | `My Photo.png`                           | `./My%20Photo.png`                                       |
+| shared direct child with backslash on Unix-like targets   | `name\part.png`                          | `./name%5Cpart.png`                                      |
 | shared filename containing literal slash or encoded slash | `dir/picture.png` or `dir%2Fpicture.png` | rejected                                                 |
 | shared parent or current segment                          | `.` or `..`                              | rejected                                                 |

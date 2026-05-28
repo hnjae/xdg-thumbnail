@@ -48,7 +48,7 @@ Users who prefer aggressive cleanup should be able to explicitly choose thumbnai
 
 The prune CLI should return structured, stable reason identifiers for deletion candidates. Initial reason identifiers are `original-missing`, `stale-local-metadata`, `remote-older-than-threshold`, `virtual-older-than-threshold`, `removable-older-than-threshold`, `invalid-png-structure`, `missing-required-metadata`, and `invalid-metadata-syntax`. Well-formed metadata that is stale for an existing original must use `stale-local-metadata`, not a metadata-syntax reason. Report-only reasons should distinguish at least `nonconforming-format` and `nonconforming-dimensions`. Skip reasons should distinguish at least `original-unverifiable`, `nonstandard-filename`, `failure-deletion-not-enabled`, `timestamp-unreliable`, `timestamp-unavailable`, `timestamp-preservation-unavailable`, `unreadable-entry`, and `out-of-scope`.
 
-Reports should derive deletion and skip reasons from policy-neutral inspection facts such as metadata validity, original availability, unsupported URI for local validation, thumbnail timestamps, cache namespace, and cache location. The prune CLI should show deletion and skip reasons in report and verbose output.
+Reports should show deletion and skip reasons in report and verbose output. A reported reason must be stable for the same inspected entry, selected options, original availability, thumbnail metadata, timestamp information, cache namespace, and cache location.
 
 ## Non-Goals
 

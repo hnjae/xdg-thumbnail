@@ -26,7 +26,7 @@ The option names above are the initial generate CLI contract. Behavior or option
 
 ## Input Scope
 
-The initial generate CLI accepts local filesystem paths only. Relative input paths are resolved against the current working directory before URI construction, but the generate CLI must not perform hidden symlink canonicalization as a URI normalization step. The generated personal-cache URI must follow `docs/spec/uri-canonicalization.md`.
+The initial generate CLI accepts local filesystem paths only. Relative input paths are resolved against the current working directory into absolute paths before URI construction, but the generate CLI must not perform hidden symlink canonicalization as a URI normalization step. The generate CLI owns CLI input policy such as recursive-cache rejection, while the `xdg-thumbnail` library owns encoding the resulting absolute path bytes into the canonical personal-cache `file:` URI described in `docs/spec/uri-canonicalization.md`.
 
 Inputs located inside the resolved personal thumbnail cache or a shared `.sh_thumbnails` repository are rejected. This prevents recursive thumbnail generation and keeps generated cache entries tied to original user content rather than cache artifacts.
 
@@ -45,11 +45,11 @@ Each candidate must contain a `[Thumbnailer Entry]` group with `Exec` and `MimeT
 
 ## Matching And Invocation
 
-For each input, the generate CLI determines the MIME type using the platform shared MIME database. A thumbnailer matches when the detected MIME type is listed in the entry's semicolon-separated `MimeType` list. When multiple thumbnailers match, selection is deterministic: higher-precedence discovery directories win, then lexical thumbnailer filename order within the same directory.
+For each input, the generate CLI determines the MIME type using the platform shared MIME database. A thumbnailer matches when the detected MIME type is listed in the entry's semicolon-separated `MimeType` list, including canonical MIME aliases and subtype relationships exposed by the shared MIME database. When multiple thumbnailers match, selection is deterministic: higher-precedence discovery directories win, then lexical thumbnailer filename order within the same directory.
 
-The `Exec` command is parsed using desktop-entry command-line quoting rules where applicable, then executed directly as an argument vector inside a thumbnailer sandbox by default. The generate CLI must not invoke a shell implicitly. Shell behavior is used only when the selected thumbnailer explicitly names a shell in `Exec`.
+The `Exec` value uses thumbnailer command syntax: desktop-entry-style string unescaping and command-line tokenization, followed by thumbnailer-specific field-code expansion. The generate CLI must not apply Desktop Entry field-code meanings to `.thumbnailer` entries; in this format `%i`, `%u`, `%o`, and `%s` have the thumbnailer meanings documented below. The expanded command is executed directly as an argument vector inside a thumbnailer sandbox by default. The generate CLI must not invoke a shell implicitly. Shell behavior is used only when the selected thumbnailer explicitly names a shell in `Exec`.
 
-The default `--sandbox required` mode runs thumbnailers with sandbox isolation that prevents ambient access to the user's home, personal thumbnail cache, configuration directories, and network. The sandbox must allow the thumbnailer to read the selected input, read required system resources, and write only to the CLI-provided temporary output location. If the required sandbox cannot be created, generation fails with an actionable diagnostic before running the thumbnailer. `--sandbox off` disables sandboxing explicitly for users who choose to trust the selected thumbnailer; reports must expose that the thumbnailer ran without sandbox isolation.
+The default `--sandbox required` mode runs thumbnailers with sandbox isolation that prevents ambient access to the user's home, personal thumbnail cache, configuration directories, and network. The sandbox must allow the thumbnailer to read the selected input, read required system resources, execute the resolved thumbnailer program or interpreter, and write only to the CLI-provided temporary output location. If the required sandbox cannot be created or cannot expose the selected executable and required runtime files read-only, generation fails with an actionable diagnostic before running the thumbnailer. The generate CLI must not silently retry without sandboxing. `--sandbox off` disables sandboxing explicitly for users who choose to trust the selected thumbnailer; reports must expose that the thumbnailer ran without sandbox isolation.
 
 The initial field codes are:
 
@@ -71,7 +71,7 @@ Generated thumbnails must obey the same maximum dimensions as successful cache e
 
 ## Report Output
 
-The default human output should report generated entries, kept valid entries, skipped inputs, thumbnailer failures, validation failures, and a final summary. Initial machine-readable output should be available through `--format jsonl`; the initial JSONL schema is unstable and may change before the project reaches a stable release. JSONL emits one record for each requested input and size so dry-run and write runs can be compared.
+The default human output should report generated entries, kept valid entries, skipped inputs, sandbox eligibility failures, thumbnailer failures, validation failures, and a final summary. Initial machine-readable output should be available through `--format jsonl`; the initial JSONL schema is unstable and may change before the project reaches a stable release. JSONL emits one record for each requested input and size so dry-run and write runs can be compared.
 
 Each reported entry should include the input path, canonical original URI, MIME type when known, selected thumbnailer when one was selected, sandbox mode and whether sandbox isolation was applied, target namespace, target cache path, decision, whether the decision was applied, and reason.
 
@@ -87,9 +87,9 @@ summary inputs=3 requested=3 generated=1 kept=1 skipped=1 failed=0
 ## Exit Codes
 
 - `0`: generation completed and no requested input-size pair failed.
-- `1`: one or more requested input-size pairs failed during thumbnailer execution, output validation, metadata writing, or cache installation.
+- `1`: one or more requested input-size pairs failed during sandbox eligibility checks for the selected thumbnailer, thumbnailer execution, output validation, metadata writing, or cache installation.
 - `2`: command-line usage error.
-- `3`: thumbnailer discovery, sandbox setup, or cache root resolution failed before producing reliable results.
+- `3`: thumbnailer discovery, global sandbox backend setup, or cache root resolution failed before producing reliable results.
 - `4`: generation completed but one or more nonfatal inspection or matching errors occurred, such as unreadable inputs or invalid thumbnailer entries that did not prevent other requested work.
 
 ## Safety Requirements
