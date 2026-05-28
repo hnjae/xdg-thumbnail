@@ -39,7 +39,7 @@ The CLI crates are policy runners. `xdg-thumbnail-prune` should translate user i
 - Iterate cache entries from the personal thumbnail cache and optional shared thumbnail repositories.
 - Validate personal and shared thumbnails with separate contexts because shared repositories may omit `Thumb::URI` or `Thumb::MTime` when they use other freshness mechanisms.
 - Inspect successful thumbnail PNGs against the required image format and maximum dimensions for the selected size class.
-- Install successful personal-cache thumbnails atomically from caller-provided thumbnail payloads or temporary PNGs, after validating the final PNG encoding and dimensions against the requested size namespace.
+- Install successful personal-cache thumbnails atomically from caller-provided in-memory thumbnail payloads, after validating the final PNG encoding and dimensions against the requested size namespace.
 - Create personal thumbnail cache directories and final thumbnail files with the private permissions required by the Freedesktop standard.
 - Treat failure entries as metadata-carrying PNG files in program-version failure namespaces, not as successful thumbnail size entries.
 - Provide opt-in failure-entry writing when the caller supplies an explicit program-version namespace and original identity, without deciding application retry policy.
@@ -49,7 +49,7 @@ The CLI crates are policy runners. `xdg-thumbnail-prune` should translate user i
 - Expose thumbnail file timestamp facts, including modification time, access time when available, and whether metadata inspection preserved access time, without deciding age-based cleanup policy.
 - Avoid exposing user-facing URI classification, age thresholds, deletion reasons, or cleanup decisions from the library API.
 
-The library should avoid depending on CLI-only concerns such as terminal formatting, progress bars, command-line parsing, logging configuration, user-specific cleanup defaults, or user-facing report vocabulary. Image rendering, thumbnailer execution, source metadata extraction, scaling decisions, and user-facing failure policy are outside the base crate scope; Freedesktop metadata writing and atomic personal-cache installation are library responsibilities.
+The library should avoid depending on CLI-only concerns such as terminal formatting, progress bars, command-line parsing, logging configuration, user-specific cleanup defaults, or user-facing report vocabulary. Image rendering, thumbnailer execution, renderer temporary-file management, source metadata extraction, scaling decisions, and user-facing failure policy are outside the base crate scope; Freedesktop metadata writing and atomic personal-cache installation from in-memory payloads are library responsibilities.
 
 The `x-large` and `xx-large` size classes are treated as supported documented behavior from the Freedesktop Thumbnail Managing Standard `latest` text, including the December 2020 0.9.0 history entry.
 

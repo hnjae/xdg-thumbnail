@@ -26,7 +26,7 @@ The library should expose APIs for:
 - Computing the cache path for a canonical original URI and requested thumbnail namespace.
 - Representing cache namespaces separately for successful thumbnail sizes and program-version failure entries.
 - Parsing thumbnail PNG metadata.
-- Writing successful personal-cache thumbnail PNG metadata from a caller-provided original identity and caller-provided thumbnail payload.
+- Writing successful personal-cache thumbnail PNG metadata from a caller-provided original identity and caller-provided in-memory thumbnail payload.
 - Installing successful personal-cache thumbnails atomically under the resolved personal cache root after validating the target namespace and payload dimensions.
 - Inspecting whether successful thumbnails are 8-bit non-interlaced PNG files with full alpha support and dimensions that fit the requested size class.
 - Checking whether a personal-cache thumbnail is valid for a given original by verifying `Thumb::URI`, `Thumb::MTime`, and `Thumb::Size` according to the Freedesktop standard.
@@ -40,11 +40,15 @@ The library should expose APIs for:
 
 ## Generation Boundary
 
-The base library API does not decode source images, render documents, extract video frames, select thumbnailer helpers, scale image data, apply source orientation metadata, or decide when generation should be attempted. It may write or rewrite Freedesktop thumbnail PNG metadata and atomically install personal-cache entries when the caller supplies an already rendered thumbnail payload and a complete original identity.
+The base library API does not decode source images, render documents, extract video frames, select thumbnailer helpers, scale source content, apply source orientation metadata, manage renderer temporary files, or decide when generation should be attempted. It may write or rewrite Freedesktop thumbnail PNG metadata and atomically install personal-cache entries when the caller supplies an already rendered in-memory thumbnail payload and a complete original identity.
 
 Personal-cache write APIs require an original identity with a canonical thumbnail URI and a modification time in whole Unix epoch seconds. If the caller cannot obtain the original modification time, the library must reject a global personal-cache successful thumbnail or failure-entry write instead of creating an entry that cannot be validated later. `Thumb::Size` and `Thumb::Mimetype` should be written when the caller supplies them.
 
-Write APIs must create standard personal-cache directories with private directory permissions, install final thumbnail files with private file permissions, write temporary files in the destination directory, and publish final entries with an atomic rename. A write must not expose a partial thumbnail at the final cache path. The exact payload API may accept caller-provided RGBA image data, a caller-provided temporary PNG, or both, but the library must validate the final PNG against the requested namespace before installation.
+Successful-thumbnail write APIs should initially accept caller-provided PNG bytes as the primary rendered payload. The caller owns any source or renderer temporary files, including `.thumbnailer` `%o` outputs, and must read those files into memory before calling the library. The library must not provide a public `install_png_file` style API in the initial contract because path opening, symlink handling, temporary-file cleanup, and renderer output lifetime belong to the caller that created or selected the file.
+
+The library may also expose a narrow convenience API for caller-provided raw pixel buffers, such as explicit `RGBA8` or `RGB8` with dimensions and stride, when this does not expand the library into source decoding or rendering. Raw pixel APIs must define pixel format, alpha handling, color assumptions, row layout, and dimension validation explicitly. They remain secondary to the PNG-bytes install API.
+
+Write APIs must create standard personal-cache directories with private directory permissions, install final thumbnail files with private file permissions, write temporary files in the destination directory, and publish final entries with an atomic rename. A write must not expose a partial thumbnail at the final cache path. The library must validate the final PNG against the requested namespace before installation, regardless of whether the input was PNG bytes or a supported raw pixel buffer.
 
 For personal-cache validation, missing `Thumb::URI`, a `Thumb::URI` value that differs from the canonical original URI, missing `Thumb::MTime`, or a `Thumb::MTime` value that differs from the original modification time in whole seconds makes the thumbnail invalid for display. `Thumb::Size` should be compared when present. Management tools should distinguish missing required metadata and invalid metadata syntax from metadata that is well-formed but stale for an existing original.
 
