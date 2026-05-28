@@ -27,5 +27,6 @@
 
 ## Commits Guidelines
 
+- Commit completed changes by default unless the user explicitly asks not to commit.
 - Use Conventional Commits for all commit messages.
 - Use a Conventional Commit scope when a clear scope exists.
