@@ -26,14 +26,14 @@ The CLI crates are policy runners. `xdg-thumbnail-prune` should translate user i
 ## Library Responsibilities
 
 - Resolve the thumbnail cache root from the XDG base directory rules, including ignoring relative `$XDG_CACHE_HOME` values.
-- Represent canonical thumbnail URIs as library-owned string newtypes that preserve the exact MD5 and `Thumb::URI` input.
-- Construct canonical thumbnail URIs for local filesystem paths, textual local `file:` URI inputs, and shared-repository child filenames; for other schemes, preserve caller-provided canonical absolute URI strings without parser reserialization.
+- Represent personal absolute thumbnail URIs and shared-repository relative thumbnail URIs as separate library-owned string newtypes that preserve the exact MD5 and `Thumb::URI` input for their own context.
+- Construct canonical personal thumbnail URIs for local filesystem paths and textual local `file:` URI inputs, construct canonical shared-repository relative thumbnail URIs from raw direct-child filenames, and preserve caller-provided canonical absolute personal URI strings for other schemes without parser reserialization.
 - Use maintained dependencies for commodity primitives such as MD5 digest calculation, byte percent-encoding, and optional URI syntax validation, while keeping canonical thumbnail URI identity and cache filename policy in the library instead of exposing parser-specific URL objects or handwritten digest code.
 - Represent thumbnail sizes: `normal`, `large`, `x-large`, and `xx-large`.
 - Represent cache namespaces separately for successful thumbnail sizes and program-version failure entries.
 - Compute thumbnail filenames from canonical thumbnail URIs using MD5 and the `.png` suffix, including absolute canonical URIs for the personal cache and `./`-prefixed relative URIs for shared repositories, as specified in `docs/spec/uri-canonicalization.md`.
 - Compute shared-repository cache paths only from an explicit shared repository context that includes the repository root, direct child original filename, and shared relative URI, so personal-cache absolute URI identity is never reused as a shared-repository lookup key.
-- Reject shared-repository relative URIs that are not a single direct child filename, including parent segments, slash path separators, or encoded `/`. On Unix-like targets, backslash remains a filename byte and is preserved through percent-encoding when needed.
+- Keep raw shared-repository filename construction separate from textual shared-URI parsing. Raw filenames with literal percent-looking text such as `dir%2Fpicture.png` are valid direct child names and are percent-encoded as `./dir%252Fpicture.png`; textual shared URIs that decode to multiple path segments, such as `./dir%2Fpicture.png`, are rejected. On Unix-like targets, backslash remains a filename byte and is preserved through percent-encoding when needed.
 - Read standard PNG text metadata such as `Thumb::URI`, `Thumb::MTime`, `Thumb::Size`, and `Thumb::Mimetype`.
 - Write standard PNG text metadata such as required `Thumb::URI` and `Thumb::MTime`, plus optional `Thumb::Size`, `Thumb::Mimetype`, and media-specific keys when the caller supplies them.
 - Require `Thumb::URI` and `Thumb::MTime` for personal-cache validation and compare `Thumb::MTime` as whole Unix epoch seconds.
@@ -67,6 +67,7 @@ The `x-large` and `xx-large` size classes are treated as supported documented be
 - Delete successful thumbnail entries only when `--delete` is passed, failure entries only when both `--delete` and `--allow-delete-failures` are passed, and report what was removed, skipped, or left unchanged.
 - Skip nonstandard cache filenames by default and expose them only as reportable skipped entries when the user passes `--include-nonstandard-files`.
 - Provide conservative defaults and clear report output before destructive cleanup.
+- Preserve non-UTF-8 thumbnail path bytes in JSONL reports through explicit lossless byte fields rather than relying on human-oriented display strings.
 - Convert library errors into actionable CLI diagnostics and exit codes.
 
 ## Generate CLI Responsibilities
@@ -84,13 +85,14 @@ The `x-large` and `xx-large` size classes are treated as supported documented be
 - Ask the library to normalize the rendered payload, validate successful-thumbnail namespace requirements, write required personal-cache metadata such as `Thumb::URI` and `Thumb::MTime`, write optional metadata when available, and install generated thumbnails atomically under the resolved personal thumbnail cache root.
 - Skip valid existing thumbnails unless `--force` is passed.
 - Report generated, kept, skipped, and failed input-size pairs in human and JSONL formats.
+- Preserve non-UTF-8 input and cache path bytes in JSONL reports through explicit lossless byte fields rather than relying on human-oriented display strings.
 - Avoid writing shared thumbnail repositories or failure entries in the initial generate CLI.
 
 ## Thumbnailer Sandbox
 
-The initial generate CLI sandbox backend is `bubblewrap` (`bwrap`) on Linux. Sandbox setup belongs to the generate CLI crate because it is tied to external thumbnailer execution, command expansion, temporary renderer output, and user-facing `--sandbox` policy rather than Freedesktop cache inspection or installation.
+The initial generate CLI sandbox backend is `bubblewrap` (`bwrap`) on Linux, and the default generate command uses `--sandbox required`. Sandbox setup belongs to the generate CLI crate because it is tied to external thumbnailer execution, command expansion, temporary renderer output, and user-facing `--sandbox` policy rather than Freedesktop cache inspection or installation.
 
-In `--sandbox required` mode, the generate CLI must fail before executing a thumbnailer when `bwrap` is unavailable, when the host is not Linux, when the requested isolation cannot be applied, or when the selected thumbnailer does not fit the documented sandbox profile. In `--dry-run` mode these same checks are reported as planned failures without executing thumbnailers or mutating the cache, and they should be represented per input-size pair when enough information is available. There is no implicit unsandboxed fallback. `--sandbox off` is an explicit user opt-out and should be reflected in human and JSONL reports.
+In `--sandbox required` mode, the generate CLI must fail before executing a thumbnailer when `bwrap` is unavailable, when the host is not Linux, when the requested isolation cannot be applied, or when the selected thumbnailer does not fit the documented sandbox profile. CLI help, diagnostics, dry-run output, and summaries for such failures must make the Linux `bubblewrap` default requirement explicit. In `--dry-run` mode these same checks are reported as planned failures without executing thumbnailers or mutating the cache, and they should be represented per input-size pair when enough information is available. There is no implicit unsandboxed fallback. `--sandbox off` is an explicit user opt-out and should be reflected in human and JSONL reports.
 
 The sandbox should create a private mount namespace and unshare networking. The thumbnailer should receive read access to the selected input, read access to documented read-only system runtime resources, and write access only to a private temporary output directory owned by the generate CLI. The initial profile may expose read-only system locations such as `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, and `/etc` when needed for ordinary system thumbnailers to start. User-controlled locations such as the user's home, personal thumbnail cache, `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`, user entries from `$XDG_CONFIG_DIRS` or `$XDG_DATA_DIRS`, and arbitrary writable host paths must not be exposed wholesale unless a later spec explicitly defines a compatibility mode. The generate CLI is not required to infer arbitrary runtime dependencies for user-provided thumbnailers, plugins, codecs, configuration, or helper programs outside the documented profile. A selected user-provided thumbnailer may run in `--sandbox required` only when the resolved command and literal host paths fit the same documented sandbox profile as system entries. Otherwise, the generate CLI reports `sandbox-ineligible` and does not run that thumbnailer unsandboxed.
 
@@ -121,13 +123,21 @@ pub struct FailureNamespace {
     program_version: String,
 }
 
-pub struct CanonicalThumbnailUri {
+pub struct PersonalThumbnailUri {
     value: String,
 }
 
+pub struct SharedRelativeThumbnailUri {
+    value: String,
+}
+
+pub struct UnixMTimeSeconds {
+    seconds: i64,
+}
+
 pub struct OriginalIdentity {
-    uri: CanonicalThumbnailUri,
-    mtime: std::time::SystemTime,
+    uri: PersonalThumbnailUri,
+    mtime: UnixMTimeSeconds,
     size: Option<u64>,
 }
 
@@ -138,7 +148,12 @@ pub struct ReadableOriginalIdentity {
 pub struct SharedRepositoryContext {
     repository_root: std::path::PathBuf,
     original_child_name: std::ffi::OsString,
-    shared_uri: CanonicalThumbnailUri,
+    shared_uri: SharedRelativeThumbnailUri,
+}
+
+pub enum ThumbnailUriIdentity {
+    Personal(PersonalThumbnailUri),
+    Shared(SharedRelativeThumbnailUri),
 }
 
 pub enum CacheEntryProblem {
@@ -162,7 +177,7 @@ pub enum ValidationOutcome {
 
 pub struct CacheEntryInspection {
     outcome: ValidationOutcome,
-    original_uri: Option<CanonicalThumbnailUri>,
+    original_uri: Option<ThumbnailUriIdentity>,
     thumbnail_timestamps: ThumbnailTimestamps,
     namespace: CacheNamespace,
     cache_location: CacheLocation,
@@ -188,7 +203,7 @@ pub struct CacheEntryHandle {
 }
 ```
 
-`FailureNamespace` values must be validated direct directory names before use. The initial accepted character set is ASCII letters, digits, `.`, `_`, `+`, and `-`; empty values, `.`, `..`, path separators, NUL, and control characters are rejected.
+`UnixMTimeSeconds` stores the whole Unix epoch seconds used in `Thumb::MTime`; constructors from filesystem metadata must define truncation, pre-epoch, and overflow handling before validation or writes depend on the value. `PersonalThumbnailUri` and `SharedRelativeThumbnailUri` remain separate types so an absolute personal-cache URI cannot accidentally be reused as a shared-repository lookup key. `FailureNamespace` values must be validated direct directory names before use. The initial accepted character set is ASCII letters, digits, `.`, `_`, `+`, and `-`; empty values, `.`, `..`, path separators, NUL, and control characters are rejected.
 
 The exact names can change during implementation, but the direction should remain: the library describes cache entries and filesystem facts with enough precision to avoid accidental cleanup policy, while the prune CLI classifies entries, decides which cleanup policy to run, and requests destructive changes only through library-provided cache entry handles.
 
@@ -208,7 +223,7 @@ pub enum UriClass {
 }
 
 pub trait CleanupClassifier {
-    fn classify(&self, uri: &CanonicalThumbnailUri) -> UriClass;
+    fn classify(&self, uri: &PersonalThumbnailUri) -> UriClass;
 }
 ```
 

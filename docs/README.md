@@ -2,7 +2,7 @@
 
 This directory contains project-level documentation for the `xdg-thumbnail` workspace.
 
-Initial implementation scope is Unix-like XDG desktop environments. The initial sandboxed `xdg-thumbnail-generate` design specifically requires Linux with `bubblewrap`; other platforms may still support cache inspection and pruning APIs where their filesystem semantics are compatible.
+Initial implementation scope is Unix-like XDG desktop environments. Cache inspection and pruning APIs may support any platform with compatible filesystem semantics, but the default `xdg-thumbnail-generate` command is Linux-specific because its default `--sandbox required` mode requires `bubblewrap` and never falls back to unsandboxed thumbnailer execution unless the user explicitly passes `--sandbox off`.
 
 - `architecture/`: internal design, crate boundaries, data flow, and implementation constraints.
 - `research/`: dated investigation notes for upstream behavior, references, and implementation decisions.
