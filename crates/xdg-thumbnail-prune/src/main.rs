@@ -11,8 +11,8 @@ use clap::{Parser, ValueEnum};
 use serde::Serialize;
 use xdg_thumbnail::{
     AccessTimePreservation, CacheEntryInspection, CacheEntryProblem, CacheNamespace, CacheRoot,
-    OriginalIdentity, ParsedThumbnailPng, PersonalThumbnailUri, ThumbnailSize,
-    ThumbnailUriIdentity, UnixMTimeSeconds, ValidationOutcome, validate_personal_thumbnail,
+    OriginalIdentity, PersonalThumbnailUri, ThumbnailSize, ThumbnailUriIdentity, UnixMTimeSeconds,
+    ValidationOutcome, validate_personal_failure_entry, validate_personal_thumbnail,
 };
 
 #[cfg(unix)]
@@ -486,79 +486,6 @@ fn evaluate_local_file(
             *reason = Some("original-unverifiable");
         }
     }
-}
-
-fn validate_personal_failure_entry(bytes: &[u8], original: &OriginalIdentity) -> ValidationOutcome {
-    let parsed = match ParsedThumbnailPng::parse(bytes) {
-        Ok(parsed) => parsed,
-        Err(_) => {
-            return ValidationOutcome::Invalid(vec![CacheEntryProblem::InvalidPngStructure]);
-        }
-    };
-    let metadata = parsed.metadata();
-    let mut problems = Vec::new();
-
-    match metadata.thumb_uri() {
-        Some(uri) if uri == original.uri().as_str() => {}
-        Some(uri) if PersonalThumbnailUri::from_absolute_uri(uri).is_err() => {
-            push_problem(&mut problems, CacheEntryProblem::InvalidMetadataSyntax);
-        }
-        Some(_) => push_problem(&mut problems, CacheEntryProblem::StaleMetadata),
-        None => push_problem(&mut problems, CacheEntryProblem::MissingRequiredMetadata),
-    }
-
-    match metadata
-        .get("Thumb::MTime")
-        .map(str::parse::<i64>)
-        .transpose()
-    {
-        Ok(Some(mtime)) if mtime == original.mtime().as_i64() => {}
-        Ok(Some(_)) => push_problem(&mut problems, CacheEntryProblem::StaleMetadata),
-        Ok(None) => push_problem(&mut problems, CacheEntryProblem::MissingRequiredMetadata),
-        Err(_) => push_problem(&mut problems, CacheEntryProblem::InvalidMetadataSyntax),
-    }
-
-    match (
-        metadata
-            .get("Thumb::Size")
-            .map(str::parse::<u64>)
-            .transpose(),
-        original.size(),
-    ) {
-        (Ok(Some(stored)), Some(expected)) if stored == expected => {}
-        (Ok(Some(_)), Some(_)) => push_problem(&mut problems, CacheEntryProblem::StaleMetadata),
-        (Ok(_), _) => {}
-        (Err(_), _) => push_problem(&mut problems, CacheEntryProblem::InvalidMetadataSyntax),
-    }
-
-    if let Some(stored) = metadata.thumb_mimetype() {
-        if !is_valid_mime_type(stored) {
-            push_problem(&mut problems, CacheEntryProblem::InvalidMetadataSyntax);
-        } else if let Some(expected) = original.mime_type() {
-            if stored != expected {
-                push_problem(&mut problems, CacheEntryProblem::StaleMetadata);
-            }
-        }
-    }
-
-    if problems.is_empty() {
-        ValidationOutcome::FullyVerified
-    } else {
-        ValidationOutcome::Invalid(problems)
-    }
-}
-
-fn push_problem(problems: &mut Vec<CacheEntryProblem>, problem: CacheEntryProblem) {
-    if !problems.contains(&problem) {
-        problems.push(problem);
-    }
-}
-
-fn is_valid_mime_type(mime_type: &str) -> bool {
-    !mime_type.is_empty()
-        && mime_type.is_ascii()
-        && !mime_type.bytes().any(|byte| byte.is_ascii_control())
-        && mime_type.contains('/')
 }
 
 fn evaluate_age_based(

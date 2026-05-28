@@ -922,26 +922,34 @@ pub fn validate_personal_thumbnail(
     };
 
     let mut problems = parsed.conformance_problems(size);
-    let metadata = parsed.metadata();
+    compare_personal_metadata(&mut problems, parsed.metadata(), original);
 
-    match metadata.thumb_uri() {
-        Some(uri) if uri == original.uri().as_str() => {}
-        Some(uri) if PersonalThumbnailUri::from_absolute_uri(uri).is_err() => {
-            push_problem(&mut problems, CacheEntryProblem::InvalidMetadataSyntax);
+    if problems.is_empty() {
+        ValidationOutcome::FullyVerified
+    } else {
+        ValidationOutcome::Invalid(problems)
+    }
+}
+
+/// Validates a personal-cache failure entry PNG against a readable original identity.
+///
+/// Failure entries carry the same required personal-cache metadata as successful thumbnails, but
+/// they are not successful-thumbnail size entries and are not checked against size-class dimension
+/// limits.
+#[must_use]
+pub fn validate_personal_failure_entry(
+    bytes: &[u8],
+    original: &OriginalIdentity,
+) -> ValidationOutcome {
+    let parsed = match ParsedThumbnailPng::parse(bytes) {
+        Ok(parsed) => parsed,
+        Err(_) => {
+            return ValidationOutcome::Invalid(vec![CacheEntryProblem::InvalidPngStructure]);
         }
-        Some(_) => push_problem(&mut problems, CacheEntryProblem::StaleMetadata),
-        None => push_problem(&mut problems, CacheEntryProblem::MissingRequiredMetadata),
-    }
+    };
 
-    match metadata.thumb_mtime_result() {
-        Ok(Some(mtime)) if mtime == original.mtime().as_i64() => {}
-        Ok(Some(_)) => push_problem(&mut problems, CacheEntryProblem::StaleMetadata),
-        Ok(None) => push_problem(&mut problems, CacheEntryProblem::MissingRequiredMetadata),
-        Err(_) => push_problem(&mut problems, CacheEntryProblem::InvalidMetadataSyntax),
-    }
-
-    compare_optional_size(&mut problems, metadata, original.size());
-    compare_optional_mimetype(&mut problems, metadata, original.mime_type());
+    let mut problems = Vec::new();
+    compare_personal_metadata(&mut problems, parsed.metadata(), original);
 
     if problems.is_empty() {
         ValidationOutcome::FullyVerified
@@ -996,6 +1004,31 @@ pub fn validate_shared_thumbnail(
     } else {
         ValidationOutcome::FullyVerified
     }
+}
+
+fn compare_personal_metadata(
+    problems: &mut Vec<CacheEntryProblem>,
+    metadata: &ThumbnailMetadata,
+    original: &OriginalIdentity,
+) {
+    match metadata.thumb_uri() {
+        Some(uri) if uri == original.uri().as_str() => {}
+        Some(uri) if PersonalThumbnailUri::from_absolute_uri(uri).is_err() => {
+            push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax);
+        }
+        Some(_) => push_problem(problems, CacheEntryProblem::StaleMetadata),
+        None => push_problem(problems, CacheEntryProblem::MissingRequiredMetadata),
+    }
+
+    match metadata.thumb_mtime_result() {
+        Ok(Some(mtime)) if mtime == original.mtime().as_i64() => {}
+        Ok(Some(_)) => push_problem(problems, CacheEntryProblem::StaleMetadata),
+        Ok(None) => push_problem(problems, CacheEntryProblem::MissingRequiredMetadata),
+        Err(_) => push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax),
+    }
+
+    compare_optional_size(problems, metadata, original.size());
+    compare_optional_mimetype(problems, metadata, original.mime_type());
 }
 
 fn compare_optional_size(

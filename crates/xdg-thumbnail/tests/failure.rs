@@ -3,8 +3,9 @@
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    CacheNamespace, CacheRoot, FailureNamespace, OriginalIdentity, ParsedThumbnailPng,
-    PersonalThumbnailUri, ReadableOriginalIdentity, UnixMTimeSeconds,
+    CacheEntryProblem, CacheNamespace, CacheRoot, FailureNamespace, OriginalIdentity,
+    ParsedThumbnailPng, PersonalThumbnailUri, ReadableOriginalIdentity, UnixMTimeSeconds,
+    ValidationOutcome, validate_personal_failure_entry,
 };
 
 #[test]
@@ -36,6 +37,39 @@ fn writes_deterministic_failure_namespace_entries() {
     assert_eq!(parsed.metadata().thumb_mtime(), Some(42));
     assert_eq!(parsed.metadata().thumb_size(), Some(12));
     assert_eq!(parsed.metadata().thumb_mimetype(), Some("image/png"));
+    assert_eq!(
+        validate_personal_failure_entry(first.bytes(), original.identity()),
+        ValidationOutcome::FullyVerified
+    );
+}
+
+#[test]
+fn validates_failure_entry_metadata_without_successful_thumbnail_size_limits() {
+    let original = readable_original();
+    let bytes = failure_png_with_metadata(2048, 1, original.identity());
+
+    assert_eq!(
+        validate_personal_failure_entry(&bytes, original.identity()),
+        ValidationOutcome::FullyVerified
+    );
+}
+
+#[test]
+fn reports_stale_failure_entry_metadata() {
+    let original = readable_original();
+    let bytes = failure_png_with_metadata(1, 1, original.identity());
+    let stale_original = OriginalIdentity::new(
+        original.identity().uri().clone(),
+        UnixMTimeSeconds::new(43),
+        Some(12),
+        Some("image/png"),
+    )
+    .unwrap();
+
+    assert_eq!(
+        validate_personal_failure_entry(&bytes, &stale_original),
+        ValidationOutcome::Invalid(vec![CacheEntryProblem::StaleMetadata])
+    );
 }
 
 fn readable_original() -> ReadableOriginalIdentity {
@@ -48,4 +82,34 @@ fn readable_original() -> ReadableOriginalIdentity {
         )
         .unwrap(),
     )
+}
+
+fn failure_png_with_metadata(width: u32, height: u32, original: &OriginalIdentity) -> Vec<u8> {
+    let mut output = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut output, width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder
+            .add_text_chunk("Thumb::URI".to_owned(), original.uri().as_str().to_owned())
+            .unwrap();
+        encoder
+            .add_text_chunk("Thumb::MTime".to_owned(), original.mtime().to_string())
+            .unwrap();
+        if let Some(size) = original.size() {
+            encoder
+                .add_text_chunk("Thumb::Size".to_owned(), size.to_string())
+                .unwrap();
+        }
+        if let Some(mime_type) = original.mime_type() {
+            encoder
+                .add_text_chunk("Thumb::Mimetype".to_owned(), mime_type.to_owned())
+                .unwrap();
+        }
+        let mut writer = encoder.write_header().unwrap();
+        writer
+            .write_image_data(&vec![0; width as usize * height as usize * 4])
+            .unwrap();
+    }
+    output
 }
