@@ -51,7 +51,7 @@ Application lookup must not use existing thumbnails when the original is not cur
 
 ## Lookup Result Surfaces
 
-The library exposes cache reuse through layered result surfaces. A computed path is only the MD5-derived cache location for an accepted URI identity and namespace; it is useful for reports, dry-run output, and install targeting, but it does not mean a thumbnail exists or is valid. A validated path means the library opened the cache PNG and verified it against the original identity and namespace before returning the path; it is a convenience for toolkits that require a filename, but callers that reopen the path accept that the file can be replaced after validation. A validated payload or handle means the library returns the exact bytes or opened file handle that passed validation, plus the cache path and metadata facts; this is the preferred surface for application thumbnail views.
+The library exposes cache reuse through layered result surfaces. A computed path is only the MD5-derived cache location for an accepted URI identity and namespace; it is useful for reports, dry-run output, and install targeting, but it does not mean a thumbnail exists or is valid. A validated path means the library opened the cache PNG and verified it against the original identity and namespace before returning the path; it is a convenience for toolkits that require a filename, but callers that reopen the path accept that the file can be replaced after validation. A validated payload means the library returns the exact PNG bytes that passed validation, plus the cache path and metadata facts; this is the preferred surface for application thumbnail views. Output selection is caller-driven: lookup should expose either separate calls or an explicit mode for path versus bytes. Opened handles or mmap-backed payloads can be added later as optimized variants, but the initial caller-selectable outputs are path and bytes.
 
 Lookup results should distinguish valid, missing, invalid, and unverifiable originals. Missing and invalid results let an application decide whether to render and install a new thumbnail. Unverifiable results mean the caller did not or could not provide readability and modification-time proof for the original, so the library must not present an existing cache entry as display-valid.
 
@@ -67,10 +67,10 @@ flowchart TD
     F --> G[Write temp file in target directory]
     G --> H[Set 0600 file permissions]
     H --> I[Atomic rename to final path]
-    I --> J[Return installed path and optional final payload or handle]
+    I --> J[Return installed path and optional final PNG bytes]
 ```
 
-Applications that embed their own renderer should use this install flow instead of reimplementing the Freedesktop cache filename, metadata, permission, and atomic-save rules. The library should not know whether the payload came from Qt image decoding, a Rust image decoder, a document renderer, a video frame extractor, or an external thumbnailer. Install results should at least report the installed cache path. When the caller requests display-ready output, the library may return the final normalized PNG bytes or an opened handle for the installed entry; that payload represents the cache entry after metadata writing and normalization, not the original renderer input.
+Applications that embed their own renderer should use this install flow instead of reimplementing the Freedesktop cache filename, metadata, permission, and atomic-save rules. The library should not know whether the payload came from Qt image decoding, a Rust image decoder, a document renderer, a video frame extractor, or an external thumbnailer. Install results should at least report the installed cache path. When the caller requests payload output, the library should return the final normalized PNG bytes for the installed entry; that payload represents the cache entry after metadata writing and normalization, not the original renderer input. Install should follow the same explicit path-versus-bytes output selection model as lookup.
 
 ## Pruning Model
 
@@ -105,7 +105,7 @@ match cache.read_valid_shared_thumbnail(&shared, &identity, shared_policy)? {
 Ok(None)
 ```
 
-The exact API should be shaped by implementation, but applications should not need to know the hash filename algorithm, cache directory layout, or PNG metadata keys directly. `computed_path` is available for diagnostics or reports, while `read_valid_thumbnail` returns a display-grade validated payload or handle rather than asking the caller to reopen a path and reparse metadata. A cache miss is returned to the caller; lookup does not perform rendering, and callers that render a thumbnail use the separate install flow. The example uses a safety-oriented shared policy that can decline standard-allowed shared thumbnails with incomplete freshness metadata. Applications that intentionally accept shared thumbnails with incomplete freshness metadata should pass an explicit shared policy tied to their own trust or freshness model.
+The exact API should be shaped by implementation, but applications should not need to know the hash filename algorithm, cache directory layout, or PNG metadata keys directly. `computed_path` is available for diagnostics or reports, while `read_valid_thumbnail` can return display-grade validated PNG bytes rather than asking the caller to reopen a path and reparse metadata. A cache miss is returned to the caller; lookup does not perform rendering, and callers that render a thumbnail use the separate install flow. The example uses a safety-oriented shared policy that can decline standard-allowed shared thumbnails with incomplete freshness metadata. Applications that intentionally accept shared thumbnails with incomplete freshness metadata should pass an explicit shared policy tied to their own trust or freshness model.
 
 ## Failure Entries
 
