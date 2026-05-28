@@ -4,6 +4,7 @@
 //! Freedesktop thumbnail cache primitives.
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::io::Cursor;
 
 use std::ffi::{OsStr, OsString};
@@ -144,6 +145,82 @@ impl CacheRoot {
     #[must_use]
     pub fn personal_path(&self, uri: &PersonalThumbnailUri, namespace: &CacheNamespace) -> PathBuf {
         namespace.join_under(&self.path, &uri.thumbnail_filename())
+    }
+
+    /// Returns a validated personal-cache path for integrations that must pass a filename.
+    ///
+    /// The candidate PNG is opened and validated before this method returns. Callers that reopen
+    /// the returned path accept that another process may replace it after validation.
+    pub fn validated_personal_path(
+        &self,
+        original: &OriginalIdentity,
+        size: ThumbnailSize,
+    ) -> Result<ThumbnailLookup<ValidatedThumbnailPath>> {
+        let path = self.personal_path(original.uri(), &CacheNamespace::Size(size));
+        let bytes = match fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(ThumbnailLookup::Missing);
+            }
+            Err(source) => {
+                return Err(ThumbnailError::Io {
+                    context: "read thumbnail cache entry",
+                    source,
+                });
+            }
+        };
+
+        match validate_personal_thumbnail(&bytes, original, size) {
+            ValidationOutcome::FullyVerified => {
+                let parsed = ParsedThumbnailPng::parse(&bytes)?;
+                Ok(ThumbnailLookup::Valid(ValidatedThumbnailPath {
+                    path,
+                    metadata: parsed.metadata,
+                }))
+            }
+            ValidationOutcome::Invalid(problems) => Ok(ThumbnailLookup::Invalid(problems)),
+            ValidationOutcome::SharedMetadataIncomplete
+            | ValidationOutcome::UncheckedInspection => Ok(ThumbnailLookup::Invalid(vec![
+                CacheEntryProblem::UnverifiableOriginal,
+            ])),
+        }
+    }
+
+    /// Returns exact validated PNG bytes from the personal thumbnail cache.
+    pub fn validated_personal_payload(
+        &self,
+        original: &OriginalIdentity,
+        size: ThumbnailSize,
+    ) -> Result<ThumbnailLookup<ValidatedThumbnailPayload>> {
+        let path = self.personal_path(original.uri(), &CacheNamespace::Size(size));
+        let bytes = match fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(ThumbnailLookup::Missing);
+            }
+            Err(source) => {
+                return Err(ThumbnailError::Io {
+                    context: "read thumbnail cache entry",
+                    source,
+                });
+            }
+        };
+
+        match validate_personal_thumbnail(&bytes, original, size) {
+            ValidationOutcome::FullyVerified => {
+                let parsed = ParsedThumbnailPng::parse(&bytes)?;
+                Ok(ThumbnailLookup::Valid(ValidatedThumbnailPayload {
+                    path,
+                    bytes,
+                    metadata: parsed.metadata,
+                }))
+            }
+            ValidationOutcome::Invalid(problems) => Ok(ThumbnailLookup::Invalid(problems)),
+            ValidationOutcome::SharedMetadataIncomplete
+            | ValidationOutcome::UncheckedInspection => Ok(ThumbnailLookup::Invalid(vec![
+                CacheEntryProblem::UnverifiableOriginal,
+            ])),
+        }
     }
 }
 
@@ -772,6 +849,68 @@ pub enum ValidationOutcome {
     UncheckedInspection,
     /// The entry is invalid for the requested validation context.
     Invalid(Vec<CacheEntryProblem>),
+}
+
+/// Result of a validated thumbnail cache lookup.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ThumbnailLookup<T> {
+    /// The cache entry exists and passed validation.
+    Valid(T),
+    /// The computed cache path does not exist.
+    Missing,
+    /// The cache entry exists but is invalid for the requested context.
+    Invalid(Vec<CacheEntryProblem>),
+    /// The original could not be verified, so no existing cache entry is display-valid.
+    Unverifiable(Vec<CacheEntryProblem>),
+}
+
+/// A validated cache path and metadata facts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatedThumbnailPath {
+    path: PathBuf,
+    metadata: ThumbnailMetadata,
+}
+
+impl ValidatedThumbnailPath {
+    /// Returns the path that was validated.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Returns metadata parsed from the validated PNG.
+    #[must_use]
+    pub const fn metadata(&self) -> &ThumbnailMetadata {
+        &self.metadata
+    }
+}
+
+/// Exact validated PNG bytes and metadata facts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatedThumbnailPayload {
+    path: PathBuf,
+    bytes: Vec<u8>,
+    metadata: ThumbnailMetadata,
+}
+
+impl ValidatedThumbnailPayload {
+    /// Returns the path from which the payload was validated.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Returns the exact PNG bytes that passed validation.
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// Returns metadata parsed from the validated PNG.
+    #[must_use]
+    pub const fn metadata(&self) -> &ThumbnailMetadata {
+        &self.metadata
+    }
 }
 
 /// Freedesktop thumbnail PNG text metadata.
