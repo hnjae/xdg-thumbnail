@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::symlink;
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
@@ -72,6 +73,27 @@ fn install_rejects_insecure_existing_cache_directories() {
         .unwrap_err();
 
     assert!(error.to_string().contains("insecure"));
+}
+
+#[test]
+fn install_rejects_symlinked_cache_directories() {
+    let temp = TempDir::new().unwrap();
+    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let outside = temp.path().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::create_dir_all(root.as_path()).unwrap();
+    symlink(&outside, root.as_path().join("normal")).unwrap();
+
+    let error = root
+        .install_personal_thumbnail(
+            &readable_original(),
+            ThumbnailSize::Normal,
+            &png_without_metadata(2, 1, png::ColorType::Rgba),
+        )
+        .unwrap_err();
+
+    assert!(error.to_string().contains("insecure"));
+    assert!(std::fs::read_dir(&outside).unwrap().next().is_none());
 }
 
 fn readable_original() -> ReadableOriginalIdentity {

@@ -6,9 +6,9 @@ use std::os::unix::fs::symlink;
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    CacheEntryProblem, CacheNamespace, CacheRoot, FailureNamespace, OriginalIdentity,
-    PersonalThumbnailUri, ReadableOriginalIdentity, ThumbnailSize, ThumbnailUriIdentity,
-    ValidationOutcome,
+    AccessTimePreservation, CacheEntryProblem, CacheNamespace, CacheRoot, FailureNamespace,
+    OriginalIdentity, PersonalThumbnailUri, ReadableOriginalIdentity, ThumbnailSize,
+    ThumbnailUriIdentity, ValidationOutcome,
 };
 
 #[test]
@@ -40,6 +40,12 @@ fn inspection_iterates_standard_entries_and_reports_facts() {
         &ValidationOutcome::UncheckedInspection
     );
     assert!(default_entries[0].timestamps().modified_at().is_some());
+    assert_eq!(
+        default_entries[0]
+            .timestamps()
+            .access_time_preserved_during_inspection(),
+        AccessTimePreservation::Preserved
+    );
     assert!(matches!(
         default_entries[0].original_uri(),
         Some(ThumbnailUriIdentity::Personal(uri)) if uri.as_str() == "file:///home/alice/photo.png"

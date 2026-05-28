@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::collections::HashSet;
+use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command as ProcessCommand, ExitCode};
 use std::time::{Duration, Instant};
@@ -15,7 +16,7 @@ use xdg_thumbnail::{
 };
 
 #[cfg(unix)]
-use std::os::unix::ffi::OsStrExt;
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
@@ -561,6 +562,7 @@ fn select_thumbnailer<'a>(
     })
 }
 
+#[derive(Debug)]
 struct ExecutionError {
     reason: &'static str,
     message: String,
@@ -801,7 +803,7 @@ fn expand_exec(
     input_uri: &str,
     output_path: &Path,
     size: ThumbnailSize,
-) -> Result<Vec<String>, ExecutionError> {
+) -> Result<Vec<OsString>, ExecutionError> {
     let words = shell_words::split(exec).map_err(|error| ExecutionError {
         reason: "thumbnailer-entry-invalid",
         message: error.to_string(),
@@ -818,7 +820,60 @@ fn expand_field_codes(
     input_uri: &str,
     output_path: &Path,
     size: ThumbnailSize,
-) -> Result<String, ExecutionError> {
+) -> Result<OsString, ExecutionError> {
+    expand_field_codes_platform(word, input_path, input_uri, output_path, size)
+}
+
+#[cfg(unix)]
+fn expand_field_codes_platform(
+    word: &str,
+    input_path: &Path,
+    input_uri: &str,
+    output_path: &Path,
+    size: ThumbnailSize,
+) -> Result<OsString, ExecutionError> {
+    let mut output = Vec::new();
+    let bytes = word.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'%' {
+            output.push(bytes[index]);
+            index += 1;
+            continue;
+        }
+        index += 1;
+        let Some(&code) = bytes.get(index) else {
+            return Err(ExecutionError {
+                reason: "thumbnailer-entry-invalid",
+                message: "dangling percent field code".to_owned(),
+            });
+        };
+        match code {
+            b'i' => output.extend_from_slice(input_path.as_os_str().as_bytes()),
+            b'u' => output.extend_from_slice(input_uri.as_bytes()),
+            b'o' => output.extend_from_slice(output_path.as_os_str().as_bytes()),
+            b's' => output.extend_from_slice(size.max_dimension().to_string().as_bytes()),
+            b'%' => output.push(b'%'),
+            _ => {
+                return Err(ExecutionError {
+                    reason: "thumbnailer-entry-invalid",
+                    message: format!("unknown thumbnailer field code %{}", char::from(code)),
+                });
+            }
+        }
+        index += 1;
+    }
+    Ok(OsString::from_vec(output))
+}
+
+#[cfg(not(unix))]
+fn expand_field_codes_platform(
+    word: &str,
+    input_path: &Path,
+    input_uri: &str,
+    output_path: &Path,
+    size: ThumbnailSize,
+) -> Result<OsString, ExecutionError> {
     let mut output = String::new();
     let mut chars = word.chars();
     while let Some(ch) = chars.next() {
@@ -846,7 +901,7 @@ fn expand_field_codes(
             }
         }
     }
-    Ok(output)
+    Ok(OsString::from(output))
 }
 
 fn valid_data_home() -> Option<PathBuf> {
@@ -940,4 +995,30 @@ fn parse_duration(input: &str) -> Result<Duration, String> {
         .checked_mul(multiplier)
         .map(Duration::from_secs)
         .ok_or_else(|| "duration is too large".to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn field_code_expansion_preserves_non_utf8_path_bytes() {
+        let input = PathBuf::from(OsString::from_vec(b"/tmp/input-\xFF.png".to_vec()));
+        let output = PathBuf::from(OsString::from_vec(b"/tmp/output-\xFE.png".to_vec()));
+
+        let argv = expand_exec(
+            "thumb %i %u %o %s",
+            &input,
+            "file:///tmp/input-%FF.png",
+            &output,
+            ThumbnailSize::Normal,
+        )
+        .unwrap();
+
+        assert_eq!(argv[1].as_bytes(), b"/tmp/input-\xFF.png");
+        assert_eq!(argv[2].as_bytes(), b"file:///tmp/input-%FF.png");
+        assert_eq!(argv[3].as_bytes(), b"/tmp/output-\xFE.png");
+        assert_eq!(argv[4].as_bytes(), b"128");
+    }
 }

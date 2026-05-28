@@ -7,8 +7,7 @@ use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::fs::{self, File};
-use std::io::Cursor;
-use std::io::Write;
+use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1663,9 +1662,9 @@ fn inspect_cache_entry(
         };
     }
 
-    timestamps =
-        thumbnail_timestamps_from_metadata(&metadata, AccessTimePreservation::NotPreserved);
-    let bytes = match fs::read(&path) {
+    let (read_result, preservation) = read_thumbnail_for_inspection(&path);
+    timestamps = thumbnail_timestamps_from_metadata(&metadata, preservation);
+    let bytes = match read_result {
         Ok(bytes) => bytes,
         Err(_) => {
             return CacheEntryInspection {
@@ -1759,6 +1758,94 @@ fn inspect_filename_uri_match(
     };
     if filename != uri.thumbnail_filename() {
         push_problem(problems, CacheEntryProblem::UriFilenameMismatch);
+    }
+}
+
+fn read_thumbnail_for_inspection(
+    path: &Path,
+) -> (std::io::Result<Vec<u8>>, AccessTimePreservation) {
+    #[cfg(unix)]
+    {
+        read_thumbnail_for_inspection_unix(path)
+    }
+    #[cfg(not(unix))]
+    {
+        (fs::read(path), AccessTimePreservation::Unsupported)
+    }
+}
+
+#[cfg(unix)]
+fn read_thumbnail_for_inspection_unix(
+    path: &Path,
+) -> (std::io::Result<Vec<u8>>, AccessTimePreservation) {
+    #[cfg(any(target_os = "linux", target_os = "fuchsia"))]
+    {
+        let flags = rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::CLOEXEC
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::NOATIME;
+        if let Ok(bytes) = read_thumbnail_with_flags(path, flags) {
+            return (Ok(bytes), AccessTimePreservation::Preserved);
+        }
+    }
+
+    read_thumbnail_and_restore_timestamps(path)
+}
+
+#[cfg(unix)]
+fn read_thumbnail_with_flags(path: &Path, flags: rustix::fs::OFlags) -> std::io::Result<Vec<u8>> {
+    let fd =
+        rustix::fs::open(path, flags, rustix::fs::Mode::empty()).map_err(std::io::Error::from)?;
+    let mut file = File::from(fd);
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+#[cfg(unix)]
+fn read_thumbnail_and_restore_timestamps(
+    path: &Path,
+) -> (std::io::Result<Vec<u8>>, AccessTimePreservation) {
+    let flags =
+        rustix::fs::OFlags::RDONLY | rustix::fs::OFlags::CLOEXEC | rustix::fs::OFlags::NOFOLLOW;
+    let fd = match rustix::fs::open(path, flags, rustix::fs::Mode::empty()) {
+        Ok(fd) => fd,
+        Err(error) => {
+            return (
+                Err(std::io::Error::from(error)),
+                AccessTimePreservation::Unsupported,
+            );
+        }
+    };
+    let mut file = File::from(fd);
+    let timestamps = match file.metadata() {
+        Ok(metadata) => timestamps_from_unix_metadata(&metadata),
+        Err(error) => return (Err(error), AccessTimePreservation::Unsupported),
+    };
+    let mut bytes = Vec::new();
+    if let Err(error) = file.read_to_end(&mut bytes) {
+        return (Err(error), AccessTimePreservation::Unsupported);
+    }
+
+    let preservation = if rustix::fs::futimens(&file, &timestamps).is_ok() {
+        AccessTimePreservation::Preserved
+    } else {
+        AccessTimePreservation::NotPreserved
+    };
+    (Ok(bytes), preservation)
+}
+
+#[cfg(unix)]
+fn timestamps_from_unix_metadata(metadata: &fs::Metadata) -> rustix::fs::Timestamps {
+    rustix::fs::Timestamps {
+        last_access: rustix::fs::Timespec {
+            tv_sec: metadata.atime(),
+            tv_nsec: metadata.atime_nsec() as _,
+        },
+        last_modification: rustix::fs::Timespec {
+            tv_sec: metadata.mtime(),
+            tv_nsec: metadata.mtime_nsec() as _,
+        },
     }
 }
 
@@ -1987,9 +2074,10 @@ fn encode_rgba_png(
 
 #[cfg(unix)]
 fn ensure_private_directory(path: &Path) -> Result<()> {
-    match fs::metadata(path) {
+    match fs::symlink_metadata(path) {
         Ok(metadata) => {
-            if !metadata.is_dir()
+            if metadata.file_type().is_symlink()
+                || !metadata.is_dir()
                 || metadata.uid() != rustix::process::getuid().as_raw()
                 || metadata.permissions().mode() & 0o077 != 0
             {
