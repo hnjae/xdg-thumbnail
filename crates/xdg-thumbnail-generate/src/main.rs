@@ -10,8 +10,8 @@ use base64::Engine;
 use clap::{Parser, ValueEnum};
 use serde::Serialize;
 use xdg_thumbnail::{
-    CacheNamespace, CacheRoot, ReadableOriginalIdentity, ThumbnailError, ThumbnailLookup,
-    ThumbnailSize,
+    CacheNamespace, CacheRoot, PersonalThumbnailUri, ReadableOriginalIdentity, ThumbnailError,
+    ThumbnailLookup, ThumbnailSize,
 };
 
 #[cfg(unix)]
@@ -281,24 +281,42 @@ fn plan_one(
     record.thumbnailer = Some(thumbnailer.filename.clone());
 
     if cli.sandbox == SandboxArg::Required {
-        record.decision = "failed";
-        record.reason = "sandbox-unavailable";
-        record.sandbox_eligibility = "backend-unavailable";
-        record.error = Some(ErrorRecord {
-            kind: "sandbox-unavailable",
-            message: "default mode requires Linux bubblewrap support; rerun with --sandbox off only if you trust the thumbnailer".to_owned(),
-        });
-        summary.failed += 1;
-        return record;
+        if let Err(error) = check_required_sandbox_eligibility(thumbnailer) {
+            record.decision = "failed";
+            record.reason = error.reason;
+            record.sandbox_eligibility = if error.reason == "sandbox-ineligible" {
+                "runtime-exposure-unavailable"
+            } else {
+                "backend-unavailable"
+            };
+            record.error = Some(ErrorRecord {
+                kind: error.reason,
+                message: error.message,
+            });
+            summary.failed += 1;
+            return record;
+        }
     }
 
-    record.thumbnailer_uri = record.uri.clone();
+    record.thumbnailer_uri = Some(thumbnailer_uri(
+        cli.sandbox,
+        original.identity().uri().as_str(),
+    ));
     if cli.dry_run {
-        let dry_run_output = std::env::temp_dir().join("xdg-thumbnail-dry-run-output.png");
+        let dry_run_output = if cli.sandbox == SandboxArg::Required {
+            PathBuf::from("/tmp/thumbnail.png")
+        } else {
+            std::env::temp_dir().join("xdg-thumbnail-dry-run-output.png")
+        };
+        let dry_run_input = if cli.sandbox == SandboxArg::Required {
+            Path::new("/run/xdg-thumbnail/input")
+        } else {
+            path
+        };
         if let Err(error) = expand_exec(
             &thumbnailer.exec,
-            path,
-            original.identity().uri().as_str(),
+            dry_run_input,
+            record.thumbnailer_uri.as_deref().unwrap_or_default(),
             &dry_run_output,
             size,
         ) {
@@ -322,6 +340,7 @@ fn plan_one(
             record.decision = "generated";
             record.reason = "created";
             record.applied = true;
+            record.sandbox_applied = cli.sandbox == SandboxArg::Required;
             summary.generated += 1;
         }
         Err(error) => {
@@ -557,12 +576,27 @@ fn execute_thumbnailer(
         reason: "thumbnailer-output-missing",
         message: error.to_string(),
     })?;
-    let output_path = output_dir.path().join("thumbnail.png");
+    let (exec_input_path, exec_input_uri, exec_output_path, host_output_path) =
+        if cli.sandbox == SandboxArg::Required {
+            (
+                PathBuf::from("/run/xdg-thumbnail/input"),
+                thumbnailer_uri(cli.sandbox, original.identity().uri().as_str()),
+                PathBuf::from("/tmp/thumbnail.png"),
+                output_dir.path().join("thumbnail.png"),
+            )
+        } else {
+            (
+                input_path.to_owned(),
+                original.identity().uri().as_str().to_owned(),
+                output_dir.path().join("thumbnail.png"),
+                output_dir.path().join("thumbnail.png"),
+            )
+        };
     let argv = expand_exec(
         &thumbnailer.exec,
-        input_path,
-        original.identity().uri().as_str(),
-        &output_path,
+        &exec_input_path,
+        &exec_input_uri,
+        &exec_output_path,
         size,
     )?;
     let (program, args) = argv.split_first().ok_or_else(|| ExecutionError {
@@ -570,13 +604,46 @@ fn execute_thumbnailer(
         message: "thumbnailer Exec expanded to an empty command".to_owned(),
     })?;
 
-    let mut child = ProcessCommand::new(program)
-        .args(args)
-        .spawn()
-        .map_err(|error| ExecutionError {
-            reason: "thumbnailer-exit",
-            message: error.to_string(),
-        })?;
+    let mut command = if cli.sandbox == SandboxArg::Required {
+        let program_path = thumbnailer_program(thumbnailer)?;
+        let mut command = ProcessCommand::new("bwrap");
+        command
+            .arg("--die-with-parent")
+            .arg("--unshare-net")
+            .arg("--new-session")
+            .arg("--dev")
+            .arg("/dev")
+            .arg("--proc")
+            .arg("/proc")
+            .arg("--dir")
+            .arg("/run")
+            .arg("--dir")
+            .arg("/run/xdg-thumbnail")
+            .arg("--ro-bind")
+            .arg(input_path)
+            .arg("/run/xdg-thumbnail/input")
+            .arg("--dir")
+            .arg("/tmp")
+            .arg("--bind")
+            .arg(output_dir.path())
+            .arg("/tmp");
+        add_system_binds(&mut command);
+        command.arg(program_path).args(args);
+        command
+    } else {
+        let mut command = ProcessCommand::new(program);
+        command.args(args);
+        command
+    };
+
+    let mut child = command.spawn().map_err(|error| ExecutionError {
+        reason: if cli.sandbox == SandboxArg::Required {
+            "sandbox-unavailable"
+        } else {
+            "thumbnailer-exit"
+        },
+        message: error.to_string(),
+    })?;
     let started = Instant::now();
     let status = loop {
         match child.try_wait() {
@@ -605,7 +672,7 @@ fn execute_thumbnailer(
             message: status.to_string(),
         });
     }
-    let rendered = std::fs::read(&output_path).map_err(|error| {
+    let rendered = std::fs::read(&host_output_path).map_err(|error| {
         let reason = if error.kind() == std::io::ErrorKind::NotFound {
             "thumbnailer-output-missing"
         } else {
@@ -635,6 +702,95 @@ fn execute_thumbnailer(
                 message: error.to_string(),
             }
         })
+}
+
+fn check_required_sandbox_eligibility(thumbnailer: &Thumbnailer) -> Result<(), ExecutionError> {
+    if resolve_executable("bwrap").is_none() {
+        return Err(ExecutionError {
+            reason: "sandbox-unavailable",
+            message: "default mode requires Linux bubblewrap support; rerun with --sandbox off only if you trust the thumbnailer".to_owned(),
+        });
+    }
+    let program = thumbnailer_program(thumbnailer)?;
+    if is_shell(&program) {
+        return Err(ExecutionError {
+            reason: "sandbox-ineligible",
+            message: "shell-based thumbnailer entries are not eligible for the required sandbox"
+                .to_owned(),
+        });
+    }
+    if !is_system_runtime_path(&program) {
+        return Err(ExecutionError {
+            reason: "sandbox-ineligible",
+            message: format!(
+                "thumbnailer executable {} is outside the required sandbox runtime profile",
+                program.display()
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn thumbnailer_program(thumbnailer: &Thumbnailer) -> Result<PathBuf, ExecutionError> {
+    let words = shell_words::split(&thumbnailer.exec).map_err(|error| ExecutionError {
+        reason: "thumbnailer-entry-invalid",
+        message: error.to_string(),
+    })?;
+    let program = words.first().ok_or_else(|| ExecutionError {
+        reason: "thumbnailer-entry-invalid",
+        message: "thumbnailer Exec is empty".to_owned(),
+    })?;
+    resolve_executable(program).ok_or_else(|| ExecutionError {
+        reason: "thumbnailer-entry-invalid",
+        message: format!("thumbnailer executable {program} was not found"),
+    })
+}
+
+fn is_shell(path: &Path) -> bool {
+    matches!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some("sh" | "bash" | "dash" | "zsh" | "fish")
+    )
+}
+
+fn is_system_runtime_path(path: &Path) -> bool {
+    [
+        Path::new("/usr"),
+        Path::new("/bin"),
+        Path::new("/sbin"),
+        Path::new("/lib"),
+        Path::new("/lib64"),
+        Path::new("/nix/store"),
+    ]
+    .iter()
+    .any(|prefix| path.starts_with(prefix))
+}
+
+fn add_system_binds(command: &mut ProcessCommand) {
+    for path in [
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/lib",
+        "/lib64",
+        "/etc",
+        "/nix/store",
+    ] {
+        let path = Path::new(path);
+        if path.exists() {
+            command.arg("--ro-bind").arg(path).arg(path);
+        }
+    }
+}
+
+fn thumbnailer_uri(sandbox: SandboxArg, host_uri: &str) -> String {
+    if sandbox == SandboxArg::Required {
+        PersonalThumbnailUri::from_absolute_path_bytes(b"/run/xdg-thumbnail/input")
+            .map(|uri| uri.as_str().to_owned())
+            .unwrap_or_else(|_| host_uri.to_owned())
+    } else {
+        host_uri.to_owned()
+    }
 }
 
 fn expand_exec(
