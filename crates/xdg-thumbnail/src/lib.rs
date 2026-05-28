@@ -338,9 +338,22 @@ impl CacheRoot {
         successful_size: Option<ThumbnailSize>,
         inspections: &mut Vec<CacheEntryInspection>,
     ) -> Result<()> {
+        let metadata = match fs::symlink_metadata(dir) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(source) => {
+                return Err(ThumbnailError::Io {
+                    context: "inspect thumbnail namespace directory",
+                    source,
+                });
+            }
+        };
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Ok(());
+        }
+
         let entries = match fs::read_dir(dir) {
             Ok(entries) => entries,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
             Err(source) => {
                 return Err(ThumbnailError::Io {
                     context: "read thumbnail namespace directory",
@@ -792,11 +805,11 @@ impl ReadableOriginalIdentity {
         mime_type: Option<impl Into<String>>,
     ) -> Result<Self> {
         let path = path.as_ref();
-        let _file = File::open(path).map_err(|source| ThumbnailError::Io {
+        let file = File::open(path).map_err(|source| ThumbnailError::Io {
             context: "open original for reading",
             source,
         })?;
-        let metadata = path.metadata().map_err(|source| ThumbnailError::Io {
+        let metadata = file.metadata().map_err(|source| ThumbnailError::Io {
             context: "read original metadata",
             source,
         })?;
@@ -1238,6 +1251,16 @@ impl CacheEntryHandle {
         if self.path.parent() != Some(self.cache_dir.as_path()) {
             return Err(ThumbnailError::UnsafeRemoval(
                 "entry is not a direct child of its cache directory",
+            ));
+        }
+        let cache_dir_metadata =
+            fs::symlink_metadata(&self.cache_dir).map_err(|source| ThumbnailError::Io {
+                context: "inspect cache directory before removal",
+                source,
+            })?;
+        if cache_dir_metadata.file_type().is_symlink() || !cache_dir_metadata.is_dir() {
+            return Err(ThumbnailError::UnsafeRemoval(
+                "cache directory is not a real directory",
             ));
         }
         let metadata = fs::symlink_metadata(&self.path).map_err(|source| ThumbnailError::Io {

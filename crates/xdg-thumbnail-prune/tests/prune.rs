@@ -5,8 +5,8 @@ use assert_cmd::Command;
 use serde_json::Value;
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    CacheNamespace, CacheRoot, OriginalIdentity, PersonalThumbnailUri, ReadableOriginalIdentity,
-    ThumbnailSize, UnixMTimeSeconds,
+    CacheNamespace, CacheRoot, FailureNamespace, OriginalIdentity, PersonalThumbnailUri,
+    ReadableOriginalIdentity, ThumbnailSize, UnixMTimeSeconds,
 };
 
 #[test]
@@ -74,6 +74,44 @@ fn failure_deletion_opt_in_requires_failure_scope() {
         .stderr(predicates::str::contains("--scope failures"));
 }
 
+#[test]
+fn deletes_stale_local_failure_entries_when_both_stale_and_failure_deletion_are_enabled() {
+    let fixture = Fixture::new();
+    let thumbnail = fixture.install_stale_failure_entry();
+
+    let output = Command::cargo_bin("xdg-thumbnail-prune")
+        .unwrap()
+        .env("XDG_CACHE_HOME", fixture.cache_home.path())
+        .env("HOME", fixture.home.path())
+        .args([
+            "--scope",
+            "failures",
+            "--allow-delete-failures",
+            "--delete-stale-local",
+            "--delete",
+            "--format",
+            "jsonl",
+            "--age-basis",
+            "modification-time",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let lines = String::from_utf8(output).unwrap();
+    let records = lines
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+
+    assert!(!thumbnail.exists());
+    assert_eq!(records[0]["namespace"], "fail/app-1");
+    assert_eq!(records[0]["decision"], "delete");
+    assert_eq!(records[0]["applied"], true);
+    assert_eq!(records[0]["reason"], "stale-local-metadata");
+}
+
 struct Fixture {
     cache_home: TempDir,
     home: TempDir,
@@ -104,6 +142,26 @@ impl Fixture {
         root.personal_path(
             original.identity().uri(),
             &CacheNamespace::Size(ThumbnailSize::Normal),
+        )
+    }
+
+    fn install_stale_failure_entry(&self) -> std::path::PathBuf {
+        let original_path = self.home.path().join("original.png");
+        std::fs::write(&original_path, b"new original").unwrap();
+        let uri = PersonalThumbnailUri::from_absolute_path_bytes(
+            original_path.as_os_str().as_encoded_bytes(),
+        )
+        .unwrap();
+        let root = CacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
+        let original = ReadableOriginalIdentity::new(
+            OriginalIdentity::new(uri, UnixMTimeSeconds::new(1), Some(1), Some("image/png"))
+                .unwrap(),
+        );
+        let namespace = FailureNamespace::new("app-1").unwrap();
+        root.write_failure_entry(&namespace, &original).unwrap();
+        root.personal_path(
+            original.identity().uri(),
+            &CacheNamespace::Failure(namespace),
         )
     }
 }

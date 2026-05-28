@@ -16,6 +16,8 @@ use xdg_thumbnail::{
 
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
@@ -888,6 +890,13 @@ fn resolve_executable(value: &str) -> Option<PathBuf> {
     None
 }
 
+#[cfg(unix)]
+fn is_executable(path: &Path) -> bool {
+    path.metadata()
+        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
 fn is_executable(path: &Path) -> bool {
     path.is_file()
 }

@@ -83,6 +83,27 @@ fn failure_iteration_is_limited_to_one_real_namespace_level() {
 }
 
 #[test]
+fn inspection_does_not_follow_symlinked_size_namespace_directories() {
+    let temp = TempDir::new().unwrap();
+    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let outside = temp.path().join("outside-normal");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::create_dir_all(root.as_path()).unwrap();
+    std::fs::write(
+        outside.join("abcdefabcdefabcdefabcdefabcdefab.png"),
+        b"outside",
+    )
+    .unwrap();
+    symlink(&outside, root.as_path().join("normal")).unwrap();
+
+    let entries = root
+        .inspect_thumbnails(&[ThumbnailSize::Normal], false)
+        .unwrap();
+
+    assert!(entries.is_empty());
+}
+
+#[test]
 fn cache_entry_handles_remove_files_without_following_symlinks() {
     let temp = TempDir::new().unwrap();
     let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();

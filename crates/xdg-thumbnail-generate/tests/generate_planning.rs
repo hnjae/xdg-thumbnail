@@ -9,6 +9,9 @@ use xdg_thumbnail::{
     UnixMTimeSeconds,
 };
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 #[test]
 fn dry_run_reports_selected_thumbnailer_and_target_cache_path() {
     let fixture = Fixture::new();
@@ -80,6 +83,35 @@ fn rejects_inputs_inside_personal_cache() {
         .stdout(predicates::str::contains("unsupported-input"));
 }
 
+#[cfg(unix)]
+#[test]
+fn try_exec_without_execute_permission_is_ignored() {
+    let fixture = Fixture::new();
+    let input = fixture.write_png_input("photo.png");
+    let helper = fixture.root.path().join("not-executable-thumbnailer");
+    std::fs::write(&helper, b"#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o644)).unwrap();
+    fixture.write_thumbnailer_with_try_exec(
+        "blocked.thumbnailer",
+        &format!("{} %i %o %s", helper.display()),
+        "image/png;",
+        helper.to_str().unwrap(),
+    );
+
+    let assert = fixture.command([
+        "--dry-run",
+        "--sandbox",
+        "off",
+        "--format",
+        "jsonl",
+        input.to_str().unwrap(),
+    ]);
+
+    assert
+        .code(4)
+        .stdout(predicates::str::contains("no-matching-thumbnailer"));
+}
+
 struct Fixture {
     root: TempDir,
     cache_home: TempDir,
@@ -129,6 +161,22 @@ impl Fixture {
         std::fs::write(
             dir.join(name),
             format!("[Thumbnailer Entry]\nExec={exec}\nMimeType={mime_type}\n"),
+        )
+        .unwrap();
+    }
+
+    fn write_thumbnailer_with_try_exec(
+        &self,
+        name: &str,
+        exec: &str,
+        mime_type: &str,
+        try_exec: &str,
+    ) {
+        let dir = self.data_home.path().join("thumbnailers");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(name),
+            format!("[Thumbnailer Entry]\nExec={exec}\nMimeType={mime_type}\nTryExec={try_exec}\n"),
         )
         .unwrap();
     }
