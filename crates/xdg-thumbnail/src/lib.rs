@@ -4,17 +4,18 @@
 //! Freedesktop thumbnail cache primitives.
 
 use std::collections::BTreeMap;
-use std::fs;
-use std::io::Cursor;
-
 use std::ffi::{OsStr, OsString};
 use std::fmt;
-use std::fs::File;
+use std::fs::{self, File};
+use std::io::Cursor;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
+#[cfg(unix)]
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
 use thiserror::Error;
 
@@ -33,6 +34,9 @@ pub enum ThumbnailError {
     /// The cache root could not be resolved from XDG environment variables.
     #[error("cache root could not be resolved: {0}")]
     CacheRootUnavailable(&'static str),
+    /// An existing cache directory violates thumbnail cache privacy requirements.
+    #[error("insecure cache directory: {0}")]
+    InsecureCacheDirectory(PathBuf),
     /// Filesystem I/O failed.
     #[error("{context}: {source}")]
     Io {
@@ -220,6 +224,76 @@ impl CacheRoot {
             | ValidationOutcome::UncheckedInspection => Ok(ThumbnailLookup::Invalid(vec![
                 CacheEntryProblem::UnverifiableOriginal,
             ])),
+        }
+    }
+
+    /// Normalizes rendered PNG data and atomically installs a personal-cache thumbnail.
+    pub fn install_personal_thumbnail(
+        &self,
+        original: &ReadableOriginalIdentity,
+        size: ThumbnailSize,
+        rendered_png: &[u8],
+    ) -> Result<InstalledThumbnail> {
+        let namespace = CacheNamespace::Size(size);
+        let path = self.personal_path(original.identity().uri(), &namespace);
+        let bytes = normalized_personal_thumbnail_png(rendered_png, original.identity(), size)?;
+        self.write_personal_entry(&path, &namespace, &bytes)?;
+        Ok(InstalledThumbnail { path, bytes })
+    }
+
+    fn write_personal_entry(
+        &self,
+        path: &Path,
+        namespace: &CacheNamespace,
+        bytes: &[u8],
+    ) -> Result<()> {
+        self.ensure_namespace_dir(namespace)?;
+        let parent = path.parent().ok_or(ThumbnailError::CacheRootUnavailable(
+            "cache path has no parent directory",
+        ))?;
+        let mut temp = tempfile::Builder::new()
+            .prefix(".xdg-thumbnail-")
+            .tempfile_in(parent)
+            .map_err(|source| ThumbnailError::Io {
+                context: "create thumbnail temporary file",
+                source,
+            })?;
+        temp.as_file_mut()
+            .write_all(bytes)
+            .map_err(|source| ThumbnailError::Io {
+                context: "write thumbnail temporary file",
+                source,
+            })?;
+        temp.as_file_mut()
+            .set_permissions(fs::Permissions::from_mode(0o600))
+            .map_err(|source| ThumbnailError::Io {
+                context: "set thumbnail temporary file permissions",
+                source,
+            })?;
+        temp.as_file_mut()
+            .sync_all()
+            .map_err(|source| ThumbnailError::Io {
+                context: "sync thumbnail temporary file",
+                source,
+            })?;
+        fs::rename(temp.path(), path).map_err(|source| ThumbnailError::Io {
+            context: "publish thumbnail cache entry",
+            source,
+        })?;
+        Ok(())
+    }
+
+    fn ensure_namespace_dir(&self, namespace: &CacheNamespace) -> Result<()> {
+        ensure_private_directory(&self.path)?;
+        match namespace {
+            CacheNamespace::Size(size) => {
+                ensure_private_directory(&self.path.join(size.directory_name()))
+            }
+            CacheNamespace::Failure(namespace) => {
+                let fail = self.path.join("fail");
+                ensure_private_directory(&fail)?;
+                ensure_private_directory(&fail.join(namespace.as_str()))
+            }
         }
     }
 }
@@ -893,6 +967,27 @@ pub struct ValidatedThumbnailPayload {
     metadata: ThumbnailMetadata,
 }
 
+/// Result of a successful personal-cache install.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InstalledThumbnail {
+    path: PathBuf,
+    bytes: Vec<u8>,
+}
+
+impl InstalledThumbnail {
+    /// Returns the installed cache path.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Returns the final normalized PNG bytes that were installed.
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
 impl ValidatedThumbnailPayload {
     /// Returns the path from which the payload was validated.
     #[must_use]
@@ -1183,6 +1278,230 @@ fn push_problem(problems: &mut Vec<CacheEntryProblem>, problem: CacheEntryProble
     if !problems.contains(&problem) {
         problems.push(problem);
     }
+}
+
+struct RgbaImage {
+    width: u32,
+    height: u32,
+    pixels: Vec<u8>,
+}
+
+fn normalized_personal_thumbnail_png(
+    rendered_png: &[u8],
+    original: &OriginalIdentity,
+    size: ThumbnailSize,
+) -> Result<Vec<u8>> {
+    let image = decode_rendered_png_to_rgba8(rendered_png)?;
+    let image = downscale_to_namespace(image, size)?;
+    let metadata = thumbnail_metadata_pairs(original);
+    let png = encode_rgba_png(image.width, image.height, &image.pixels, &metadata)?;
+    match validate_personal_thumbnail(&png, original, size) {
+        ValidationOutcome::FullyVerified => Ok(png),
+        ValidationOutcome::Invalid(problems) => Err(ThumbnailError::UnsupportedRenderedThumbnail(
+            rendered_validation_error(problems.as_slice()),
+        )),
+        ValidationOutcome::SharedMetadataIncomplete | ValidationOutcome::UncheckedInspection => {
+            Err(ThumbnailError::UnsupportedRenderedThumbnail(
+                "normalized thumbnail could not be verified",
+            ))
+        }
+    }
+}
+
+fn rendered_validation_error(problems: &[CacheEntryProblem]) -> &'static str {
+    if problems.contains(&CacheEntryProblem::DimensionsExceedNamespace) {
+        "dimensions exceed namespace"
+    } else if problems.contains(&CacheEntryProblem::NonconformingPngFormat) {
+        "nonconforming final PNG"
+    } else if problems.contains(&CacheEntryProblem::InvalidPngStructure) {
+        "invalid final PNG structure"
+    } else {
+        "metadata validation failed"
+    }
+}
+
+fn thumbnail_metadata_pairs(original: &OriginalIdentity) -> Vec<(String, String)> {
+    let mut metadata = vec![
+        ("Thumb::URI".to_owned(), original.uri().as_str().to_owned()),
+        ("Thumb::MTime".to_owned(), original.mtime().to_string()),
+    ];
+    if let Some(size) = original.size() {
+        metadata.push(("Thumb::Size".to_owned(), size.to_string()));
+    }
+    if let Some(mime_type) = original.mime_type() {
+        metadata.push(("Thumb::Mimetype".to_owned(), mime_type.to_owned()));
+    }
+    metadata
+}
+
+fn decode_rendered_png_to_rgba8(bytes: &[u8]) -> Result<RgbaImage> {
+    let mut decoder = png::Decoder::new(Cursor::new(bytes));
+    decoder.set_transformations(
+        png::Transformations::EXPAND | png::Transformations::STRIP_16 | png::Transformations::ALPHA,
+    );
+    let mut reader = decoder
+        .read_info()
+        .map_err(|err| ThumbnailError::Png(err.to_string()))?;
+    let Some(output_buffer_size) = reader.output_buffer_size() else {
+        return Err(ThumbnailError::Png(
+            "png output buffer size is unavailable".to_owned(),
+        ));
+    };
+    let mut buffer = vec![0; output_buffer_size];
+    let output = reader
+        .next_frame(&mut buffer)
+        .map_err(|err| ThumbnailError::Png(err.to_string()))?;
+    let frame = &buffer[..output.buffer_size()];
+    if output.bit_depth != png::BitDepth::Eight {
+        return Err(ThumbnailError::UnsupportedRenderedThumbnail(
+            "decoded PNG did not normalize to 8-bit samples",
+        ));
+    }
+
+    let pixels = match output.color_type {
+        png::ColorType::Rgba => frame.to_vec(),
+        png::ColorType::Rgb => {
+            let mut out = Vec::with_capacity(output.width as usize * output.height as usize * 4);
+            for pixel in frame.chunks_exact(3) {
+                out.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 255]);
+            }
+            out
+        }
+        png::ColorType::GrayscaleAlpha => {
+            let mut out = Vec::with_capacity(output.width as usize * output.height as usize * 4);
+            for pixel in frame.chunks_exact(2) {
+                out.extend_from_slice(&[pixel[0], pixel[0], pixel[0], pixel[1]]);
+            }
+            out
+        }
+        png::ColorType::Grayscale | png::ColorType::Indexed => {
+            let mut out = Vec::with_capacity(output.width as usize * output.height as usize * 4);
+            for &gray in frame {
+                out.extend_from_slice(&[gray, gray, gray, 255]);
+            }
+            out
+        }
+    };
+
+    Ok(RgbaImage {
+        width: output.width,
+        height: output.height,
+        pixels,
+    })
+}
+
+fn downscale_to_namespace(image: RgbaImage, size: ThumbnailSize) -> Result<RgbaImage> {
+    let max = size.max_dimension();
+    if image.width <= max && image.height <= max {
+        return Ok(image);
+    }
+    let (width, height) = constrain_dimensions(image.width, image.height, max);
+    let source = image
+        .pixels
+        .chunks_exact(4)
+        .map(|pixel| resize::px::RGBA::new(pixel[0], pixel[1], pixel[2], pixel[3]))
+        .collect::<Vec<_>>();
+    let mut dest = vec![resize::px::RGBA::new(0, 0, 0, 0); width as usize * height as usize];
+    let mut resizer = resize::new(
+        image.width as usize,
+        image.height as usize,
+        width as usize,
+        height as usize,
+        resize::Pixel::RGBA8P,
+        resize::Type::Lanczos3,
+    )
+    .map_err(|_| ThumbnailError::UnsupportedRenderedThumbnail("resize setup failed"))?;
+    resizer
+        .resize(&source, &mut dest)
+        .map_err(|_| ThumbnailError::UnsupportedRenderedThumbnail("resize failed"))?;
+    let mut pixels = Vec::with_capacity(dest.len() * 4);
+    for pixel in dest {
+        pixels.extend_from_slice(&[pixel.r, pixel.g, pixel.b, pixel.a]);
+    }
+    Ok(RgbaImage {
+        width,
+        height,
+        pixels,
+    })
+}
+
+fn constrain_dimensions(width: u32, height: u32, max: u32) -> (u32, u32) {
+    if width >= height {
+        let scaled_height = (u64::from(height) * u64::from(max) / u64::from(width)).max(1) as u32;
+        (max, scaled_height)
+    } else {
+        let scaled_width = (u64::from(width) * u64::from(max) / u64::from(height)).max(1) as u32;
+        (scaled_width, max)
+    }
+}
+
+fn encode_rgba_png(
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    metadata: &[(String, String)],
+) -> Result<Vec<u8>> {
+    let expected_len = width as usize * height as usize * 4;
+    if pixels.len() != expected_len {
+        return Err(ThumbnailError::UnsupportedRenderedThumbnail(
+            "RGBA buffer length does not match dimensions",
+        ));
+    }
+    let mut output = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut output, width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        for (key, value) in metadata {
+            encoder
+                .add_text_chunk(key.clone(), value.clone())
+                .map_err(|err| ThumbnailError::Png(err.to_string()))?;
+        }
+        let mut writer = encoder
+            .write_header()
+            .map_err(|err| ThumbnailError::Png(err.to_string()))?;
+        writer
+            .write_image_data(pixels)
+            .map_err(|err| ThumbnailError::Png(err.to_string()))?;
+    }
+    Ok(output)
+}
+
+#[cfg(unix)]
+fn ensure_private_directory(path: &Path) -> Result<()> {
+    match fs::metadata(path) {
+        Ok(metadata) => {
+            if !metadata.is_dir()
+                || metadata.uid() != rustix::process::getuid().as_raw()
+                || metadata.permissions().mode() & 0o077 != 0
+            {
+                return Err(ThumbnailError::InsecureCacheDirectory(path.to_owned()));
+            }
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            fs::create_dir(path).map_err(|source| ThumbnailError::Io {
+                context: "create thumbnail cache directory",
+                source,
+            })?;
+            fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(|source| {
+                ThumbnailError::Io {
+                    context: "set thumbnail cache directory permissions",
+                    source,
+                }
+            })?;
+            Ok(())
+        }
+        Err(source) => Err(ThumbnailError::Io {
+            context: "inspect thumbnail cache directory",
+            source,
+        }),
+    }
+}
+
+#[cfg(not(unix))]
+fn ensure_private_directory(_path: &Path) -> Result<()> {
+    Err(ThumbnailError::UnsupportedPlatform)
 }
 
 /// A standard Freedesktop thumbnail size directory.
