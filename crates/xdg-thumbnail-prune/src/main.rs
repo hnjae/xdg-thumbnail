@@ -286,6 +286,9 @@ fn evaluate_entry(
         } else if problems.contains(&CacheEntryProblem::InvalidMetadataSyntax) {
             decision = Decision::Delete;
             reason = Some("invalid-metadata-syntax");
+        } else if problems.contains(&CacheEntryProblem::UriFilenameMismatch) {
+            decision = Decision::Delete;
+            reason = Some("uri-filename-mismatch");
         } else if problems.contains(&CacheEntryProblem::NonconformingPngFormat) {
             decision = Decision::Skip;
             reason = Some("nonconforming-format");
@@ -497,6 +500,9 @@ fn validate_personal_failure_entry(bytes: &[u8], original: &OriginalIdentity) ->
 
     match metadata.thumb_uri() {
         Some(uri) if uri == original.uri().as_str() => {}
+        Some(uri) if PersonalThumbnailUri::from_absolute_uri(uri).is_err() => {
+            push_problem(&mut problems, CacheEntryProblem::InvalidMetadataSyntax);
+        }
         Some(_) => push_problem(&mut problems, CacheEntryProblem::StaleMetadata),
         None => push_problem(&mut problems, CacheEntryProblem::MissingRequiredMetadata),
     }
@@ -525,9 +531,13 @@ fn validate_personal_failure_entry(bytes: &[u8], original: &OriginalIdentity) ->
         (Err(_), _) => push_problem(&mut problems, CacheEntryProblem::InvalidMetadataSyntax),
     }
 
-    if let (Some(stored), Some(expected)) = (metadata.thumb_mimetype(), original.mime_type()) {
-        if stored != expected {
-            push_problem(&mut problems, CacheEntryProblem::StaleMetadata);
+    if let Some(stored) = metadata.thumb_mimetype() {
+        if !is_valid_mime_type(stored) {
+            push_problem(&mut problems, CacheEntryProblem::InvalidMetadataSyntax);
+        } else if let Some(expected) = original.mime_type() {
+            if stored != expected {
+                push_problem(&mut problems, CacheEntryProblem::StaleMetadata);
+            }
         }
     }
 
@@ -542,6 +552,13 @@ fn push_problem(problems: &mut Vec<CacheEntryProblem>, problem: CacheEntryProble
     if !problems.contains(&problem) {
         problems.push(problem);
     }
+}
+
+fn is_valid_mime_type(mime_type: &str) -> bool {
+    !mime_type.is_empty()
+        && mime_type.is_ascii()
+        && !mime_type.bytes().any(|byte| byte.is_ascii_control())
+        && mime_type.contains('/')
 }
 
 fn evaluate_age_based(

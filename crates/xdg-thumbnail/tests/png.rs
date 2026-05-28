@@ -71,6 +71,17 @@ fn validates_personal_thumbnail_metadata_and_conformance() {
         CacheEntryProblem::StaleMetadata,
     );
 
+    let mut invalid_uri = metadata();
+    invalid_uri.insert("Thumb::URI", "file:///home/alice/My Photo.png");
+    assert_invalid_contains(
+        validate_personal_thumbnail(
+            &png_with_metadata(2, 1, png::ColorType::Rgba, invalid_uri),
+            &original,
+            ThumbnailSize::Normal,
+        ),
+        CacheEntryProblem::InvalidMetadataSyntax,
+    );
+
     assert_invalid_contains(
         validate_personal_thumbnail(
             &png_with_metadata(2, 1, png::ColorType::Rgb, metadata()),
@@ -124,6 +135,19 @@ fn shared_validation_allows_incomplete_freshness_metadata_explicitly() {
             ThumbnailSize::Normal,
         ),
         CacheEntryProblem::StaleMetadata,
+    );
+
+    let mut invalid_uri = BTreeMap::new();
+    invalid_uri.insert("Thumb::URI", "./My Photo.png");
+    assert_invalid_contains(
+        validate_shared_thumbnail(
+            &png_with_metadata(2, 1, png::ColorType::Rgba, invalid_uri),
+            &context,
+            Some(UnixMTimeSeconds::new(42)),
+            Some(12),
+            ThumbnailSize::Normal,
+        ),
+        CacheEntryProblem::InvalidMetadataSyntax,
     );
 }
 

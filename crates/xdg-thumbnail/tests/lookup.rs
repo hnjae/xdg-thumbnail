@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use tempfile::TempDir;
 use xdg_thumbnail::{
     CacheEntryProblem, CacheNamespace, CacheRoot, OriginalIdentity, PersonalThumbnailUri,
-    ThumbnailLookup, ThumbnailSize, UnixMTimeSeconds,
+    ReadableOriginalIdentity, ThumbnailLookup, ThumbnailSize, UnixMTimeSeconds,
 };
 
 #[test]
@@ -14,7 +14,10 @@ fn validated_path_lookup_distinguishes_valid_missing_and_invalid_entries() {
     let temp = TempDir::new().unwrap();
     let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = original_identity(42);
-    let path = root.personal_path(original.uri(), &CacheNamespace::Size(ThumbnailSize::Normal));
+    let path = root.personal_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::Normal),
+    );
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
 
     assert_eq!(
@@ -56,7 +59,10 @@ fn validated_payload_lookup_returns_exact_validated_png_bytes() {
     let temp = TempDir::new().unwrap();
     let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = original_identity(42);
-    let path = root.personal_path(original.uri(), &CacheNamespace::Size(ThumbnailSize::Normal));
+    let path = root.personal_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::Normal),
+    );
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let valid_bytes = png_with_metadata(metadata("42"));
     std::fs::write(&path, &valid_bytes).unwrap();
@@ -74,14 +80,16 @@ fn validated_payload_lookup_returns_exact_validated_png_bytes() {
     }
 }
 
-fn original_identity(mtime: i64) -> OriginalIdentity {
-    OriginalIdentity::new(
-        PersonalThumbnailUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
-        UnixMTimeSeconds::new(mtime),
-        Some(12),
-        Some("image/png"),
+fn original_identity(mtime: i64) -> ReadableOriginalIdentity {
+    ReadableOriginalIdentity::new(
+        OriginalIdentity::new(
+            PersonalThumbnailUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
+            UnixMTimeSeconds::new(mtime),
+            Some(12),
+            Some("image/png"),
+        )
+        .unwrap(),
     )
-    .unwrap()
 }
 
 fn metadata(mtime: &'static str) -> BTreeMap<&'static str, &'static str> {

@@ -55,6 +55,60 @@ fn inspection_iterates_standard_entries_and_reports_facts() {
 }
 
 #[test]
+fn inspection_reports_invalid_uri_metadata_and_filename_uri_mismatch() {
+    let temp = TempDir::new().unwrap();
+    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let dir = root.as_path().join("normal");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let invalid_uri_path = dir.join("abcdefabcdefabcdefabcdefabcdefab.png");
+    std::fs::write(
+        &invalid_uri_path,
+        png_with_metadata(
+            2,
+            1,
+            BTreeMap::from([
+                ("Thumb::URI", "file:///home/alice/My Photo.png"),
+                ("Thumb::MTime", "42"),
+            ]),
+        ),
+    )
+    .unwrap();
+
+    let expected_uri =
+        PersonalThumbnailUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap();
+    let wrong_uri = PersonalThumbnailUri::from_absolute_path_bytes(b"/home/alice/other.png")
+        .unwrap()
+        .thumbnail_filename();
+    let mismatched_path = dir.join(wrong_uri);
+    std::fs::write(
+        &mismatched_path,
+        png_with_metadata(
+            2,
+            1,
+            BTreeMap::from([
+                ("Thumb::URI", expected_uri.as_str()),
+                ("Thumb::MTime", "42"),
+            ]),
+        ),
+    )
+    .unwrap();
+
+    let entries = root
+        .inspect_thumbnails(&[ThumbnailSize::Normal], false)
+        .unwrap();
+
+    assert!(entries.iter().any(|entry| {
+        entry.path() == invalid_uri_path.as_path()
+            && matches!(entry.outcome(), ValidationOutcome::Invalid(problems) if problems.contains(&CacheEntryProblem::InvalidMetadataSyntax))
+    }));
+    assert!(entries.iter().any(|entry| {
+        entry.path() == mismatched_path.as_path()
+            && matches!(entry.outcome(), ValidationOutcome::Invalid(problems) if problems.contains(&CacheEntryProblem::UriFilenameMismatch))
+    }));
+}
+
+#[test]
 fn failure_iteration_is_limited_to_one_real_namespace_level() {
     let temp = TempDir::new().unwrap();
     let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
@@ -152,17 +206,25 @@ fn readable_original() -> ReadableOriginalIdentity {
 }
 
 fn png_without_metadata(width: u32, height: u32) -> Vec<u8> {
+    png_with_metadata(
+        width,
+        height,
+        BTreeMap::from([
+            ("Thumb::URI", "file:///home/alice/photo.png"),
+            ("Thumb::MTime", "42"),
+            ("Thumb::Size", "12"),
+            ("Thumb::Mimetype", "image/png"),
+        ]),
+    )
+}
+
+fn png_with_metadata(width: u32, height: u32, metadata: BTreeMap<&str, &str>) -> Vec<u8> {
     let mut output = Vec::new();
     {
         let mut encoder = png::Encoder::new(&mut output, width, height);
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Eight);
-        for (key, value) in BTreeMap::from([
-            ("Thumb::URI", "file:///home/alice/photo.png"),
-            ("Thumb::MTime", "42"),
-            ("Thumb::Size", "12"),
-            ("Thumb::Mimetype", "image/png"),
-        ]) {
+        for (key, value) in metadata {
             encoder
                 .add_text_chunk(key.to_owned(), value.to_owned())
                 .unwrap();

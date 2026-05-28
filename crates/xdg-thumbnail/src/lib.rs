@@ -156,13 +156,15 @@ impl CacheRoot {
 
     /// Returns a validated personal-cache path for integrations that must pass a filename.
     ///
-    /// The candidate PNG is opened and validated before this method returns. Callers that reopen
-    /// the returned path accept that another process may replace it after validation.
+    /// The original identity must have already been confirmed readable. The candidate PNG is
+    /// opened and validated before this method returns. Callers that reopen the returned path
+    /// accept that another process may replace it after validation.
     pub fn validated_personal_path(
         &self,
-        original: &OriginalIdentity,
+        original: &ReadableOriginalIdentity,
         size: ThumbnailSize,
     ) -> Result<ThumbnailLookup<ValidatedThumbnailPath>> {
+        let original = original.identity();
         let path = self.personal_path(original.uri(), &CacheNamespace::Size(size));
         let bytes = match fs::read(&path) {
             Ok(bytes) => bytes,
@@ -194,11 +196,14 @@ impl CacheRoot {
     }
 
     /// Returns exact validated PNG bytes from the personal thumbnail cache.
+    ///
+    /// The original identity must have already been confirmed readable.
     pub fn validated_personal_payload(
         &self,
-        original: &OriginalIdentity,
+        original: &ReadableOriginalIdentity,
         size: ThumbnailSize,
     ) -> Result<ThumbnailLookup<ValidatedThumbnailPayload>> {
+        let original = original.identity();
         let path = self.personal_path(original.uri(), &CacheNamespace::Size(size));
         let bytes = match fs::read(&path) {
             Ok(bytes) => bytes,
@@ -501,33 +506,31 @@ impl PersonalThumbnailUri {
             .strip_prefix("file:")
             .ok_or_else(|| ThumbnailError::invalid_uri("local URI must use the file scheme"))?;
 
-        let normalized = if let Some(path) = rest.strip_prefix("//localhost/") {
-            format!("file:///{path}")
-        } else if rest.starts_with("///") {
-            uri.to_owned()
-        } else if rest.starts_with("//") {
-            return Err(ThumbnailError::invalid_uri(
-                "file URI authority is not directly local",
-            ));
+        let path = if let Some(rest) = rest.strip_prefix("//") {
+            let (authority, path) = rest
+                .split_once('/')
+                .ok_or_else(|| ThumbnailError::invalid_uri("file URI path must be absolute"))?;
+            if !(authority.is_empty() || authority == "localhost") {
+                return Err(ThumbnailError::invalid_uri(
+                    "file URI authority is not directly local",
+                ));
+            }
+            format!("/{path}")
         } else if rest.starts_with('/') {
-            format!("file://{rest}")
+            rest.to_owned()
         } else {
             return Err(ThumbnailError::invalid_uri(
                 "file URI path must be absolute",
             ));
         };
-
-        let path = normalized
-            .strip_prefix("file://")
-            .ok_or_else(|| ThumbnailError::invalid_uri("local URI must use the file scheme"))?;
         if !path.starts_with('/') {
             return Err(ThumbnailError::invalid_uri(
                 "file URI path must be absolute",
             ));
         }
-        validate_percent_escapes(path.as_bytes())?;
-
-        Ok(Self { value: normalized })
+        validate_uri_path_text(path.as_bytes(), true)?;
+        let path_bytes = percent_decode_bytes(path.as_bytes())?;
+        Self::from_absolute_path_bytes(&path_bytes)
     }
 
     /// Accepts a caller-selected absolute thumbnail URI identity and preserves it exactly.
@@ -601,13 +604,9 @@ impl SharedRelativeThumbnailUri {
                 "shared URI must name one direct child",
             ));
         }
-        validate_percent_escapes(encoded.as_bytes())?;
+        validate_uri_path_text(encoded.as_bytes(), false)?;
         let decoded = percent_decode_bytes(encoded.as_bytes())?;
-        validate_raw_shared_child_name(&decoded)?;
-
-        Ok(Self {
-            value: uri.to_owned(),
-        })
+        Self::from_raw_child_name(&decoded)
     }
 
     /// Returns the canonical shared relative URI identity string.
@@ -957,10 +956,37 @@ fn validate_ascii_uri_identity(uri: &str) -> Result<()> {
             "URI identity must be ASCII and percent-encoded",
         ));
     }
-    if uri.bytes().any(|byte| byte.is_ascii_control()) {
+    if uri
+        .bytes()
+        .any(|byte| byte.is_ascii_control() || byte == b' ')
+    {
         return Err(ThumbnailError::invalid_uri(
-            "URI identity must not contain control characters",
+            "URI identity must not contain control characters or spaces",
         ));
+    }
+    Ok(())
+}
+
+fn validate_uri_path_text(input: &[u8], allow_slash: bool) -> Result<()> {
+    let mut i = 0;
+    while i < input.len() {
+        if input[i] == b'%' {
+            if i + 2 >= input.len()
+                || !input[i + 1].is_ascii_hexdigit()
+                || !input[i + 2].is_ascii_hexdigit()
+            {
+                return Err(ThumbnailError::invalid_uri(
+                    "URI contains an invalid percent escape",
+                ));
+            }
+            i += 3;
+        } else if is_safe_path_byte(input[i], allow_slash) {
+            i += 1;
+        } else {
+            return Err(ThumbnailError::invalid_uri(
+                "URI path contains an unescaped byte that must be percent-encoded",
+            ));
+        }
     }
     Ok(())
 }
@@ -1075,6 +1101,8 @@ pub enum CacheEntryProblem {
     DimensionsExceedNamespace,
     /// The cache directory entry is not a standard thumbnail filename.
     NonstandardFilename,
+    /// The standard cache filename does not match the stored thumbnail URI identity.
+    UriFilenameMismatch,
 }
 
 /// Validation confidence and validity for a cache entry.
@@ -1495,6 +1523,9 @@ pub fn validate_personal_thumbnail(
 
     match metadata.thumb_uri() {
         Some(uri) if uri == original.uri().as_str() => {}
+        Some(uri) if PersonalThumbnailUri::from_absolute_uri(uri).is_err() => {
+            push_problem(&mut problems, CacheEntryProblem::InvalidMetadataSyntax);
+        }
         Some(_) => push_problem(&mut problems, CacheEntryProblem::StaleMetadata),
         None => push_problem(&mut problems, CacheEntryProblem::MissingRequiredMetadata),
     }
@@ -1538,6 +1569,9 @@ pub fn validate_shared_thumbnail(
 
     match metadata.thumb_uri() {
         Some(uri) if uri == context.shared_uri().as_str() => {}
+        Some(uri) if SharedRelativeThumbnailUri::parse(uri).is_err() => {
+            push_problem(&mut problems, CacheEntryProblem::InvalidMetadataSyntax);
+        }
         Some(_) => push_problem(&mut problems, CacheEntryProblem::StaleMetadata),
         None => incomplete = true,
     }
@@ -1579,7 +1613,12 @@ fn compare_optional_mimetype(
     metadata: &ThumbnailMetadata,
     expected: Option<&str>,
 ) {
-    if let (Some(stored), Some(expected)) = (metadata.thumb_mimetype(), expected) {
+    let Some(stored) = metadata.thumb_mimetype() else {
+        return;
+    };
+    if validate_mime_type(stored).is_err() {
+        push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax);
+    } else if let Some(expected) = expected {
         if stored != expected {
             push_problem(problems, CacheEntryProblem::StaleMetadata);
         }
@@ -1624,7 +1663,8 @@ fn inspect_cache_entry(
         };
     }
 
-    timestamps = thumbnail_timestamps(&path, AccessTimePreservation::NotPreserved);
+    timestamps =
+        thumbnail_timestamps_from_metadata(&metadata, AccessTimePreservation::NotPreserved);
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
         Err(_) => {
@@ -1655,8 +1695,10 @@ fn inspect_cache_entry(
 
     let mut problems =
         successful_size.map_or_else(Vec::new, |size| parsed.conformance_problems(size));
-    inspect_required_metadata(&mut problems, parsed.metadata());
-    let original_uri = parsed.metadata().thumb_uri().and_then(parse_thumbnail_uri);
+    let original_uri = inspect_required_metadata(&mut problems, parsed.metadata());
+    if let Some(ThumbnailUriIdentity::Personal(uri)) = &original_uri {
+        inspect_filename_uri_match(&mut problems, &path, uri);
+    }
     let outcome = if problems.is_empty() {
         ValidationOutcome::UncheckedInspection
     } else {
@@ -1673,10 +1715,23 @@ fn inspect_cache_entry(
     }
 }
 
-fn inspect_required_metadata(problems: &mut Vec<CacheEntryProblem>, metadata: &ThumbnailMetadata) {
-    if metadata.thumb_uri().is_none() {
-        push_problem(problems, CacheEntryProblem::MissingRequiredMetadata);
-    }
+fn inspect_required_metadata(
+    problems: &mut Vec<CacheEntryProblem>,
+    metadata: &ThumbnailMetadata,
+) -> Option<ThumbnailUriIdentity> {
+    let original_uri = match metadata.thumb_uri() {
+        Some(uri) => match PersonalThumbnailUri::from_absolute_uri(uri) {
+            Ok(uri) => Some(ThumbnailUriIdentity::Personal(uri)),
+            Err(_) => {
+                push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax);
+                None
+            }
+        },
+        None => {
+            push_problem(problems, CacheEntryProblem::MissingRequiredMetadata);
+            None
+        }
+    };
     match metadata.thumb_mtime_result() {
         Ok(Some(_)) => {}
         Ok(None) => push_problem(problems, CacheEntryProblem::MissingRequiredMetadata),
@@ -1685,29 +1740,52 @@ fn inspect_required_metadata(problems: &mut Vec<CacheEntryProblem>, metadata: &T
     if metadata.thumb_size_result().is_err() {
         push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax);
     }
+    if let Some(mime_type) = metadata.thumb_mimetype() {
+        if validate_mime_type(mime_type).is_err() {
+            push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax);
+        }
+    }
+    original_uri
 }
 
-fn parse_thumbnail_uri(uri: &str) -> Option<ThumbnailUriIdentity> {
-    if uri.starts_with("./") {
-        SharedRelativeThumbnailUri::parse(uri)
-            .ok()
-            .map(ThumbnailUriIdentity::Shared)
-    } else {
-        PersonalThumbnailUri::from_absolute_uri(uri)
-            .ok()
-            .map(ThumbnailUriIdentity::Personal)
+fn inspect_filename_uri_match(
+    problems: &mut Vec<CacheEntryProblem>,
+    path: &Path,
+    uri: &PersonalThumbnailUri,
+) {
+    let Some(filename) = path.file_name().and_then(OsStr::to_str) else {
+        push_problem(problems, CacheEntryProblem::UriFilenameMismatch);
+        return;
+    };
+    if filename != uri.thumbnail_filename() {
+        push_problem(problems, CacheEntryProblem::UriFilenameMismatch);
     }
 }
 
 fn thumbnail_timestamps(path: &Path, preservation: AccessTimePreservation) -> ThumbnailTimestamps {
-    let (accessed_at, modified_at) = fs::symlink_metadata(path).map_or((None, None), |metadata| {
-        (metadata.accessed().ok(), metadata.modified().ok())
-    });
+    let (accessed_at, modified_at) = fs::symlink_metadata(path)
+        .map_or((None, None), |metadata| timestamps_from_metadata(&metadata));
     ThumbnailTimestamps {
         accessed_at,
         modified_at,
         access_time_preserved_during_inspection: preservation,
     }
+}
+
+fn thumbnail_timestamps_from_metadata(
+    metadata: &fs::Metadata,
+    preservation: AccessTimePreservation,
+) -> ThumbnailTimestamps {
+    let (accessed_at, modified_at) = timestamps_from_metadata(metadata);
+    ThumbnailTimestamps {
+        accessed_at,
+        modified_at,
+        access_time_preserved_during_inspection: preservation,
+    }
+}
+
+fn timestamps_from_metadata(metadata: &fs::Metadata) -> (Option<SystemTime>, Option<SystemTime>) {
+    (metadata.accessed().ok(), metadata.modified().ok())
 }
 
 fn is_standard_thumbnail_filename(name: &str) -> bool {

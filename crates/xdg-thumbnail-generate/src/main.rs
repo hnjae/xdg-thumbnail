@@ -243,7 +243,7 @@ fn plan_one(
     };
 
     if !cli.force {
-        match root.validated_personal_path(original.identity(), size) {
+        match root.validated_personal_path(&original, size) {
             Ok(ThumbnailLookup::Valid(_)) => {
                 record.decision = "keep";
                 record.reason = "already-valid";
