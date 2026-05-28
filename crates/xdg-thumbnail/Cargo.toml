@@ -11,3 +11,15 @@ description = "Freedesktop thumbnail cache primitives"
 [lib]
 name = "xdg_thumbnail"
 path = "src/lib.rs"
+
+[dependencies]
+md5.workspace = true
+percent-encoding.workspace = true
+png.workspace = true
+resize.workspace = true
+rustix.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

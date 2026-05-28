@@ -13,4 +13,14 @@ name = "xdg-thumbnail-prune"
 path = "src/main.rs"
 
 [dependencies]
+base64.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 xdg-thumbnail = { path = "../xdg-thumbnail" }
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
