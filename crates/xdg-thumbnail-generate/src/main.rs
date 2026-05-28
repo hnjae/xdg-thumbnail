@@ -299,7 +299,7 @@ fn plan_one(
         return record;
     }
 
-    match execute_thumbnailer(&cli, root, thumbnailer, &original, path, size) {
+    match execute_thumbnailer(cli, root, thumbnailer, &original, path, size) {
         Ok(()) => {
             record.decision = "generated";
             record.reason = "created";
@@ -489,9 +489,7 @@ fn parse_thumbnailer(path: PathBuf, filename: String, from_user_dir: bool) -> Op
         return None;
     }
     if let Some(try_exec) = section.attr("TryExec").first() {
-        if resolve_executable(try_exec).is_none() {
-            return None;
-        }
+        resolve_executable(try_exec)?;
     }
     Some(Thumbnailer {
         filename,
