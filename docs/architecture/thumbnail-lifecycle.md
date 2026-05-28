@@ -15,10 +15,10 @@ flowchart TD
     F -- no --> S{Shared lookup enabled?}
     F -- yes --> H[Read PNG metadata]
     H --> I{Metadata valid for context?}
-    I -- yes --> J[Return validated path or payload]
+    I -- yes --> J[Return validated path or PNG bytes]
     I -- no --> S
     S -- yes --> T{Acceptable shared thumbnail?}
-    T -- yes --> U[Return validated shared path or payload]
+    T -- yes --> U[Return validated shared path or PNG bytes]
     T -- no --> N[Cache miss]
     S -- no --> N
 ```

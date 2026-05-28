@@ -145,6 +145,7 @@ pub struct OriginalIdentity {
     uri: PersonalThumbnailUri,
     mtime: UnixMTimeSeconds,
     size: Option<u64>,
+    mime_type: Option<String>,
 }
 
 pub struct ReadableOriginalIdentity {
