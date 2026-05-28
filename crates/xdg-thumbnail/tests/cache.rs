@@ -4,7 +4,7 @@
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, UNIX_EPOCH};
 
 use xdg_thumbnail::{
     CacheNamespace, CacheRoot, FailureNamespace, OriginalIdentity, PersonalThumbnailUri,
@@ -70,7 +70,7 @@ fn failure_namespaces_are_direct_ascii_directory_names() {
         "..",
         "nested/name",
         "has space",
-        "snowman",
+        "snowman☃",
         "bad\nname",
     ] {
         assert!(FailureNamespace::new(invalid).is_err(), "{invalid:?}");

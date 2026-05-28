@@ -3,7 +3,14 @@
 
 //! Freedesktop thumbnail cache primitives.
 
+use std::ffi::{OsStr, OsString};
 use std::fmt;
+use std::fs::File;
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
 
 use thiserror::Error;
 
@@ -50,6 +57,92 @@ impl ThumbnailError {
 
 /// Result type used by this crate.
 pub type Result<T, E = ThumbnailError> = std::result::Result<T, E>;
+
+/// Root directory of the personal thumbnail cache, usually `$XDG_CACHE_HOME/thumbnails`.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct CacheRoot {
+    path: PathBuf,
+}
+
+impl CacheRoot {
+    /// Creates a cache root from an already resolved absolute thumbnail root path.
+    pub fn new(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        if !path.is_absolute() {
+            return Err(ThumbnailError::CacheRootUnavailable(
+                "thumbnail cache root must be absolute",
+            ));
+        }
+        Ok(Self {
+            path: path.to_owned(),
+        })
+    }
+
+    /// Resolves the personal thumbnail cache root from the process environment.
+    pub fn resolve_from_env() -> Result<Self> {
+        let xdg_cache_home = std::env::var_os("XDG_CACHE_HOME");
+        let home = std::env::var_os("HOME");
+        Self::resolve_from_values(xdg_cache_home.as_deref(), home.as_deref())
+    }
+
+    /// Resolves the personal thumbnail cache root from supplied XDG values.
+    ///
+    /// Relative, unset, and blank `XDG_CACHE_HOME` values are ignored. `HOME`
+    /// must be absolute when fallback is needed.
+    #[cfg(unix)]
+    pub fn resolve_from_values(
+        xdg_cache_home: Option<&OsStr>,
+        home: Option<&OsStr>,
+    ) -> Result<Self> {
+        if let Some(cache_home) = xdg_cache_home {
+            if !cache_home.as_bytes().is_empty() {
+                let path = PathBuf::from(cache_home);
+                if path.is_absolute() {
+                    return Self::new(path.join("thumbnails"));
+                }
+            }
+        }
+
+        let Some(home) = home else {
+            return Err(ThumbnailError::CacheRootUnavailable(
+                "HOME is required when XDG_CACHE_HOME is unset, blank, or relative",
+            ));
+        };
+        if home.as_bytes().is_empty() {
+            return Err(ThumbnailError::CacheRootUnavailable(
+                "HOME is required when XDG_CACHE_HOME is unset, blank, or relative",
+            ));
+        }
+        let home = PathBuf::from(home);
+        if !home.is_absolute() {
+            return Err(ThumbnailError::CacheRootUnavailable(
+                "HOME must be absolute",
+            ));
+        }
+        Self::new(home.join(".cache").join("thumbnails"))
+    }
+
+    /// Resolves the personal thumbnail cache root from supplied XDG values.
+    #[cfg(not(unix))]
+    pub fn resolve_from_values(
+        _xdg_cache_home: Option<&OsStr>,
+        _home: Option<&OsStr>,
+    ) -> Result<Self> {
+        Err(ThumbnailError::UnsupportedPlatform)
+    }
+
+    /// Returns the resolved thumbnail root path.
+    #[must_use]
+    pub fn as_path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Computes the personal-cache path for an accepted URI and namespace without reading it.
+    #[must_use]
+    pub fn personal_path(&self, uri: &PersonalThumbnailUri, namespace: &CacheNamespace) -> PathBuf {
+        namespace.join_under(&self.path, &uri.thumbnail_filename())
+    }
+}
 
 /// A canonical absolute URI identity for entries in the personal thumbnail cache.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -216,6 +309,278 @@ impl SharedRelativeThumbnailUri {
     #[must_use]
     pub fn thumbnail_filename(&self) -> String {
         format!("{}.png", self.md5_stem())
+    }
+}
+
+/// A successful-thumbnail size namespace or a program failure namespace.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum CacheNamespace {
+    /// A successful thumbnail size directory.
+    Size(ThumbnailSize),
+    /// A failure-entry namespace under `fail/`.
+    Failure(FailureNamespace),
+}
+
+impl CacheNamespace {
+    fn join_under(&self, root: &Path, filename: &str) -> PathBuf {
+        match self {
+            Self::Size(size) => root.join(size.directory_name()).join(filename),
+            Self::Failure(namespace) => root.join("fail").join(namespace.as_str()).join(filename),
+        }
+    }
+
+    /// Returns a display-oriented namespace name.
+    #[must_use]
+    pub fn name(&self) -> String {
+        match self {
+            Self::Size(size) => size.directory_name().to_owned(),
+            Self::Failure(namespace) => format!("fail/{}", namespace.as_str()),
+        }
+    }
+}
+
+/// A validated direct directory name for failure entries.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct FailureNamespace {
+    value: String,
+}
+
+impl FailureNamespace {
+    /// Creates a failure namespace from an ASCII direct directory name.
+    pub fn new(value: impl Into<String>) -> Result<Self> {
+        let value = value.into();
+        if value.is_empty() || value == "." || value == ".." {
+            return Err(ThumbnailError::InvalidNamespace(
+                "failure namespace must be a non-empty direct name",
+            ));
+        }
+        if !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'+' | b'-'))
+        {
+            return Err(ThumbnailError::InvalidNamespace(
+                "failure namespace contains an invalid character",
+            ));
+        }
+        Ok(Self { value })
+    }
+
+    /// Returns the namespace directory name.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.value
+    }
+}
+
+impl fmt::Display for FailureNamespace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.value)
+    }
+}
+
+/// Whole Unix epoch seconds used by `Thumb::MTime`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct UnixMTimeSeconds {
+    seconds: i64,
+}
+
+impl UnixMTimeSeconds {
+    /// Creates a timestamp from whole Unix epoch seconds.
+    #[must_use]
+    pub const fn new(seconds: i64) -> Self {
+        Self { seconds }
+    }
+
+    /// Converts a [`SystemTime`] to whole non-negative Unix epoch seconds.
+    pub fn from_system_time(time: SystemTime) -> Result<Self> {
+        let duration = time
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| ThumbnailError::InvalidMetadata("mtime is before the Unix epoch"))?;
+        let seconds = i64::try_from(duration.as_secs())
+            .map_err(|_| ThumbnailError::InvalidMetadata("mtime overflows i64 seconds"))?;
+        Ok(Self { seconds })
+    }
+
+    /// Returns whole Unix epoch seconds.
+    #[must_use]
+    pub const fn as_i64(self) -> i64 {
+        self.seconds
+    }
+}
+
+impl fmt::Display for UnixMTimeSeconds {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.seconds)
+    }
+}
+
+/// Original identity and freshness facts needed for validation and writes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OriginalIdentity {
+    uri: PersonalThumbnailUri,
+    mtime: UnixMTimeSeconds,
+    size: Option<u64>,
+    mime_type: Option<String>,
+}
+
+impl OriginalIdentity {
+    /// Creates an original identity from caller-confirmed facts.
+    pub fn new(
+        uri: PersonalThumbnailUri,
+        mtime: UnixMTimeSeconds,
+        size: Option<u64>,
+        mime_type: Option<impl Into<String>>,
+    ) -> Result<Self> {
+        let mime_type = mime_type.map(Into::into);
+        if let Some(mime_type) = mime_type.as_deref() {
+            validate_mime_type(mime_type)?;
+        }
+        Ok(Self {
+            uri,
+            mtime,
+            size,
+            mime_type,
+        })
+    }
+
+    /// Returns the canonical personal-cache URI.
+    #[must_use]
+    pub fn uri(&self) -> &PersonalThumbnailUri {
+        &self.uri
+    }
+
+    /// Returns the original modification time.
+    #[must_use]
+    pub const fn mtime(&self) -> UnixMTimeSeconds {
+        self.mtime
+    }
+
+    /// Returns the original byte size when known.
+    #[must_use]
+    pub const fn size(&self) -> Option<u64> {
+        self.size
+    }
+
+    /// Returns the original MIME type when known.
+    #[must_use]
+    pub fn mime_type(&self) -> Option<&str> {
+        self.mime_type.as_deref()
+    }
+}
+
+/// An original identity whose source has been confirmed readable by the caller.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReadableOriginalIdentity {
+    identity: OriginalIdentity,
+}
+
+impl ReadableOriginalIdentity {
+    /// Marks caller-confirmed original identity facts as readable.
+    #[must_use]
+    pub const fn new(identity: OriginalIdentity) -> Self {
+        Self { identity }
+    }
+
+    /// Opens a local original for reading and derives its identity facts.
+    #[cfg(unix)]
+    pub fn from_local_path(
+        path: impl AsRef<Path>,
+        mime_type: Option<impl Into<String>>,
+    ) -> Result<Self> {
+        let path = path.as_ref();
+        let _file = File::open(path).map_err(|source| ThumbnailError::Io {
+            context: "open original for reading",
+            source,
+        })?;
+        let metadata = path.metadata().map_err(|source| ThumbnailError::Io {
+            context: "read original metadata",
+            source,
+        })?;
+        let uri = PersonalThumbnailUri::from_absolute_path_bytes(path.as_os_str().as_bytes())?;
+        let mtime = UnixMTimeSeconds::from_system_time(metadata.modified().map_err(|source| {
+            ThumbnailError::Io {
+                context: "read original modification time",
+                source,
+            }
+        })?)?;
+        let identity = OriginalIdentity::new(uri, mtime, Some(metadata.len()), mime_type)?;
+        Ok(Self { identity })
+    }
+
+    /// Opens a local original for reading and derives its identity facts.
+    #[cfg(not(unix))]
+    pub fn from_local_path(
+        _path: impl AsRef<Path>,
+        _mime_type: Option<impl Into<String>>,
+    ) -> Result<Self> {
+        Err(ThumbnailError::UnsupportedPlatform)
+    }
+
+    /// Returns the readable identity facts.
+    #[must_use]
+    pub const fn identity(&self) -> &OriginalIdentity {
+        &self.identity
+    }
+}
+
+/// Explicit context for read-only shared repository lookup.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SharedRepositoryContext {
+    repository_root: PathBuf,
+    original_child_name: OsString,
+    shared_uri: SharedRelativeThumbnailUri,
+}
+
+impl SharedRepositoryContext {
+    /// Creates a shared repository context for one direct child of `repository_root`.
+    #[cfg(unix)]
+    pub fn new(repository_root: impl AsRef<Path>, original_child_name: &OsStr) -> Result<Self> {
+        let repository_root = repository_root.as_ref();
+        if !repository_root.is_absolute() {
+            return Err(ThumbnailError::CacheRootUnavailable(
+                "shared repository root must be absolute",
+            ));
+        }
+        let shared_uri =
+            SharedRelativeThumbnailUri::from_raw_child_name(original_child_name.as_bytes())?;
+        Ok(Self {
+            repository_root: repository_root.to_owned(),
+            original_child_name: original_child_name.to_owned(),
+            shared_uri,
+        })
+    }
+
+    /// Creates a shared repository context for one direct child of `repository_root`.
+    #[cfg(not(unix))]
+    pub fn new(_repository_root: impl AsRef<Path>, _original_child_name: &OsStr) -> Result<Self> {
+        Err(ThumbnailError::UnsupportedPlatform)
+    }
+
+    /// Returns the shared repository root directory.
+    #[must_use]
+    pub fn repository_root(&self) -> &Path {
+        &self.repository_root
+    }
+
+    /// Returns the direct child original filename.
+    #[must_use]
+    pub fn original_child_name(&self) -> &OsStr {
+        &self.original_child_name
+    }
+
+    /// Returns the shared URI used for hashing and optional metadata comparison.
+    #[must_use]
+    pub const fn shared_uri(&self) -> &SharedRelativeThumbnailUri {
+        &self.shared_uri
+    }
+
+    /// Computes the shared repository path for a successful thumbnail size.
+    #[must_use]
+    pub fn thumbnail_path(&self, size: ThumbnailSize) -> PathBuf {
+        self.repository_root
+            .join(".sh_thumbnails")
+            .join(size.directory_name())
+            .join(self.shared_uri.thumbnail_filename())
     }
 }
 
@@ -395,11 +760,33 @@ impl ThumbnailSize {
         }
     }
 
+    /// Returns the maximum width and height for this namespace in pixels.
+    #[must_use]
+    pub const fn max_dimension(self) -> u32 {
+        match self {
+            Self::Normal => 128,
+            Self::Large => 256,
+            Self::XLarge => 512,
+            Self::XxLarge => 1024,
+        }
+    }
+
     /// Returns all standard thumbnail sizes in cache scan order.
     #[must_use]
     pub const fn all() -> [Self; 4] {
         [Self::Normal, Self::Large, Self::XLarge, Self::XxLarge]
     }
+}
+
+fn validate_mime_type(mime_type: &str) -> Result<()> {
+    if mime_type.is_empty()
+        || !mime_type.is_ascii()
+        || mime_type.bytes().any(|byte| byte.is_ascii_control())
+        || !mime_type.contains('/')
+    {
+        return Err(ThumbnailError::InvalidMetadata("invalid MIME type"));
+    }
+    Ok(())
 }
 
 /// Validation state for a thumbnail cache entry.
