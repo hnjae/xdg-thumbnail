@@ -40,6 +40,8 @@ The library should expose APIs for:
 - Reading shared thumbnail repositories without modifying them.
 - Writing opt-in failure entries under `fail/<program-version>/` when the caller explicitly supplies the failure namespace and a readability-confirmed original identity.
 
+The public API should hide commodity implementation dependencies from callers where possible. The library may use maintained crates for MD5, percent-encoding, and URI syntax validation internally, but callers interact with canonical thumbnail URI and cache path types rather than parser-specific URL objects or hash implementation details.
+
 ## Generation Boundary
 
 The base library API does not decode original source images, render documents, extract video frames, select thumbnailer helpers, scale source content, apply source orientation metadata, manage renderer temporary files, or decide when generation should be attempted. Source interpretation, including metadata such as Exif orientation, belongs to the caller's renderer or external thumbnailer. The library may decode and normalize an already rendered in-memory thumbnail payload, write Freedesktop thumbnail PNG metadata, and atomically install personal-cache entries when the caller supplies that payload with a readability-confirmed original identity.

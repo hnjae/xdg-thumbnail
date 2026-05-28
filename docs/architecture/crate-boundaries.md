@@ -28,6 +28,7 @@ The CLI crates are policy runners. `xdg-thumbnail-prune` should translate user i
 - Resolve the thumbnail cache root from the XDG base directory rules, including ignoring relative `$XDG_CACHE_HOME` values.
 - Represent canonical thumbnail URIs as library-owned string newtypes that preserve the exact MD5 and `Thumb::URI` input.
 - Construct canonical thumbnail URIs for local filesystem paths, textual local `file:` URI inputs, and shared-repository child filenames; for other schemes, preserve caller-provided canonical absolute URI strings without parser reserialization.
+- Use maintained dependencies for commodity primitives such as MD5 digest calculation, byte percent-encoding, and optional URI syntax validation, while keeping canonical thumbnail URI identity and cache filename policy in the library instead of exposing parser-specific URL objects or handwritten digest code.
 - Represent thumbnail sizes: `normal`, `large`, `x-large`, and `xx-large`.
 - Represent cache namespaces separately for successful thumbnail sizes and program-version failure entries.
 - Compute thumbnail filenames from canonical thumbnail URIs using MD5 and the `.png` suffix, including absolute canonical URIs for the personal cache and `./`-prefixed relative URIs for shared repositories, as specified in `docs/spec/uri-canonicalization.md`.

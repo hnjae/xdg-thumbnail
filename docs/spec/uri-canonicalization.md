@@ -4,6 +4,8 @@ Thumbnail path calculation and `Thumb::URI` metadata must use the same canonical
 
 Initial platform support targets Unix-like XDG desktop environments. Local filesystem URI construction depends on Unix path identity and path bytes; unsupported platforms must fail explicitly instead of approximating URI or path behavior that could produce incompatible thumbnail filenames.
 
+The implementation should use well-maintained external libraries for commodity primitives such as MD5 and percent-encoding instead of hand-written implementations. External URI or IRI parsers may be used only for syntax validation or lossless helper views; parser reserialization must not become the canonical thumbnail URI unless the relevant constructor explicitly defines that normalization. The library owns the thumbnail URI identity string used for hashing, `Thumb::URI`, and metadata comparison.
+
 ## Personal Cache URIs
 
 Personal-cache thumbnails use absolute canonical URIs. The MD5 input for the thumbnail filename is the exact byte sequence of the canonical URI string after URI percent-encoding. The URI used for hashing is a URI identity, not a user-facing display path.
@@ -33,6 +35,8 @@ When `Thumb::URI` is present in a shared thumbnail, it must match the shared rel
 Thumbnail filenames are the lowercase hexadecimal MD5 digest of the canonical thumbnail URI string with `.png` appended. The hash is computed over the URI string, not over the original file contents.
 
 The same canonical thumbnail URI string must be used for filename calculation, `Thumb::URI` metadata when that metadata is present, and validation comparisons. Divergence between those strings is a cache miss or invalid metadata, not an implementation detail to repair silently.
+
+MD5 is a Freedesktop compatibility requirement for cache filenames, not a security boundary in this project. The implementation should delegate the digest algorithm to a maintained dependency, then format the resulting digest as 32 lowercase hexadecimal characters before appending `.png`.
 
 APIs may expose lossless syntactic helpers such as scheme access, authority access, display formatting, or conversion to a parsed URL where that is lossless for the specific URI. Those helpers must not classify user-facing cleanup policy and must not replace the stored canonical string as the source of truth for hashing or metadata comparison.
 
