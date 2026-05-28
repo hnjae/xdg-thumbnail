@@ -241,6 +241,24 @@ impl CacheRoot {
         Ok(InstalledThumbnail { path, bytes })
     }
 
+    /// Writes a deterministic 1x1 transparent failure entry in an explicit namespace.
+    pub fn write_failure_entry(
+        &self,
+        namespace: &FailureNamespace,
+        original: &ReadableOriginalIdentity,
+    ) -> Result<InstalledThumbnail> {
+        let namespace = CacheNamespace::Failure(namespace.clone());
+        let path = self.personal_path(original.identity().uri(), &namespace);
+        let bytes = encode_rgba_png(
+            1,
+            1,
+            &[0, 0, 0, 0],
+            &thumbnail_metadata_pairs(original.identity()),
+        )?;
+        self.write_personal_entry(&path, &namespace, &bytes)?;
+        Ok(InstalledThumbnail { path, bytes })
+    }
+
     fn write_personal_entry(
         &self,
         path: &Path,
