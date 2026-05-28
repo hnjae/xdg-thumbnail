@@ -15,7 +15,7 @@ Options:
 ```text
 --older-than <DURATION>       Age threshold for remote, virtual, and removable entries. Defaults to 30d.
 --delete                      Apply deletion decisions. Without this option, prune only reports planned actions.
---delete-stale-local          Delete stale local thumbnails whose originals still exist but no longer match stored metadata.
+--delete-stale-local          Include stale local thumbnails whose originals still exist but no longer match stored metadata as deletion candidates. Actual deletion still requires --delete.
 --allow-delete-failures       Allow failure entries scanned by --scope failures or --scope all to become deletion candidates. Actual deletion still requires --delete.
 --size <SIZE>                 Restrict successful thumbnail scan to one size namespace: normal, large, x-large, or xx-large. Can be passed multiple times.
 --scope <SCOPE>               Restrict scan scope: thumbnails, failures, or all. Defaults to thumbnails.

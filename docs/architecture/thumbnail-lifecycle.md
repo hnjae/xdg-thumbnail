@@ -25,13 +25,13 @@ flowchart TD
 
 The personal thumbnail repository has priority over shared thumbnail repositories. If a personal thumbnail exists but is outdated or corrupt and shared lookup is enabled, the caller should check the shared repository before reporting a cache miss. If an acceptable shared thumbnail is found, cleanup of the stale personal entry is a caller policy decision. Normal lookup must treat shared repositories as read-only; personal-cache writes use the explicit install lifecycle.
 
-Shared thumbnail repositories are scoped to the directory that contains the original file. Shared-repository thumbnail URIs must be `./`-prefixed direct child filenames; they are not recursive paths and must reject parent segments, slash path separators, and encoded `/`. On Unix-like targets, backslash is a filename byte and must be preserved through percent-encoding when needed.
+Shared thumbnail repositories are scoped to the directory that contains the original file. Shared lookup therefore requires a shared repository context, not only the personal-cache absolute URI: the context must identify the repository root, the direct child original filename, and the `./`-prefixed relative URI used for shared hashing and optional `Thumb::URI` comparison. Shared-repository thumbnail URIs are not recursive paths and must reject parent segments, slash path separators, and encoded `/`. On Unix-like targets, backslash is a filename byte and must be preserved through percent-encoding when needed.
 
 ## Validation Model
 
 Validation must verify stored metadata against the original whenever the standard requires or permits it. For personal-cache thumbnails, missing `Thumb::URI`, a `Thumb::URI` mismatch against the canonical original URI, missing `Thumb::MTime`, or a `Thumb::MTime` mismatch is invalid because the standard requires these keys for identity and freshness checks. `Thumb::MTime` must be stored and compared as whole Unix epoch seconds. `Thumb::Size` should be checked when present.
 
-Shared-repository validation is a separate context. When `Thumb::URI`, `Thumb::MTime`, or `Thumb::Size` is present, the library should compare it with the shared relative URI or original metadata. Missing `Thumb::URI` or `Thumb::MTime` is not automatically invalid for shared thumbnails because shared repositories may use other freshness mechanisms, so callers must decide whether an acceptable but not fully metadata-validated shared thumbnail is good enough for their use case.
+Shared-repository validation is a separate context. When `Thumb::URI`, `Thumb::MTime`, or `Thumb::Size` is present, the library should compare it with the explicit shared relative URI or original metadata from the shared repository context. Missing `Thumb::URI` or `Thumb::MTime` is not automatically invalid for shared thumbnails because shared repositories may use other freshness mechanisms, so callers must decide whether an acceptable but not fully metadata-validated shared thumbnail is good enough for their use case.
 
 The validation result should carry confidence separately from validity. A personal thumbnail with matching required metadata is fully verified. A shared thumbnail accepted despite missing `Thumb::URI` or `Thumb::MTime` is acceptable only under the caller's shared-repository policy and must not be reported as equivalent to a fully verified personal thumbnail. A management-tool inspection that did not read the original is an unchecked inspection result, not a display-valid thumbnail.
 
@@ -45,7 +45,7 @@ When the generate CLI runs external `.thumbnailer` helpers, it runs them in the 
 
 The library owns the Freedesktop installation mechanics for personal-cache entries once a caller supplies a readability-confirmed original identity and an already rendered in-memory thumbnail payload. The initial install API should accept PNG bytes as the primary payload and may later expose narrow raw pixel convenience inputs. The caller owns renderer temporary files, including external thumbnailer `%o` outputs, and reads them before calling the library. The install path normalizes the rendered payload to an 8-bit non-interlaced RGBA PNG, validates the normalized PNG against the target namespace, writes standard metadata, creates missing cache directories with mode `0700`, writes temporary files in the target directory, installs final files with mode `0600`, and publishes the result with an atomic rename.
 
-Shared-repository writes remain outside the initial lifecycle. Failure entry writing is an explicit library primitive because it uses the same Freedesktop filename, metadata, permission, and atomic-install rules, but callers own the policy for when a failure should be recorded.
+Shared-repository writes remain outside the initial lifecycle. Failure entry writing is an explicit library primitive because it uses the same Freedesktop filename, metadata, permission, and atomic-install rules, but callers own the policy for when a failure should be recorded. The initial failure writer creates a deterministic minimal 1x1 transparent RGBA PNG with required failure metadata instead of accepting a renderer-provided payload.
 
 Application lookup must not use existing thumbnails when the original is not currently readable. Separate management-tool inspection may still parse thumbnail files and metadata without opening the original, but such inspection must report facts rather than validate the thumbnail for display.
 
@@ -85,7 +85,8 @@ if cache.is_valid(&cache_path, &identity)?.is_fully_verified() {
     return Ok(Some(cache_path));
 }
 
-if let Some(shared_path) = cache.find_acceptable_shared(&uri, &identity)? {
+let shared = SharedRepositoryContext::for_direct_child(path)?;
+if let Some(shared_path) = cache.find_acceptable_shared(&shared, &identity)? {
     return Ok(Some(shared_path));
 }
 
@@ -96,7 +97,7 @@ The exact API should be shaped by implementation, but applications should not ne
 
 ## Failure Entries
 
-The standard supports per-program-version failure entries under `thumbnails/fail/<program-version>/`. The library should model these as failure namespaces, not as thumbnail sizes. It should be able to locate, parse, inspect, and explicitly write failure entries. Failure-entry writes require the caller to provide a validated direct directory namespace and a readability-confirmed original identity; the library must not decide when a failed render should suppress future attempts. Failure entries are PNG metadata carriers named with the same URI-derived filename procedure as successful thumbnails, and successful-thumbnail size validation does not apply to them.
+The standard supports per-program-version failure entries under `thumbnails/fail/<program-version>/`. The library should model these as failure namespaces, not as thumbnail sizes. It should be able to locate, parse, inspect, and explicitly write failure entries. Failure-entry writes require the caller to provide a validated direct directory namespace and a readability-confirmed original identity; the library must not decide when a failed render should suppress future attempts. Failure entries are PNG metadata carriers named with the same URI-derived filename procedure as successful thumbnails, and successful-thumbnail size validation does not apply to them. The initial writer should generate a minimal 1x1 transparent RGBA PNG with `Thumb::URI` and `Thumb::MTime`, plus optional caller-supplied original metadata.
 
 Initial behavior: the prune CLI scans successful thumbnail entries by default and scans failure entries only with `--scope failures` or `--scope all`. This avoids touching application-specific retry state without explicit user intent. Once failure entries are in scope, the prune CLI should inspect and classify them like successful thumbnails because the user is asking to manage cache entries for the same original URI identity; the special cases are that successful-thumbnail dimension validation does not apply and deletion requires `--allow-delete-failures` in addition to `--delete`.
 

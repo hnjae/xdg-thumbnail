@@ -27,23 +27,24 @@ The CLI crates are policy runners. `xdg-thumbnail-prune` should translate user i
 
 - Resolve the thumbnail cache root from the XDG base directory rules, including ignoring relative `$XDG_CACHE_HOME` values.
 - Represent canonical thumbnail URIs as library-owned string newtypes that preserve the exact MD5 and `Thumb::URI` input.
-- Construct canonical thumbnail URIs for local filesystem paths and shared-repository child filenames; for other schemes, preserve caller-provided canonical absolute URI strings without parser reserialization.
+- Construct canonical thumbnail URIs for local filesystem paths, textual local `file:` URI inputs, and shared-repository child filenames; for other schemes, preserve caller-provided canonical absolute URI strings without parser reserialization.
 - Represent thumbnail sizes: `normal`, `large`, `x-large`, and `xx-large`.
 - Represent cache namespaces separately for successful thumbnail sizes and program-version failure entries.
 - Compute thumbnail filenames from canonical thumbnail URIs using MD5 and the `.png` suffix, including absolute canonical URIs for the personal cache and `./`-prefixed relative URIs for shared repositories, as specified in `docs/spec/uri-canonicalization.md`.
+- Compute shared-repository cache paths only from an explicit shared repository context that includes the repository root, direct child original filename, and shared relative URI, so personal-cache absolute URI identity is never reused as a shared-repository lookup key.
 - Reject shared-repository relative URIs that are not a single direct child filename, including parent segments, slash path separators, or encoded `/`. On Unix-like targets, backslash remains a filename byte and is preserved through percent-encoding when needed.
 - Read standard PNG text metadata such as `Thumb::URI`, `Thumb::MTime`, `Thumb::Size`, and `Thumb::Mimetype`.
 - Write standard PNG text metadata such as required `Thumb::URI` and `Thumb::MTime`, plus optional `Thumb::Size`, `Thumb::Mimetype`, and media-specific keys when the caller supplies them.
 - Require `Thumb::URI` and `Thumb::MTime` for personal-cache validation and compare `Thumb::MTime` as whole Unix epoch seconds.
 - Reject personal-cache successful thumbnail and failure-entry writes when the caller cannot provide a readability-confirmed original identity with an original modification time, because such entries violate the Freedesktop write preconditions or cannot satisfy global-cache freshness checks.
 - Iterate cache entries from the personal thumbnail cache and optional shared thumbnail repositories.
-- Validate personal and shared thumbnails with separate contexts because shared repositories may omit `Thumb::URI` or `Thumb::MTime` when they use other freshness mechanisms.
+- Validate personal and shared thumbnails with separate contexts because shared repositories use direct child relative URIs and may omit `Thumb::URI` or `Thumb::MTime` when they use other freshness mechanisms.
 - Inspect successful thumbnail PNGs against the required image format and maximum dimensions for the selected size class.
 - Normalize caller-provided rendered thumbnail payloads to 8-bit non-interlaced RGBA PNG output before successful personal-cache installation.
 - Install successful personal-cache thumbnails atomically from caller-provided in-memory thumbnail payloads and readability-confirmed original identities, after validating the normalized final PNG encoding and dimensions against the requested size namespace.
 - Create missing personal thumbnail cache directories with mode `0700` and final thumbnail files with mode `0600`, while reporting explicit permission errors instead of silently rewriting existing directory permissions.
 - Treat failure entries as metadata-carrying PNG files in program-version failure namespaces, not as successful thumbnail size entries.
-- Provide opt-in failure-entry writing when the caller supplies an explicit validated program-version namespace and a readability-confirmed original identity, without deciding application retry policy.
+- Provide opt-in failure-entry writing when the caller supplies an explicit validated program-version namespace and a readability-confirmed original identity, without deciding application retry policy. The initial writer should generate a deterministic minimal 1x1 transparent RGBA PNG instead of accepting caller-rendered failure payloads.
 - Treat shared thumbnail repositories as read-only during initial lookup, cleanup, and application generation; shared-repository writes are outside the initial library and CLI responsibilities.
 - Return structured, policy-neutral inspection facts without applying CLI cleanup policy. Invalid PNG structure, missing required metadata, invalid metadata syntax, stale metadata, nonconforming PNG encoding, and dimension violations must remain distinguishable facts.
 - Provide cache entry handles for entries discovered by library iteration or explicit cache-path resolution, and implement safe removal on those handles with containment checks and no symlink following. The removal design should prefer directory-relative APIs such as `openat` and `unlinkat`, or a capability-style equivalent, so containment and symlink checks are not only string-prefix checks. Any fallback that cannot provide that strength must be documented and reported as best-effort.
@@ -131,6 +132,12 @@ pub struct OriginalIdentity {
 
 pub struct ReadableOriginalIdentity {
     identity: OriginalIdentity,
+}
+
+pub struct SharedRepositoryContext {
+    repository_root: std::path::PathBuf,
+    original_child_name: std::ffi::OsString,
+    shared_uri: CanonicalThumbnailUri,
 }
 
 pub enum CacheEntryProblem {
