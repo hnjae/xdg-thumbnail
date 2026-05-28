@@ -56,7 +56,7 @@ Failure entry scanning is limited to one namespace level below `$XDG_CACHE_HOME/
 
 By default, deletion decisions and reports include only standard thumbnail entry filenames: a 32-character lowercase hexadecimal MD5 digest followed by `.png`. Files with nonstandard names are not visible in default reports and are not deletion candidates. `--include-nonstandard-files` makes them visible as skipped entries in reports. Directories and symlinks remain skipped unless a later design explicitly permits them.
 
-For `file:` originals classified as stable local files, deletion for a missing original requires a reliable local check that distinguishes confirmed absence from permission errors, transient I/O errors, unsupported authorities, and unsupported path conversion. Unverifiable originals are reported and skipped rather than treated as missing.
+For `file:` originals classified as stable local files, deletion for a missing original requires a reliable local check that distinguishes confirmed absence from permission errors, transient I/O errors, unsupported authorities, and unsupported path conversion. Unverifiable originals are reported and skipped rather than treated as missing. Standard cache entries whose filename MD5 stem does not match the stored canonical `Thumb::URI` are reported with reason `uri-filename-mismatch` and may become deletion candidates because the entry cannot be a valid cache hit for the stored original identity.
 
 ## Age Basis
 
