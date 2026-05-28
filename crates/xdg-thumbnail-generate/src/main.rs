@@ -10,7 +10,8 @@ use base64::Engine;
 use clap::{Parser, ValueEnum};
 use serde::Serialize;
 use xdg_thumbnail::{
-    CacheNamespace, CacheRoot, ReadableOriginalIdentity, ThumbnailLookup, ThumbnailSize,
+    CacheNamespace, CacheRoot, ReadableOriginalIdentity, ThumbnailError, ThumbnailLookup,
+    ThumbnailSize,
 };
 
 #[cfg(unix)]
@@ -293,6 +294,23 @@ fn plan_one(
 
     record.thumbnailer_uri = record.uri.clone();
     if cli.dry_run {
+        let dry_run_output = std::env::temp_dir().join("xdg-thumbnail-dry-run-output.png");
+        if let Err(error) = expand_exec(
+            &thumbnailer.exec,
+            path,
+            original.identity().uri().as_str(),
+            &dry_run_output,
+            size,
+        ) {
+            record.decision = "skip";
+            record.reason = error.reason;
+            record.error = Some(ErrorRecord {
+                kind: error.reason,
+                message: error.message,
+            });
+            summary.skipped += 1;
+            return record;
+        }
         record.decision = "generate";
         record.reason = "dry-run";
         summary.generated += 1;
@@ -307,13 +325,18 @@ fn plan_one(
             summary.generated += 1;
         }
         Err(error) => {
-            record.decision = "failed";
             record.reason = error.reason;
             record.error = Some(ErrorRecord {
                 kind: error.reason,
                 message: error.message,
             });
-            summary.failed += 1;
+            if error.reason == "thumbnailer-entry-invalid" {
+                record.decision = "skip";
+                summary.skipped += 1;
+            } else {
+                record.decision = "failed";
+                summary.failed += 1;
+            }
         }
     }
     record
@@ -593,11 +616,24 @@ fn execute_thumbnailer(
             message: error.to_string(),
         }
     })?;
+    if xdg_thumbnail::ParsedThumbnailPng::parse(&rendered).is_err() {
+        return Err(ExecutionError {
+            reason: "output-invalid-png",
+            message: "thumbnailer output is not a valid PNG".to_owned(),
+        });
+    }
     root.install_personal_thumbnail(original, size, &rendered)
         .map(|_| ())
-        .map_err(|error| ExecutionError {
-            reason: "cache-install-failed",
-            message: error.to_string(),
+        .map_err(|error| {
+            let reason = match &error {
+                ThumbnailError::Png(_) => "output-invalid-png",
+                ThumbnailError::UnsupportedRenderedThumbnail(_) => "output-normalization-failed",
+                _ => "cache-install-failed",
+            };
+            ExecutionError {
+                reason,
+                message: error.to_string(),
+            }
         })
 }
 

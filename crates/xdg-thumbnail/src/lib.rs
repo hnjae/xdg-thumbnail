@@ -1897,6 +1897,12 @@ fn ensure_private_directory(path: &Path) -> Result<()> {
             Ok(())
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|source| ThumbnailError::Io {
+                    context: "create parent thumbnail cache directories",
+                    source,
+                })?;
+            }
             fs::create_dir(path).map_err(|source| ThumbnailError::Io {
                 context: "create thumbnail cache directory",
                 source,
