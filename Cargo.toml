@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/xdg-thumbnail",
+  "crates/xdg-thumbnail-generate",
   "crates/xdg-thumbnail-prune",
 ]
 resolver = "3"
