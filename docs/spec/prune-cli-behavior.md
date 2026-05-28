@@ -22,7 +22,7 @@ Options:
 --include-nonstandard-files   Include nonstandard filenames in reports as skipped entries.
 --removable-prefix <PATH>     Add a local path prefix that should use age-based cleanup. Can be passed multiple times.
 --ignore-fhs-media            Do not treat /media as removable by default.
---age-basis <BASIS>           Timestamp basis for age-based cleanup: access-time or modification-time. Defaults to access-time; modification-time is the explicit portable fallback when access-time inspection skips entries.
+--age-basis <BASIS>           Timestamp basis for age-based cleanup: modification-time or access-time. Defaults to modification-time. access-time is a conservative opt-in mode that may skip entries when access-time inspection cannot be done without changing the timestamp.
 --format <FORMAT>             Output format: human or jsonl. Defaults to human.
 --verbose                     Print classification and timestamp details.
 ```
@@ -56,7 +56,13 @@ Failure entry scanning is limited to one namespace level below `$XDG_CACHE_HOME/
 
 By default, deletion decisions and reports include only standard thumbnail entry filenames: a 32-character lowercase hexadecimal MD5 digest followed by `.png`. Files with nonstandard names are not visible in default reports and are not deletion candidates. `--include-nonstandard-files` makes them visible as skipped entries in reports. Directories and symlinks remain skipped unless a later design explicitly permits them.
 
-For local `file:` originals, deletion for a missing original requires a reliable local check that distinguishes confirmed absence from permission errors, transient I/O errors, unsupported authorities, and unsupported path conversion. Unverifiable originals are reported and skipped rather than treated as missing.
+For `file:` originals classified as stable local files, deletion for a missing original requires a reliable local check that distinguishes confirmed absence from permission errors, transient I/O errors, unsupported authorities, and unsupported path conversion. Unverifiable originals are reported and skipped rather than treated as missing.
+
+## Age Basis
+
+Age-based cleanup defaults to thumbnail file modification time because it is portable and does not require reading thumbnail metadata through access-time-preserving filesystem operations. This default is more aggressive than access-time cleanup: a thumbnail that was recently read but not recently rewritten can still become an age-based deletion candidate.
+
+Users who want age-based cleanup to avoid deleting recently read thumbnails may pass `--age-basis access-time`. In that mode, the prune CLI must avoid reading thumbnail contents in a way that can update thumbnail access times. Entries that cannot be inspected without potentially changing access time are reported as skipped rather than treated as age-based deletion candidates. These skips are normal conservative access-time policy outcomes and do not by themselves make the command fail.
 
 ## Report Output
 
@@ -66,20 +72,20 @@ Each JSONL entry record must include at least `schema_version: 0`, `event: "entr
 
 Each reported human entry should include the thumbnail path, original URI if available, namespace, classification, decision, whether the decision was applied, reason, and the timestamp basis for age-based decisions. When access time is the selected age basis, reports should also expose whether access time was preserved during metadata inspection or why age evaluation was skipped. Verbose human output should include kept entries and classification details.
 
-When `--age-basis access-time` is active and one or more age-based candidates are skipped because access time is unavailable, unreliable, or cannot be preserved during inspection, the human summary must include a short hint that `--age-basis modification-time` is available as a more portable and more aggressive explicit choice, including an example such as `xdg-thumbnail-prune --older-than 30d --age-basis modification-time`. JSONL summaries expose this through the timestamp skip counters and selected age basis rather than through prose hints.
+When `--age-basis access-time` is active and one or more age-based candidates are skipped because access time is unavailable, unreliable, or cannot be preserved during inspection, the human summary must include a short hint that the default `--age-basis modification-time` behavior is more portable and more aggressive, including an example such as `xdg-thumbnail-prune --older-than 30d --age-basis modification-time`. JSONL summaries expose this through the timestamp skip counters and selected age basis rather than through prose hints.
 
 Example with `--include-nonstandard-files` enabled:
 
 ```text
-would-delete normal/abcdefabcdefabcdefabcdefabcdefab.png uri=http://example.test/a.jpg class=remote reason=remote-older-than-threshold age=45d basis=access-time
+would-delete normal/abcdefabcdefabcdefabcdefabcdefab.png uri=http://example.test/a.jpg class=remote reason=remote-older-than-threshold age=45d basis=modification-time
 would-delete normal/0123456789abcdef0123456789abcdef.png class=unknown reason=missing-required-metadata
 skip normal/bad.png reason=nonstandard-filename
-summary scanned=421 kept=398 would-delete=2 skipped=21 errors=0 basis=access-time timestamp-unavailable=0 timestamp-unreliable=0 timestamp-preservation-unavailable=0
+summary scanned=421 kept=398 would-delete=2 skipped=21 errors=0 basis=modification-time timestamp-unavailable=0 timestamp-unreliable=0 timestamp-preservation-unavailable=0
 ```
 
 When `--delete` is passed and a deletion succeeds, the human output should use `deleted` rather than `would-delete`. JSONL output should keep the cleanup decision separate from an `applied` boolean so dry-run and destructive runs are easy to compare.
 
-When `--age-basis modification-time` is used, human and JSONL output must expose that modification time was the basis for age-based decisions.
+When `--age-basis modification-time` is used, including by default, human and JSONL output must expose that modification time was the basis for age-based decisions.
 
 ## Exit Codes
 
