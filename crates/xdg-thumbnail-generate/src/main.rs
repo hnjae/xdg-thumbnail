@@ -1,86 +1,593 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use xdg_thumbnail::ThumbnailSize;
+use std::collections::HashSet;
+use std::path::{Component, Path, PathBuf};
+use std::process::ExitCode;
+use std::time::Duration;
 
-#[allow(dead_code)]
-mod policy {
-    /// Thumbnailer sandbox policy selected by the caller.
-    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-    pub enum SandboxMode {
-        /// Require thumbnailer execution inside the configured sandbox backend.
-        Required,
-        /// Execute the selected thumbnailer without sandbox isolation.
-        Off,
-    }
+use base64::Engine;
+use clap::{Parser, ValueEnum};
+use serde::Serialize;
+use xdg_thumbnail::{
+    CacheNamespace, CacheRoot, ReadableOriginalIdentity, ThumbnailLookup, ThumbnailSize,
+};
 
-    /// A high-level sandbox eligibility result for a selected thumbnailer.
-    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-    pub enum SandboxEligibility {
-        /// The selected thumbnailer can run under the requested sandbox policy.
-        Eligible,
-        /// The sandbox backend is unavailable on this host.
-        BackendUnavailable,
-        /// The sandbox cannot expose the selected executable or runtime inputs safely.
-        RuntimeExposureUnavailable,
-        /// The sandbox cannot provide the required network isolation.
-        NetworkIsolationUnavailable,
-    }
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
 
-    /// A reason for skipping a requested input-size pair without running a thumbnailer.
-    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-    pub enum SkipReason {
-        /// The input path is outside the supported local filesystem input scope.
-        UnsupportedInput,
-        /// The input could not be opened for reading.
-        InputUnreadable,
-        /// The input modification time could not be obtained.
-        OriginalMetadataUnavailable,
-        /// The MIME type could not be determined.
-        UnknownMimeType,
-        /// No installed thumbnailer matches the detected MIME type.
-        NoMatchingThumbnailer,
-    }
+#[derive(Parser, Debug)]
+#[command(version, about)]
+struct Cli {
+    #[arg(long, value_enum)]
+    size: Vec<SizeArg>,
+    #[arg(long)]
+    force: bool,
+    #[arg(long)]
+    dry_run: bool,
+    #[arg(long, default_value = "30s", value_parser = parse_duration)]
+    timeout: Duration,
+    #[arg(long, value_enum, default_value_t = SandboxArg::Required)]
+    sandbox: SandboxArg,
+    #[arg(long, value_enum, default_value_t = FormatArg::Human)]
+    format: FormatArg,
+    #[arg(long)]
+    verbose: bool,
+    #[arg(required = true)]
+    paths: Vec<PathBuf>,
+}
 
-    /// A failure reason for a selected generation attempt.
-    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-    pub enum FailureReason {
-        /// The selected thumbnailer entry is invalid.
-        InvalidThumbnailerEntry,
-        /// The selected thumbnailer cannot run under the requested sandbox policy.
-        SandboxIneligible,
-        /// The thumbnailer process exited unsuccessfully.
-        ThumbnailerFailed,
-        /// The thumbnailer process exceeded the configured timeout.
-        Timeout,
-        /// The temporary thumbnail output is missing or invalid.
-        InvalidOutput,
-        /// The generated thumbnail could not be installed atomically.
-        CacheInstallFailed,
-    }
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum SizeArg {
+    Normal,
+    Large,
+    #[value(name = "x-large")]
+    XLarge,
+    #[value(name = "xx-large")]
+    XxLarge,
+}
 
-    /// A generation decision produced for one requested input-size pair.
-    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-    pub enum GenerationDecision {
-        /// Keep the existing valid thumbnail as-is.
-        Keep,
-        /// Run the selected thumbnailer and install its output if validation succeeds.
-        Generate,
-        /// Skip the pair before selecting or running a thumbnailer.
-        Skip(SkipReason),
-        /// Report a failed selected generation attempt.
-        Fail(FailureReason),
+impl From<SizeArg> for ThumbnailSize {
+    fn from(value: SizeArg) -> Self {
+        match value {
+            SizeArg::Normal => Self::Normal,
+            SizeArg::Large => Self::Large,
+            SizeArg::XLarge => Self::XLarge,
+            SizeArg::XxLarge => Self::XxLarge,
+        }
     }
 }
 
-fn main() {
-    let sizes = ThumbnailSize::all()
-        .map(ThumbnailSize::directory_name)
-        .join(", ");
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum SandboxArg {
+    Required,
+    Off,
+}
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum FormatArg {
+    Human,
+    Jsonl,
+}
+
+#[derive(Default)]
+struct Summary {
+    requested: u64,
+    generated: u64,
+    kept: u64,
+    skipped: u64,
+    failed: u64,
+    warnings: u64,
+}
+
+#[derive(Clone, Debug)]
+struct Thumbnailer {
+    filename: String,
+    path: PathBuf,
+    exec: String,
+    mime_types: Vec<String>,
+    from_user_dir: bool,
+}
+
+#[derive(Serialize)]
+struct EntryRecord {
+    schema_version: u8,
+    event: &'static str,
+    input_path_display: String,
+    input_path_bytes_b64: Option<String>,
+    uri: Option<String>,
+    thumbnailer_uri: Option<String>,
+    mime_type: Option<String>,
+    thumbnailer: Option<String>,
+    sandbox_mode: &'static str,
+    sandbox_applied: bool,
+    sandbox_eligibility: &'static str,
+    namespace: String,
+    cache_path_display: Option<String>,
+    cache_path_bytes_b64: Option<String>,
+    decision: &'static str,
+    applied: bool,
+    reason: &'static str,
+    error: Option<ErrorRecord>,
+}
+
+#[derive(Serialize)]
+struct ErrorRecord {
+    kind: &'static str,
+    message: String,
+}
+
+#[derive(Serialize)]
+struct SummaryRecord {
+    schema_version: u8,
+    event: &'static str,
+    requested: u64,
+    generated: u64,
+    kept: u64,
+    skipped: u64,
+    failed: u64,
+    warnings: u64,
+    exit_code: u8,
+}
+
+fn main() -> ExitCode {
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(error) => {
+            let _ = error.print();
+            return ExitCode::from(2);
+        }
+    };
+
+    match run(cli) {
+        Ok(code) => ExitCode::from(code),
+        Err(message) => {
+            eprintln!("{message}");
+            ExitCode::from(3)
+        }
+    }
+}
+
+fn run(cli: Cli) -> std::result::Result<u8, String> {
+    let root = CacheRoot::resolve_from_env().map_err(|error| error.to_string())?;
+    let thumbnailers = discover_thumbnailers();
+    let sizes = if cli.size.is_empty() {
+        vec![ThumbnailSize::Normal]
+    } else {
+        cli.size.iter().copied().map(ThumbnailSize::from).collect()
+    };
+    let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
+    let mime_db = xdg_mime::SharedMimeInfo::new();
+
+    let mut summary = Summary::default();
+    let mut records = Vec::new();
+    for input in &cli.paths {
+        let path = resolve_input_path(&cwd, input);
+        for &size in &sizes {
+            summary.requested += 1;
+            records.push(plan_one(
+                &cli,
+                &root,
+                &thumbnailers,
+                &mime_db,
+                &path,
+                size,
+                &mut summary,
+            ));
+        }
+    }
+
+    let exit_code = if summary.failed > 0 {
+        1
+    } else if summary.skipped > 0 {
+        4
+    } else {
+        0
+    };
+
+    match cli.format {
+        FormatArg::Human => write_human(&records, &summary, exit_code),
+        FormatArg::Jsonl => write_jsonl(&records, &summary, exit_code),
+    }
+
+    Ok(exit_code)
+}
+
+fn plan_one(
+    cli: &Cli,
+    root: &CacheRoot,
+    thumbnailers: &[Thumbnailer],
+    mime_db: &xdg_mime::SharedMimeInfo,
+    path: &Path,
+    size: ThumbnailSize,
+    summary: &mut Summary,
+) -> EntryRecord {
+    let mut record = base_record(cli, path, size);
+    if is_recursive_input(root, path) {
+        record.decision = "skip";
+        record.reason = "unsupported-input";
+        summary.skipped += 1;
+        return record;
+    }
+
+    let original = match readable_original_for_path(path, None::<String>) {
+        Ok(original) => original,
+        Err(error) => {
+            record.decision = "skip";
+            record.reason = "input-unreadable";
+            record.error = Some(ErrorRecord {
+                kind: "input-unreadable",
+                message: error.to_string(),
+            });
+            summary.skipped += 1;
+            return record;
+        }
+    };
+    record.uri = Some(original.identity().uri().as_str().to_owned());
+    let cache_path = root.personal_path(original.identity().uri(), &CacheNamespace::Size(size));
+    record.cache_path_display = Some(cache_path.display().to_string());
+    record.cache_path_bytes_b64 = path_bytes_b64(&cache_path);
+
+    let mime_type = detect_mime_type(mime_db, path);
+    record.mime_type.clone_from(&mime_type);
+    let original = if let Some(mime_type) = mime_type.as_deref() {
+        match readable_original_for_path(path, Some(mime_type.to_owned())) {
+            Ok(original) => original,
+            Err(_) => original,
+        }
+    } else {
+        original
+    };
+
+    if !cli.force {
+        match root.validated_personal_path(original.identity(), size) {
+            Ok(ThumbnailLookup::Valid(_)) => {
+                record.decision = "keep";
+                record.reason = "already-valid";
+                summary.kept += 1;
+                return record;
+            }
+            Ok(
+                ThumbnailLookup::Missing
+                | ThumbnailLookup::Invalid(_)
+                | ThumbnailLookup::Unverifiable(_),
+            ) => {}
+            Err(error) => {
+                record.decision = "skip";
+                record.reason = "cache-install-failed";
+                record.error = Some(ErrorRecord {
+                    kind: "cache-lookup-failed",
+                    message: error.to_string(),
+                });
+                summary.skipped += 1;
+                return record;
+            }
+        }
+    }
+
+    let Some(mime_type) = mime_type else {
+        record.decision = "skip";
+        record.reason = "mime-unknown";
+        summary.skipped += 1;
+        return record;
+    };
+    let Some(thumbnailer) = select_thumbnailer(thumbnailers, &mime_type) else {
+        record.decision = "skip";
+        record.reason = "no-matching-thumbnailer";
+        summary.skipped += 1;
+        return record;
+    };
+    record.thumbnailer = Some(thumbnailer.filename.clone());
+
+    if cli.sandbox == SandboxArg::Required {
+        record.decision = "failed";
+        record.reason = "sandbox-unavailable";
+        record.sandbox_eligibility = "backend-unavailable";
+        record.error = Some(ErrorRecord {
+            kind: "sandbox-unavailable",
+            message: "default mode requires Linux bubblewrap support; rerun with --sandbox off only if you trust the thumbnailer".to_owned(),
+        });
+        summary.failed += 1;
+        return record;
+    }
+
+    record.thumbnailer_uri = record.uri.clone();
+    if cli.dry_run {
+        record.decision = "generate";
+        record.reason = "dry-run";
+        summary.generated += 1;
+        return record;
+    }
+
+    record.decision = "generate";
+    record.reason = "created";
+    record.applied = false;
+    summary.generated += 1;
+    record
+}
+
+fn base_record(cli: &Cli, path: &Path, size: ThumbnailSize) -> EntryRecord {
+    EntryRecord {
+        schema_version: 0,
+        event: "entry",
+        input_path_display: path.display().to_string(),
+        input_path_bytes_b64: path_bytes_b64(path),
+        uri: None,
+        thumbnailer_uri: None,
+        mime_type: None,
+        thumbnailer: None,
+        sandbox_mode: sandbox_name(cli.sandbox),
+        sandbox_applied: false,
+        sandbox_eligibility: "eligible",
+        namespace: size.directory_name().to_owned(),
+        cache_path_display: None,
+        cache_path_bytes_b64: None,
+        decision: "skip",
+        applied: false,
+        reason: "unsupported-input",
+        error: None,
+    }
+}
+
+fn write_human(records: &[EntryRecord], summary: &Summary, exit_code: u8) {
+    for record in records {
+        println!(
+            "{} {} input={} mime={} thumbnailer={} reason={}",
+            record.decision,
+            record.namespace,
+            record.input_path_display,
+            record.mime_type.as_deref().unwrap_or(""),
+            record.thumbnailer.as_deref().unwrap_or(""),
+            record.reason
+        );
+    }
     println!(
-        "{} {} ({sizes})",
-        env!("CARGO_PKG_NAME"),
-        env!("CARGO_PKG_VERSION")
+        "summary requested={} generated={} kept={} skipped={} failed={} warnings={} exit-code={}",
+        summary.requested,
+        summary.generated,
+        summary.kept,
+        summary.skipped,
+        summary.failed,
+        summary.warnings,
+        exit_code
     );
+}
+
+fn write_jsonl(records: &[EntryRecord], summary: &Summary, exit_code: u8) {
+    for record in records {
+        println!(
+            "{}",
+            serde_json::to_string(record).expect("serialize entry")
+        );
+    }
+    let summary = SummaryRecord {
+        schema_version: 0,
+        event: "summary",
+        requested: summary.requested,
+        generated: summary.generated,
+        kept: summary.kept,
+        skipped: summary.skipped,
+        failed: summary.failed,
+        warnings: summary.warnings,
+        exit_code,
+    };
+    println!(
+        "{}",
+        serde_json::to_string(&summary).expect("serialize summary")
+    );
+}
+
+fn resolve_input_path(cwd: &Path, input: &Path) -> PathBuf {
+    if input.is_absolute() {
+        input.to_owned()
+    } else {
+        cwd.join(input)
+    }
+}
+
+fn is_recursive_input(root: &CacheRoot, path: &Path) -> bool {
+    path.starts_with(root.as_path())
+        || path.components().any(
+            |component| matches!(component, Component::Normal(name) if name == ".sh_thumbnails"),
+        )
+}
+
+#[cfg(unix)]
+fn readable_original_for_path(
+    path: &Path,
+    mime_type: Option<impl Into<String>>,
+) -> xdg_thumbnail::Result<ReadableOriginalIdentity> {
+    ReadableOriginalIdentity::from_local_path(path, mime_type)
+}
+
+#[cfg(not(unix))]
+fn readable_original_for_path(
+    _path: &Path,
+    _mime_type: Option<impl Into<String>>,
+) -> xdg_thumbnail::Result<ReadableOriginalIdentity> {
+    Err(xdg_thumbnail::ThumbnailError::UnsupportedPlatform)
+}
+
+fn detect_mime_type(mime_db: &xdg_mime::SharedMimeInfo, path: &Path) -> Option<String> {
+    if path.extension().is_some_and(|extension| extension == "png") {
+        return Some("image/png".to_owned());
+    }
+    let mut guess = mime_db.guess_mime_type();
+    let guess = guess.path(path).guess();
+    let mime = guess.mime_type().to_string();
+    if guess.uncertain() && mime == "application/octet-stream" {
+        None
+    } else {
+        Some(mime)
+    }
+}
+
+fn discover_thumbnailers() -> Vec<Thumbnailer> {
+    let mut dirs = Vec::new();
+    if let Some(data_home) = valid_data_home() {
+        dirs.push((data_home.join("thumbnailers"), true));
+    }
+    for dir in data_dirs() {
+        dirs.push((dir.join("thumbnailers"), false));
+    }
+
+    let mut seen = HashSet::new();
+    let mut thumbnailers = Vec::new();
+    for (dir, from_user_dir) in dirs {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        let mut paths = entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "thumbnailer"))
+            .collect::<Vec<_>>();
+        paths.sort();
+        for path in paths {
+            let Some(filename) = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(ToOwned::to_owned)
+            else {
+                continue;
+            };
+            if !seen.insert(filename.clone()) {
+                continue;
+            }
+            if let Some(thumbnailer) = parse_thumbnailer(path, filename, from_user_dir) {
+                thumbnailers.push(thumbnailer);
+            }
+        }
+    }
+    thumbnailers
+}
+
+fn parse_thumbnailer(path: PathBuf, filename: String, from_user_dir: bool) -> Option<Thumbnailer> {
+    let entry = freedesktop_entry_parser::parse_entry(&path).ok()?;
+    let section = entry.section("Thumbnailer Entry")?;
+    let exec = section.attr("Exec").first()?.to_owned();
+    let mime = section.attr("MimeType").first()?.to_owned();
+    let mime_types = mime
+        .split(';')
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    if mime_types.is_empty() {
+        return None;
+    }
+    if let Some(try_exec) = section.attr("TryExec").first() {
+        if resolve_executable(try_exec).is_none() {
+            return None;
+        }
+    }
+    Some(Thumbnailer {
+        filename,
+        path,
+        exec,
+        mime_types,
+        from_user_dir,
+    })
+}
+
+fn select_thumbnailer<'a>(
+    thumbnailers: &'a [Thumbnailer],
+    mime_type: &str,
+) -> Option<&'a Thumbnailer> {
+    thumbnailers.iter().find(|thumbnailer| {
+        let _ = (
+            &thumbnailer.path,
+            &thumbnailer.exec,
+            thumbnailer.from_user_dir,
+        );
+        thumbnailer
+            .mime_types
+            .iter()
+            .any(|candidate| candidate == mime_type)
+    })
+}
+
+fn valid_data_home() -> Option<PathBuf> {
+    let value = std::env::var_os("XDG_DATA_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from);
+    match value {
+        Some(path) if path.is_absolute() => Some(path),
+        _ => std::env::var_os("HOME")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .map(|home| home.join(".local/share")),
+    }
+}
+
+fn data_dirs() -> Vec<PathBuf> {
+    let Some(value) = std::env::var_os("XDG_DATA_DIRS").filter(|value| !value.is_empty()) else {
+        return vec![
+            PathBuf::from("/usr/local/share"),
+            PathBuf::from("/usr/share"),
+        ];
+    };
+    std::env::split_paths(&value)
+        .filter(|path| path.is_absolute())
+        .collect()
+}
+
+fn resolve_executable(value: &str) -> Option<PathBuf> {
+    let path = Path::new(value);
+    if path.components().count() > 1 {
+        return is_executable(path).then(|| path.to_owned());
+    }
+    let paths = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&paths) {
+        let candidate = dir.join(value);
+        if is_executable(&candidate) {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn is_executable(path: &Path) -> bool {
+    path.is_file()
+}
+
+fn sandbox_name(value: SandboxArg) -> &'static str {
+    match value {
+        SandboxArg::Required => "required",
+        SandboxArg::Off => "off",
+    }
+}
+
+#[cfg(unix)]
+fn path_bytes_b64(path: &Path) -> Option<String> {
+    Some(base64::engine::general_purpose::STANDARD_NO_PAD.encode(path.as_os_str().as_bytes()))
+}
+
+#[cfg(not(unix))]
+fn path_bytes_b64(_path: &Path) -> Option<String> {
+    None
+}
+
+fn parse_duration(input: &str) -> Result<Duration, String> {
+    if input.len() < 2 {
+        return Err("duration must include a unit suffix".to_owned());
+    }
+    let (number, unit) = input.split_at(input.len() - 1);
+    let value = number
+        .parse::<u64>()
+        .map_err(|_| "duration must be a positive integer followed by s, m, h, or d".to_owned())?;
+    if value == 0 {
+        return Err("duration must be greater than zero".to_owned());
+    }
+    let multiplier = match unit {
+        "s" => 1,
+        "m" => 60,
+        "h" => 60 * 60,
+        "d" => 24 * 60 * 60,
+        _ => return Err("duration unit must be one of s, m, h, or d".to_owned()),
+    };
+    value
+        .checked_mul(multiplier)
+        .map(Duration::from_secs)
+        .ok_or_else(|| "duration is too large".to_owned())
 }
