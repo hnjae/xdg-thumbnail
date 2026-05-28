@@ -33,7 +33,8 @@ The library keeps a flat public API through `lib.rs` re-exports, but internal mo
 - `identity` owns original freshness facts, readability-confirmed identities, Unix mtime conversion, and shared-repository lookup context.
 - `png` owns PNG metadata parsing, successful-thumbnail conformance checks, personal and shared metadata validation, rendered PNG normalization, and final Freedesktop RGBA PNG encoding.
 - `inspection` owns cache entry inspection facts, access-time preservation during inspection, standard thumbnail filename checks, and safe removal handles.
-- `lib.rs` owns the flat public API surface, cache root resolution, computed cache paths, lookup, and installation orchestration until those remaining domains are split into dedicated modules.
+- `cache` owns cache root resolution, computed personal-cache paths, validated personal-cache lookup orchestration, atomic personal-cache writes, and private cache directory safety checks.
+- `lib.rs` owns the flat public API surface and re-exports the module-owned types and functions.
 
 ## Library Responsibilities
 
