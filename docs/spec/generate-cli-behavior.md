@@ -26,7 +26,7 @@ Options:
 
 The option names above are the initial generate CLI contract. Behavior or option-name changes require a spec update.
 
-`--generate-completion` and `--generate-manpage` are metadata-generation modes derived from the clap command definition. They do not require input paths, do not inspect thumbnailers or cache state, do not read or write thumbnails, and exit successfully after writing the requested artifact to stdout. The generated man page and installed shell completions must describe the same command shape as the executable. Nix package outputs must include generated bash, fish, and zsh completions plus section 1 man pages for installed CLI binaries.
+`--generate-completion` and `--generate-manpage` are metadata-generation modes derived from the clap command definition. They do not require input paths, do not inspect thumbnailers or cache state, do not read or write thumbnails, and exit successfully after writing the requested artifact to stdout. The generated man page and installed shell completions must describe the same command shape as the executable. Nix package outputs must include generated bash, fish, and zsh completions plus section 1 man pages for installed CLI binaries. On Linux, Nix package outputs must also make `bubblewrap` available to the installed `xdg-thumbnail-generate` executable's runtime `PATH` so the default sandbox mode does not depend on a separately installed host `bwrap`.
 
 ## Duration Syntax
 
