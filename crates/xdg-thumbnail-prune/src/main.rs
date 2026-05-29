@@ -555,10 +555,6 @@ fn evaluate_local_file(
             *decision = Decision::Skip;
             *reason = Some("original-unverifiable");
         }
-        _ => {
-            *decision = Decision::Skip;
-            *reason = Some("original-unverifiable");
-        }
     }
 }
 

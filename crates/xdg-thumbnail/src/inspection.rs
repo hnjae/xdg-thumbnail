@@ -27,7 +27,6 @@ pub enum OriginalUriIdentity {
 
 /// Validation confidence and validity for policy-neutral cache inspection.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[non_exhaustive]
 pub enum CacheEntryInspectionOutcome {
     /// Inspection parsed the entry but did not validate it against an original.
     Unchecked,

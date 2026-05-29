@@ -64,6 +64,10 @@ fn textual_local_file_uri_normalizes_localhost_only() {
     assert_eq!(uri.as_str(), "file:///home/alice/photo.png");
     assert_eq!(uri.md5_stem(), "82346fd12242a0f50d9cf25786189951");
 
+    let uppercase =
+        PersonalOriginalUri::from_local_file_uri("FILE://LOCALHOST/home/alice/photo.png").unwrap();
+    assert_eq!(uppercase.as_str(), "file:///home/alice/photo.png");
+
     let encoded_space =
         PersonalOriginalUri::from_local_file_uri("file:///home/alice/My%20Photo.png").unwrap();
     assert_eq!(encoded_space.as_str(), "file:///home/alice/My%20Photo.png");

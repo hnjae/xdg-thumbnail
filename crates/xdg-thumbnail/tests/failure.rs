@@ -38,7 +38,10 @@ fn writes_deterministic_failure_namespace_entries() {
         parsed.metadata().thumb_uri(),
         Some("file:///home/alice/photo.png")
     );
-    assert_eq!(parsed.metadata().thumb_mtime(), Some(42));
+    assert_eq!(
+        parsed.metadata().thumb_mtime(),
+        Some(UnixMTimeSeconds::new(42))
+    );
     assert_eq!(parsed.metadata().thumb_size(), Some(12));
     assert_eq!(parsed.metadata().thumb_mimetype(), Some("image/png"));
     assert_eq!(

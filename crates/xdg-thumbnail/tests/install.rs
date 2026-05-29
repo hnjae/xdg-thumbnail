@@ -39,7 +39,10 @@ fn installs_normalized_downscaled_personal_thumbnail_atomically() {
         parsed.metadata().thumb_uri(),
         Some("file:///home/alice/photo.png")
     );
-    assert_eq!(parsed.metadata().thumb_mtime(), Some(42));
+    assert_eq!(
+        parsed.metadata().thumb_mtime(),
+        Some(UnixMTimeSeconds::new(42))
+    );
     assert_eq!(parsed.metadata().thumb_size(), Some(12));
     assert_eq!(parsed.metadata().thumb_mimetype(), Some("image/png"));
 

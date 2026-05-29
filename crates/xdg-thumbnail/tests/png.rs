@@ -27,9 +27,31 @@ fn parses_standard_thumbnail_metadata() {
         parsed.metadata().thumb_uri(),
         Some("file:///home/alice/photo.png")
     );
-    assert_eq!(parsed.metadata().thumb_mtime(), Some(42));
+    assert_eq!(
+        parsed.metadata().thumb_mtime(),
+        Some(UnixMTimeSeconds::new(42))
+    );
+    assert_eq!(
+        parsed.metadata().try_thumb_mtime().unwrap(),
+        Some(UnixMTimeSeconds::new(42))
+    );
     assert_eq!(parsed.metadata().thumb_size(), Some(12));
+    assert_eq!(parsed.metadata().try_thumb_size().unwrap(), Some(12));
     assert_eq!(parsed.metadata().thumb_mimetype(), Some("image/png"));
+}
+
+#[test]
+fn metadata_typed_accessors_distinguish_invalid_syntax() {
+    let mut metadata = metadata();
+    metadata.insert("Thumb::MTime", "-1");
+    metadata.insert("Thumb::Size", "not-a-size");
+    let png = png_with_metadata(2, 1, png::ColorType::Rgba, metadata);
+    let parsed = ParsedThumbnailPng::parse(&png).unwrap();
+
+    assert_eq!(parsed.metadata().thumb_mtime(), None);
+    assert!(parsed.metadata().try_thumb_mtime().is_err());
+    assert_eq!(parsed.metadata().thumb_size(), None);
+    assert!(parsed.metadata().try_thumb_size().is_err());
 }
 
 #[test]
@@ -57,6 +79,17 @@ fn validates_personal_thumbnail_metadata_and_conformance() {
     assert_personal_invalid_contains(
         validate_personal_thumbnail(
             &png_with_metadata(2, 1, png::ColorType::Rgba, bad_mtime),
+            &original,
+            ThumbnailSize::Normal,
+        ),
+        CacheEntryProblem::InvalidMetadataSyntax,
+    );
+
+    let mut negative_mtime = metadata();
+    negative_mtime.insert("Thumb::MTime", "-1");
+    assert_personal_invalid_contains(
+        validate_personal_thumbnail(
+            &png_with_metadata(2, 1, png::ColorType::Rgba, negative_mtime),
             &original,
             ThumbnailSize::Normal,
         ),
@@ -145,6 +178,20 @@ fn shared_validation_allows_incomplete_freshness_metadata_explicitly() {
     assert_shared_invalid_contains(
         validate_shared_thumbnail(
             &png_with_metadata(2, 1, png::ColorType::Rgba, invalid_uri),
+            &context,
+            Some(UnixMTimeSeconds::new(42)),
+            Some(12),
+            ThumbnailSize::Normal,
+        ),
+        CacheEntryProblem::InvalidMetadataSyntax,
+    );
+
+    let mut negative_mtime = BTreeMap::new();
+    negative_mtime.insert("Thumb::URI", "./picture.png");
+    negative_mtime.insert("Thumb::MTime", "-1");
+    assert_shared_invalid_contains(
+        validate_shared_thumbnail(
+            &png_with_metadata(2, 1, png::ColorType::Rgba, negative_mtime),
             &context,
             Some(UnixMTimeSeconds::new(42)),
             Some(12),

@@ -86,7 +86,7 @@ fn original_identity_preserves_required_freshness_facts() {
     let readable = ReadableOriginalIdentity::from_confirmed_readable_identity(identity.clone());
 
     assert_eq!(identity.uri(), &uri);
-    assert_eq!(identity.mtime().as_i64(), 42);
+    assert_eq!(identity.mtime().as_u64(), 42);
     assert_eq!(identity.size(), Some(12));
     assert_eq!(identity.mime_type(), Some("image/png"));
     assert_eq!(readable.identity().uri(), &uri);
@@ -106,10 +106,22 @@ fn unix_mtime_seconds_rejects_pre_epoch_times() {
     assert_eq!(
         UnixMTimeSeconds::from_system_time(UNIX_EPOCH + Duration::from_secs(7))
             .unwrap()
-            .as_i64(),
+            .as_u64(),
         7
     );
     assert!(UnixMTimeSeconds::from_system_time(UNIX_EPOCH - Duration::from_secs(1)).is_err());
+    assert_eq!(
+        UnixMTimeSeconds::try_from_i64(7).unwrap(),
+        UnixMTimeSeconds::new(7)
+    );
+    assert!(UnixMTimeSeconds::try_from_i64(-1).is_err());
+}
+
+#[test]
+fn readable_local_identity_rejects_relative_path_before_opening() {
+    let error = ReadableOriginalIdentity::from_local_path(Path::new("relative-file")).unwrap_err();
+
+    assert!(error.to_string().contains("local path must be absolute"));
 }
 
 #[test]

@@ -18,14 +18,26 @@ use crate::{
 /// Whole Unix epoch seconds used by `Thumb::MTime`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct UnixMTimeSeconds {
-    seconds: i64,
+    seconds: u64,
 }
 
 impl UnixMTimeSeconds {
-    /// Creates a timestamp from whole Unix epoch seconds.
+    /// Creates a timestamp from non-negative whole Unix epoch seconds.
     #[must_use]
-    pub const fn new(seconds: i64) -> Self {
+    pub const fn new(seconds: u64) -> Self {
         Self { seconds }
+    }
+
+    /// Creates a timestamp from signed whole Unix epoch seconds.
+    pub const fn try_from_i64(seconds: i64) -> Result<Self> {
+        if seconds < 0 {
+            return Err(ThumbnailError::InvalidMetadata(
+                "mtime is before the Unix epoch",
+            ));
+        }
+        Ok(Self {
+            seconds: seconds as u64,
+        })
     }
 
     /// Converts a [`SystemTime`] to whole non-negative Unix epoch seconds.
@@ -33,15 +45,23 @@ impl UnixMTimeSeconds {
         let duration = time
             .duration_since(UNIX_EPOCH)
             .map_err(|_| ThumbnailError::InvalidMetadata("mtime is before the Unix epoch"))?;
-        let seconds = i64::try_from(duration.as_secs())
-            .map_err(|_| ThumbnailError::InvalidMetadata("mtime overflows i64 seconds"))?;
-        Ok(Self { seconds })
+        Ok(Self {
+            seconds: duration.as_secs(),
+        })
     }
 
     /// Returns whole Unix epoch seconds.
     #[must_use]
-    pub const fn as_i64(self) -> i64 {
+    pub const fn as_u64(self) -> u64 {
         self.seconds
+    }
+}
+
+impl TryFrom<i64> for UnixMTimeSeconds {
+    type Error = ThumbnailError;
+
+    fn try_from(seconds: i64) -> Result<Self> {
+        Self::try_from_i64(seconds)
     }
 }
 
@@ -128,12 +148,18 @@ impl ReadableOriginalIdentity {
     }
 
     /// Opens a local original for reading and derives its identity facts.
+    ///
+    /// This performs blocking filesystem I/O. Async applications should call it from a blocking
+    /// adapter rather than directly on an async executor worker.
     #[cfg(unix)]
     pub fn from_local_path(path: impl AsRef<Path>) -> Result<Self> {
         Self::from_local_path_inner(path.as_ref(), None)
     }
 
     /// Opens a local original for reading and derives its identity facts with a MIME type.
+    ///
+    /// This performs blocking filesystem I/O. Async applications should call it from a blocking
+    /// adapter rather than directly on an async executor worker.
     #[cfg(unix)]
     pub fn from_local_path_with_mime_type(
         path: impl AsRef<Path>,
@@ -144,6 +170,9 @@ impl ReadableOriginalIdentity {
 
     #[cfg(unix)]
     fn from_local_path_inner(path: &Path, mime_type: Option<String>) -> Result<Self> {
+        if !path.is_absolute() {
+            return Err(ThumbnailError::invalid_uri("local path must be absolute"));
+        }
         let file = File::open(path).map_err(|source| ThumbnailError::Io {
             context: "open original for reading",
             source,

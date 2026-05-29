@@ -134,6 +134,48 @@ impl OwnedRawThumbnailImage {
             pixels: &self.pixels,
         }
     }
+
+    /// Returns the image width in pixels.
+    #[must_use]
+    pub const fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// Returns the image height in pixels.
+    #[must_use]
+    pub const fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// Returns the row stride in bytes.
+    #[must_use]
+    pub const fn stride(&self) -> usize {
+        self.stride
+    }
+
+    /// Returns the explicit pixel format.
+    #[must_use]
+    pub const fn format(&self) -> RawThumbnailPixelFormat {
+        self.format
+    }
+
+    /// Returns the validated pixel buffer.
+    #[must_use]
+    pub fn pixels(&self) -> &[u8] {
+        &self.pixels
+    }
+
+    /// Splits this image into its validated owned parts.
+    #[must_use]
+    pub fn into_parts(self) -> (u32, u32, usize, RawThumbnailPixelFormat, Vec<u8>) {
+        (
+            self.width,
+            self.height,
+            self.stride,
+            self.format,
+            self.pixels,
+        )
+    }
 }
 
 /// Policy-neutral problem found while validating or inspecting a cache entry.
@@ -170,7 +212,6 @@ pub enum CacheEntryProblem {
 
 /// Validation confidence and validity for a personal-cache entry.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[non_exhaustive]
 pub enum PersonalValidationOutcome {
     /// Required metadata and PNG constraints are fully verified.
     FullyVerified,
@@ -180,7 +221,6 @@ pub enum PersonalValidationOutcome {
 
 /// Validation confidence and validity for a shared-repository entry.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[non_exhaustive]
 pub enum SharedValidationOutcome {
     /// Required metadata and PNG constraints are fully verified.
     FullyVerified,
@@ -211,26 +251,32 @@ impl ThumbnailMetadata {
 
     /// Returns parsed `Thumb::MTime` when present and syntactically valid.
     #[must_use]
-    pub fn thumb_mtime(&self) -> Option<i64> {
-        self.thumb_mtime_result().ok().flatten()
+    pub fn thumb_mtime(&self) -> Option<UnixMTimeSeconds> {
+        self.try_thumb_mtime().ok().flatten()
     }
 
-    pub(crate) fn thumb_mtime_result(
-        &self,
-    ) -> std::result::Result<Option<i64>, std::num::ParseIntError> {
-        self.get("Thumb::MTime").map(str::parse::<i64>).transpose()
+    /// Returns parsed `Thumb::MTime`, distinguishing missing metadata from invalid syntax.
+    pub fn try_thumb_mtime(&self) -> Result<Option<UnixMTimeSeconds>> {
+        self.get("Thumb::MTime").map(parse_thumb_mtime).transpose()
+    }
+
+    pub(crate) fn thumb_mtime_result(&self) -> Result<Option<UnixMTimeSeconds>> {
+        self.try_thumb_mtime()
     }
 
     /// Returns parsed `Thumb::Size` when present and syntactically valid.
     #[must_use]
     pub fn thumb_size(&self) -> Option<u64> {
-        self.thumb_size_result().ok().flatten()
+        self.try_thumb_size().ok().flatten()
     }
 
-    pub(crate) fn thumb_size_result(
-        &self,
-    ) -> std::result::Result<Option<u64>, std::num::ParseIntError> {
-        self.get("Thumb::Size").map(str::parse::<u64>).transpose()
+    /// Returns parsed `Thumb::Size`, distinguishing missing metadata from invalid syntax.
+    pub fn try_thumb_size(&self) -> Result<Option<u64>> {
+        self.get("Thumb::Size").map(parse_thumb_size).transpose()
+    }
+
+    pub(crate) fn thumb_size_result(&self) -> Result<Option<u64>> {
+        self.try_thumb_size()
     }
 
     /// Returns `Thumb::Mimetype` when present.
@@ -238,6 +284,19 @@ impl ThumbnailMetadata {
     pub fn thumb_mimetype(&self) -> Option<&str> {
         self.get("Thumb::Mimetype")
     }
+}
+
+fn parse_thumb_mtime(value: &str) -> Result<UnixMTimeSeconds> {
+    value
+        .parse::<u64>()
+        .map(UnixMTimeSeconds::new)
+        .map_err(|_| ThumbnailError::InvalidMetadata("invalid Thumb::MTime"))
+}
+
+fn parse_thumb_size(value: &str) -> Result<u64> {
+    value
+        .parse::<u64>()
+        .map_err(|_| ThumbnailError::InvalidMetadata("invalid Thumb::Size"))
 }
 
 /// PNG sample bit depth reported by [`ParsedThumbnailPng`].
@@ -532,7 +591,7 @@ pub fn validate_shared_thumbnail(
     }
 
     match (metadata.thumb_mtime_result(), mtime) {
-        (Ok(Some(stored)), Some(expected)) if stored == expected.as_i64() => {}
+        (Ok(Some(stored)), Some(expected)) if stored == expected => {}
         (Ok(Some(_)), Some(_)) => push_problem(&mut problems, CacheEntryProblem::StaleMetadata),
         (Ok(Some(_)), None) => push_problem(&mut problems, CacheEntryProblem::UnverifiableOriginal),
         (Ok(None), _) => incomplete = true,
@@ -565,7 +624,7 @@ fn compare_personal_metadata(
     }
 
     match metadata.thumb_mtime_result() {
-        Ok(Some(mtime)) if mtime == original.mtime().as_i64() => {}
+        Ok(Some(mtime)) if mtime == original.mtime() => {}
         Ok(Some(_)) => push_problem(problems, CacheEntryProblem::StaleMetadata),
         Ok(None) => push_problem(problems, CacheEntryProblem::MissingRequiredMetadata),
         Err(_) => push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax),

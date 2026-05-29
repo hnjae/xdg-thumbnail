@@ -97,7 +97,7 @@ fn personal_lookup_request_matches_borrowed_lookup() {
             let (owned_path, owned_bytes, metadata) = payload.into_parts();
             assert_eq!(owned_path, path);
             assert_eq!(owned_bytes, png_with_metadata(personal_metadata("42")));
-            assert_eq!(metadata.thumb_mtime(), Some(42));
+            assert_eq!(metadata.thumb_mtime(), Some(UnixMTimeSeconds::new(42)));
         }
         other => panic!("expected valid personal payload lookup, got {other:?}"),
     }
@@ -134,7 +134,10 @@ fn personal_install_request_matches_borrowed_install_and_normalizes() {
     assert_eq!(parsed.width(), 128);
     assert_eq!(parsed.height(), 64);
     assert_eq!(parsed.color_type(), ThumbnailPngColorType::Rgba);
-    assert_eq!(parsed.metadata().thumb_mtime(), Some(42));
+    assert_eq!(
+        parsed.metadata().thumb_mtime(),
+        Some(UnixMTimeSeconds::new(42))
+    );
 }
 
 #[test]
@@ -154,6 +157,21 @@ fn personal_raw_install_request_matches_borrowed_install_and_normalizes() {
         pixels.clone(),
     )
     .unwrap();
+    assert_eq!(owned_image.width(), width);
+    assert_eq!(owned_image.height(), height);
+    assert_eq!(owned_image.stride(), stride as usize);
+    assert_eq!(owned_image.format(), RawThumbnailPixelFormat::Rgb8);
+    assert_eq!(owned_image.pixels(), pixels.as_slice());
+    assert_eq!(
+        owned_image.clone().into_parts(),
+        (
+            width,
+            height,
+            stride as usize,
+            RawThumbnailPixelFormat::Rgb8,
+            pixels.clone()
+        )
+    );
     let request = PersonalThumbnailRawInstallRequest::new(
         root.clone(),
         original.clone(),
@@ -201,7 +219,10 @@ fn personal_raw_install_request_matches_borrowed_install_and_normalizes() {
     assert_eq!(parsed.width(), 128);
     assert_eq!(parsed.height(), 64);
     assert_eq!(parsed.color_type(), ThumbnailPngColorType::Rgba);
-    assert_eq!(parsed.metadata().thumb_mtime(), Some(42));
+    assert_eq!(
+        parsed.metadata().thumb_mtime(),
+        Some(UnixMTimeSeconds::new(42))
+    );
 
     let parts_image =
         OwnedRawThumbnailImage::new(1, 1, 4, RawThumbnailPixelFormat::Rgba8, vec![1, 2, 3, 4])

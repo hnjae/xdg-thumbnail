@@ -7,6 +7,7 @@ use thiserror::Error;
 
 /// Errors returned by thumbnail cache identity and filesystem operations.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum ThumbnailError {
     /// The requested operation depends on Unix path byte semantics.
     #[error("operation is unsupported on this platform")]

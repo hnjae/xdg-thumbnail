@@ -117,7 +117,7 @@ fn assert_unreadable_lookup<T: std::fmt::Debug>(lookup: ThumbnailLookup<T>) {
     }
 }
 
-fn original_identity(mtime: i64) -> ReadableOriginalIdentity {
+fn original_identity(mtime: u64) -> ReadableOriginalIdentity {
     ReadableOriginalIdentity::from_confirmed_readable_identity(
         OriginalIdentity::with_mime_type(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),

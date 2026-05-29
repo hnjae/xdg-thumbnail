@@ -1045,7 +1045,6 @@ struct ValidatedSharedEntry {
 
 /// Result of a validated personal thumbnail cache lookup.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[non_exhaustive]
 pub enum ThumbnailLookup<T> {
     /// The cache entry exists and passed validation.
     Valid(T),
@@ -1057,7 +1056,6 @@ pub enum ThumbnailLookup<T> {
 
 /// Result of a validated shared thumbnail repository lookup.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[non_exhaustive]
 pub enum SharedThumbnailLookup<T> {
     /// The cache entry exists and required metadata and PNG constraints are fully verified.
     FullyVerified(T),
@@ -1073,7 +1071,6 @@ pub enum SharedThumbnailLookup<T> {
 
 /// Validation state for a shared cache entry inspection.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[non_exhaustive]
 pub enum SharedCacheEntryOutcome {
     /// Required metadata and PNG constraints are fully verified.
     FullyVerified,

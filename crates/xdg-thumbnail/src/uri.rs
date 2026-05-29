@@ -38,18 +38,26 @@ impl PersonalOriginalUri {
         Err(ThumbnailError::UnsupportedPlatform)
     }
 
-    /// Accepts textual local `file:` URI input and normalizes `localhost`.
+    /// Accepts textual local `file:` URI input and normalizes local file URI casing.
     pub fn from_local_file_uri(uri: &str) -> Result<Self> {
         validate_ascii_uri_identity(uri)?;
-        let rest = uri
-            .strip_prefix("file:")
+        let scheme_end = uri
+            .find(':')
             .ok_or_else(|| ThumbnailError::invalid_uri("local URI must use the file scheme"))?;
+        let scheme = &uri[..scheme_end];
+        validate_scheme(scheme)?;
+        if !scheme.eq_ignore_ascii_case("file") {
+            return Err(ThumbnailError::invalid_uri(
+                "local URI must use the file scheme",
+            ));
+        }
+        let rest = &uri[scheme_end + 1..];
 
         let path = if let Some(rest) = rest.strip_prefix("//") {
             let (authority, path) = rest
                 .split_once('/')
                 .ok_or_else(|| ThumbnailError::invalid_uri("file URI path must be absolute"))?;
-            if !(authority.is_empty() || authority == "localhost") {
+            if !(authority.is_empty() || authority.eq_ignore_ascii_case("localhost")) {
                 return Err(ThumbnailError::invalid_uri(
                     "file URI authority is not directly local",
                 ));
