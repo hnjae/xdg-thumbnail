@@ -7,7 +7,8 @@ use std::os::unix::fs::symlink;
 use tempfile::TempDir;
 use xdg_thumbnail::{
     CacheNamespace, CacheRoot, OriginalIdentity, ParsedThumbnailPng, PersonalThumbnailUri,
-    ReadableOriginalIdentity, ThumbnailSize, UnixMTimeSeconds,
+    RawThumbnailImage, RawThumbnailPixelFormat, ReadableOriginalIdentity, ThumbnailError,
+    ThumbnailSize, UnixMTimeSeconds,
 };
 
 #[test]
@@ -115,6 +116,127 @@ fn install_rejects_symlinked_cache_directories() {
     assert!(std::fs::read_dir(&outside).unwrap().next().is_none());
 }
 
+#[test]
+fn installs_rgb8_raw_thumbnail_with_opaque_alpha() {
+    let temp = TempDir::new().unwrap();
+    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = readable_original();
+    let pixels = [10, 20, 30, 40, 50, 60];
+    let image = RawThumbnailImage::new(2, 1, 6, RawThumbnailPixelFormat::Rgb8, &pixels).unwrap();
+
+    let installed = root
+        .install_personal_thumbnail_raw_payload(&original, ThumbnailSize::Normal, image)
+        .unwrap();
+
+    let expected_path = root.personal_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::Normal),
+    );
+    assert_eq!(installed.path(), expected_path.as_path());
+    assert_eq!(std::fs::read(&expected_path).unwrap(), installed.bytes());
+    let (width, height, rgba) = decode_rgba(installed.bytes());
+    assert_eq!((width, height), (2, 1));
+    assert_eq!(rgba, [10, 20, 30, 255, 40, 50, 60, 255]);
+    assert_eq!(
+        ParsedThumbnailPng::parse(installed.bytes())
+            .unwrap()
+            .metadata()
+            .thumb_uri(),
+        Some("file:///home/alice/photo.png")
+    );
+}
+
+#[test]
+fn installs_rgba8_raw_thumbnail_preserving_alpha() {
+    let temp = TempDir::new().unwrap();
+    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = readable_original();
+    let pixels = [10, 20, 30, 11, 40, 50, 60, 77];
+    let image = RawThumbnailImage::new(2, 1, 8, RawThumbnailPixelFormat::Rgba8, &pixels).unwrap();
+
+    let installed = root
+        .install_personal_thumbnail_raw_payload(&original, ThumbnailSize::Normal, image)
+        .unwrap();
+
+    let (width, height, rgba) = decode_rgba(installed.bytes());
+    assert_eq!((width, height), (2, 1));
+    assert_eq!(rgba, pixels);
+}
+
+#[test]
+fn raw_thumbnail_stride_padding_is_skipped() {
+    let temp = TempDir::new().unwrap();
+    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = readable_original();
+    let pixels = [1, 2, 3, 4, 5, 6, 99, 99, 7, 8, 9, 10, 11, 12, 88, 88];
+    let image = RawThumbnailImage::new(2, 2, 8, RawThumbnailPixelFormat::Rgb8, &pixels).unwrap();
+
+    let installed = root
+        .install_personal_thumbnail_raw_payload(&original, ThumbnailSize::Normal, image)
+        .unwrap();
+
+    let (width, height, rgba) = decode_rgba(installed.bytes());
+    assert_eq!((width, height), (2, 2));
+    assert_eq!(
+        rgba,
+        [1, 2, 3, 255, 4, 5, 6, 255, 7, 8, 9, 255, 10, 11, 12, 255]
+    );
+}
+
+#[test]
+fn raw_thumbnail_oversized_input_is_downscaled() {
+    let temp = TempDir::new().unwrap();
+    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = readable_original();
+    let width = 300;
+    let height = 150;
+    let stride = width * 3;
+    let pixels = vec![128; stride as usize * height as usize];
+    let image = RawThumbnailImage::new(
+        width,
+        height,
+        stride as usize,
+        RawThumbnailPixelFormat::Rgb8,
+        &pixels,
+    )
+    .unwrap();
+
+    let installed = root
+        .install_personal_thumbnail_raw_payload(&original, ThumbnailSize::Normal, image)
+        .unwrap();
+
+    let parsed = ParsedThumbnailPng::parse(installed.bytes()).unwrap();
+    assert_eq!(parsed.width(), 128);
+    assert_eq!(parsed.height(), 64);
+    assert_eq!(parsed.color_type(), png::ColorType::Rgba);
+}
+
+#[test]
+fn raw_thumbnail_rejects_invalid_stride() {
+    let pixels = [0; 6];
+
+    let error =
+        RawThumbnailImage::new(2, 1, 5, RawThumbnailPixelFormat::Rgb8, &pixels).unwrap_err();
+
+    assert!(matches!(
+        error,
+        ThumbnailError::UnsupportedRenderedThumbnail("raw thumbnail stride is too small")
+    ));
+}
+
+#[test]
+fn raw_thumbnail_rejects_short_buffer() {
+    let pixels = [0; 13];
+
+    let error =
+        RawThumbnailImage::new(2, 2, 8, RawThumbnailPixelFormat::Rgb8, &pixels).unwrap_err();
+
+    assert!(matches!(
+        error,
+        ThumbnailError::UnsupportedRenderedThumbnail("raw thumbnail buffer is too short")
+    ));
+}
+
 fn readable_original() -> ReadableOriginalIdentity {
     ReadableOriginalIdentity::new(
         OriginalIdentity::with_mime_type(
@@ -143,4 +265,16 @@ fn png_without_metadata(width: u32, height: u32, color_type: png::ColorType) -> 
         writer.write_image_data(&pixels).unwrap();
     }
     output
+}
+
+fn decode_rgba(bytes: &[u8]) -> (u32, u32, Vec<u8>) {
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::ALPHA);
+    let mut reader = decoder.read_info().unwrap();
+    let mut output = vec![0; reader.output_buffer_size().unwrap()];
+    let info = reader.next_frame(&mut output).unwrap();
+    assert_eq!(info.color_type, png::ColorType::Rgba);
+    assert_eq!(info.bit_depth, png::BitDepth::Eight);
+    output.truncate(info.buffer_size());
+    (info.width, info.height, output)
 }

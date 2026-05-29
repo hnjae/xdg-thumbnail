@@ -8,11 +8,12 @@ use std::os::unix::ffi::OsStrExt;
 use tempfile::TempDir;
 use xdg_thumbnail::{
     CacheNamespace, CacheRoot, FailureEntryWriteRequest, FailureNamespace, OriginalIdentity,
-    ParsedThumbnailPng, PersonalThumbnailInspectionRequest, PersonalThumbnailInstallRequest,
-    PersonalThumbnailLookupRequest, PersonalThumbnailUri, ReadableOriginalIdentity,
-    SharedCacheEntryOutcome, SharedRepositoryContext, SharedThumbnailInspectionRequest,
-    SharedThumbnailLookup, SharedThumbnailLookupRequest, ThumbnailLookup, ThumbnailSize,
-    UnixMTimeSeconds,
+    OwnedRawThumbnailImage, ParsedThumbnailPng, PersonalThumbnailInspectionRequest,
+    PersonalThumbnailInstallRequest, PersonalThumbnailLookupRequest,
+    PersonalThumbnailRawInstallRequest, PersonalThumbnailUri, RawThumbnailImage,
+    RawThumbnailPixelFormat, ReadableOriginalIdentity, SharedCacheEntryOutcome,
+    SharedRepositoryContext, SharedThumbnailInspectionRequest, SharedThumbnailLookup,
+    SharedThumbnailLookupRequest, ThumbnailLookup, ThumbnailSize, UnixMTimeSeconds,
 };
 
 #[test]
@@ -83,6 +84,81 @@ fn personal_install_request_matches_borrowed_install_and_normalizes() {
     assert_eq!(parsed.height(), 64);
     assert_eq!(parsed.color_type(), png::ColorType::Rgba);
     assert_eq!(parsed.metadata().thumb_mtime(), Some(42));
+}
+
+#[test]
+fn personal_raw_install_request_matches_borrowed_install_and_normalizes() {
+    let temp = TempDir::new().unwrap();
+    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = readable_original();
+    let width = 300;
+    let height = 150;
+    let stride = width * 3;
+    let pixels = vec![64; stride as usize * height as usize];
+    let owned_image = OwnedRawThumbnailImage::new(
+        width,
+        height,
+        stride as usize,
+        RawThumbnailPixelFormat::Rgb8,
+        pixels.clone(),
+    )
+    .unwrap();
+    let request = PersonalThumbnailRawInstallRequest::new(
+        root.clone(),
+        original.clone(),
+        ThumbnailSize::Normal,
+        owned_image,
+    );
+
+    let request_install = request.install_payload().unwrap();
+    let borrowed_image = RawThumbnailImage::new(
+        width,
+        height,
+        stride as usize,
+        RawThumbnailPixelFormat::Rgb8,
+        &pixels,
+    )
+    .unwrap();
+    let borrowed_install = root
+        .install_personal_thumbnail_raw_payload(&original, ThumbnailSize::Normal, borrowed_image)
+        .unwrap();
+
+    assert_eq!(request_install, borrowed_install);
+    assert_eq!(
+        std::fs::read(request_install.path()).unwrap(),
+        request_install.bytes()
+    );
+
+    let request_path = request.install_path().unwrap();
+    assert_eq!(request_path.path(), request_install.path());
+
+    let parsed = ParsedThumbnailPng::parse(request_install.bytes()).unwrap();
+    assert_eq!(parsed.width(), 128);
+    assert_eq!(parsed.height(), 64);
+    assert_eq!(parsed.color_type(), png::ColorType::Rgba);
+    assert_eq!(parsed.metadata().thumb_mtime(), Some(42));
+
+    let parts_image =
+        OwnedRawThumbnailImage::new(1, 1, 4, RawThumbnailPixelFormat::Rgba8, vec![1, 2, 3, 4])
+            .unwrap();
+    let parts_request = PersonalThumbnailRawInstallRequest::new(
+        root.clone(),
+        original.clone(),
+        ThumbnailSize::Large,
+        parts_image,
+    );
+    let (parts_root, parts_original, parts_size, parts_image) = parts_request.into_parts();
+    assert_eq!(parts_root, root);
+    assert_eq!(parts_original, original);
+    assert_eq!(parts_size, ThumbnailSize::Large);
+    let installed_from_parts = parts_root
+        .install_personal_thumbnail_raw_payload(
+            &parts_original,
+            parts_size,
+            parts_image.as_borrowed(),
+        )
+        .unwrap();
+    assert!(installed_from_parts.path().exists());
 }
 
 #[test]
