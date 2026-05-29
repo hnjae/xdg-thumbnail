@@ -29,7 +29,7 @@ The library keeps a flat public API through `lib.rs` re-exports, but internal mo
 
 - `error` owns the crate error and result types.
 - `namespace` owns successful thumbnail sizes, failure namespaces, and cache namespace path joining.
-- `uri` owns canonical personal and shared thumbnail URI identity construction, validation, percent encoding, and MD5 filename derivation.
+- `uri` owns canonical personal and shared original URI identity construction, validation, percent encoding, and MD5 filename derivation.
 - `identity` owns original freshness facts, readability-confirmed identities, Unix mtime conversion, and shared-repository lookup context.
 - `png` owns PNG metadata parsing, successful-thumbnail conformance checks, personal and shared metadata validation, rendered PNG normalization, and final Freedesktop RGBA PNG encoding.
 - `inspection` owns cache entry inspection facts, access-time preservation during inspection, standard thumbnail filename checks, and safe removal handles.
@@ -39,8 +39,8 @@ The library keeps a flat public API through `lib.rs` re-exports, but internal mo
 ## Library Responsibilities
 
 - Resolve the thumbnail cache root from the XDG base directory rules, including ignoring relative `$XDG_CACHE_HOME` values.
-- Represent personal absolute thumbnail URIs and shared-repository relative thumbnail URIs as separate library-owned string newtypes that preserve the exact MD5 and `Thumb::URI` input for their own context.
-- Construct canonical personal thumbnail URIs for local filesystem paths and textual local `file:` URI inputs, construct canonical shared-repository relative thumbnail URIs from raw direct-child filenames, and validate and preserve caller-selected stable absolute personal URI identities for other schemes without parser reserialization or scheme-specific normalization.
+- Represent personal absolute original URIs and shared-repository relative original URIs as separate library-owned string newtypes that preserve the exact MD5 and `Thumb::URI` input for their own context.
+- Construct canonical personal original URIs for local filesystem paths and textual local `file:` URI inputs, construct canonical shared-repository relative original URIs from raw direct-child filenames, and validate and preserve caller-selected stable absolute personal original URI identities for other schemes without parser reserialization or scheme-specific normalization.
 - Use maintained dependencies for commodity primitives such as MD5 digest calculation, byte percent-encoding, and optional URI syntax validation, while keeping canonical thumbnail URI identity and cache filename policy in the library instead of exposing parser-specific URL objects or handwritten digest code.
 - Represent thumbnail sizes: `normal`, `large`, `x-large`, and `xx-large`.
 - Represent cache namespaces separately for successful thumbnail sizes and program-version failure entries.
@@ -48,17 +48,17 @@ The library keeps a flat public API through `lib.rs` re-exports, but internal mo
 - Expose pure computed-path APIs separately from validation APIs so callers cannot mistake an MD5-derived cache path for a display-valid thumbnail.
 - Compute shared-repository cache paths only from an explicit shared repository context that includes the repository root, direct child original filename, and shared relative URI, so personal-cache absolute URI identity is never reused as a shared-repository lookup key.
 - Keep raw shared-repository filename construction separate from textual shared-URI parsing. Raw filenames with literal percent-looking text such as `dir%2Fpicture.png` are valid direct child names and are percent-encoded as `./dir%252Fpicture.png`; textual shared URIs that decode to multiple path segments, such as `./dir%2Fpicture.png`, are rejected. On Unix-like targets, backslash remains a filename byte and is preserved through percent-encoding when needed.
-- Read standard PNG text metadata such as `Thumb::URI`, `Thumb::MTime`, `Thumb::Size`, and `Thumb::Mimetype`.
+- Read standard PNG text metadata such as `Thumb::URI`, `Thumb::MTime`, `Thumb::Size`, and `Thumb::Mimetype`, while exposing crate-owned PNG bit-depth and color-type enums instead of parser dependency types.
 - Write standard PNG text metadata such as required `Thumb::URI` and `Thumb::MTime`, plus optional `Thumb::Size`, `Thumb::Mimetype`, and media-specific keys when the caller supplies them.
 - Require `Thumb::URI` and `Thumb::MTime` for personal-cache validation and compare `Thumb::MTime` as whole Unix epoch seconds.
-- Expose validated path lookup for callers that need a toolkit-consumable path while documenting the post-validation replacement race when the caller reopens that path.
-- Expose validated payload lookup as the preferred display surface for thumbnail views, returning the exact cache PNG bytes that passed validation together with path and metadata facts when the caller requests payload output. Opened handles may be added later as optimized variants.
+- Expose validated path lookup for callers that need a toolkit-consumable path while documenting the post-validation replacement race when the caller reopens that path. Validated lookup must open cache entries without following symlinks; missing entries are lookup misses, while symlinks, non-regular entries, and no-follow open refusals are invalid unreadable entries.
+- Expose validated payload lookup as the preferred display surface for thumbnail views, returning the exact cache PNG bytes opened without following symlinks and validated together with path and metadata facts when the caller requests payload output. Opened handles may be added later as optimized variants.
 - Make path-versus-bytes output selection explicit in lookup and install APIs instead of returning an ambiguous path-or-payload union.
 - Reject personal-cache successful thumbnail and failure-entry writes when the caller cannot provide a readability-confirmed original identity with an original modification time, because such entries violate the Freedesktop write preconditions or cannot satisfy global-cache freshness checks.
 - Iterate cache entries from the personal thumbnail cache and optional shared thumbnail repositories.
-- Validate personal and shared thumbnails with separate contexts because shared repositories use direct child relative URIs and may omit `Thumb::URI` or `Thumb::MTime` when they use other freshness mechanisms.
+- Validate personal and shared thumbnails with separate public outcome types because shared repositories use direct child relative URIs and may omit `Thumb::URI` or `Thumb::MTime` when they use other freshness mechanisms.
 - Inspect successful thumbnail PNGs against the required image format and maximum dimensions for the selected size class.
-- Normalize supported caller-provided rendered PNG payloads into Freedesktop-conforming 8-bit non-interlaced RGBA PNG output before successful personal-cache installation, downscale rendered output when needed to fit the requested cache namespace, optionally encode explicitly described raw pixel buffers through the same final PNG path, and return the installed path plus optional final normalized PNG bytes when requested.
+- Normalize supported caller-provided rendered PNG payloads into Freedesktop-conforming 8-bit non-interlaced RGBA PNG output before successful personal-cache installation, downscale rendered output when needed to fit the requested cache namespace, optionally encode explicitly described raw pixel buffers through the same final PNG path, and return the installed path plus optional final normalized PNG bytes when requested. PNG parse and validation paths must check decoded buffer size and pixel count resource limits before allocating decode buffers.
 - Install successful personal-cache thumbnails atomically from caller-provided rendered thumbnail payloads and readability-confirmed original identities, after normalizing the final PNG encoding and cache-size dimensions for the requested size namespace.
 - Create missing personal thumbnail cache directories with mode `0700` and final thumbnail files with mode `0600`; reject existing standard personal-cache directories that are not owned by the current user or that grant group/other access, while reporting explicit permission errors instead of silently rewriting existing directory permissions.
 - Treat failure entries as metadata-carrying PNG files in program-version failure namespaces, not as successful thumbnail size entries, and validate their required personal-cache metadata without applying successful-thumbnail dimension limits.
@@ -94,7 +94,7 @@ The `x-large` and `xx-large` size classes are treated as supported documented be
 
 - Implement the user-visible generate contract documented in `docs/spec/generate-cli-behavior.md`.
 - Parse generate command-line options and translate them into thumbnailer selection, execution, and reporting policy.
-- Resolve relative local input paths against the current working directory into absolute paths, apply generate CLI input policy such as recursive-cache rejection, and call the library to construct canonical personal-cache thumbnail URIs without hidden symlink normalization.
+- Resolve relative local input paths against the current working directory into absolute paths, apply generate CLI input policy such as recursive-cache rejection, and call the library to construct canonical personal-cache original URIs without hidden symlink normalization.
 - Reject inputs located under the personal thumbnail cache or a shared `.sh_thumbnails` repository.
 - Confirm local input readability and obtain original metadata before keeping an existing thumbnail as valid or asking the library to install a generated thumbnail.
 - Discover `.thumbnailer` files from `$XDG_DATA_HOME/thumbnailers` and `$XDG_DATA_DIRS` thumbnailer directories, preserving each candidate's discovery origin so sandbox eligibility and diagnostics can distinguish user-provided and system-provided thumbnailers.
@@ -140,11 +140,11 @@ pub struct FailureNamespace {
     program_version: String,
 }
 
-pub struct PersonalThumbnailUri {
+pub struct PersonalOriginalUri {
     value: String,
 }
 
-pub struct SharedRelativeThumbnailUri {
+pub struct SharedRelativeOriginalUri {
     value: String,
 }
 
@@ -153,7 +153,7 @@ pub struct UnixMTimeSeconds {
 }
 
 pub struct OriginalIdentity {
-    uri: PersonalThumbnailUri,
+    uri: PersonalOriginalUri,
     mtime: UnixMTimeSeconds,
     size: Option<u64>,
     mime_type: Option<String>,
@@ -163,15 +163,19 @@ pub struct ReadableOriginalIdentity {
     identity: OriginalIdentity,
 }
 
+impl ReadableOriginalIdentity {
+    pub fn from_confirmed_readable_identity(identity: OriginalIdentity) -> Self;
+}
+
 pub struct SharedRepositoryContext {
     repository_root: std::path::PathBuf,
     original_child_name: std::ffi::OsString,
-    shared_uri: SharedRelativeThumbnailUri,
+    shared_uri: SharedRelativeOriginalUri,
 }
 
-pub enum ThumbnailUriIdentity {
-    Personal(PersonalThumbnailUri),
-    Shared(SharedRelativeThumbnailUri),
+pub enum OriginalUriIdentity {
+    Personal(PersonalOriginalUri),
+    Shared(SharedRelativeOriginalUri),
 }
 
 pub enum CacheEntryProblem {
@@ -184,18 +188,28 @@ pub enum CacheEntryProblem {
     InvalidPngStructure,
     NonconformingPngFormat,
     DimensionsExceedNamespace,
+    ResourceLimitExceeded,
 }
 
-pub enum ValidationOutcome {
+pub enum PersonalValidationOutcome {
     FullyVerified,
-    SharedMetadataIncomplete,
-    UncheckedInspection,
+    Invalid(Vec<CacheEntryProblem>),
+}
+
+pub enum SharedValidationOutcome {
+    FullyVerified,
+    MetadataIncomplete,
+    Invalid(Vec<CacheEntryProblem>),
+}
+
+pub enum CacheEntryInspectionOutcome {
+    Unchecked,
     Invalid(Vec<CacheEntryProblem>),
 }
 
 pub struct CacheEntryInspection {
-    outcome: ValidationOutcome,
-    original_uri: Option<ThumbnailUriIdentity>,
+    outcome: CacheEntryInspectionOutcome,
+    original_uri: Option<OriginalUriIdentity>,
     thumbnail_timestamps: ThumbnailTimestamps,
     namespace: CacheNamespace,
     cache_location: CacheLocation,
@@ -221,7 +235,7 @@ pub struct CacheEntryHandle {
 }
 ```
 
-`UnixMTimeSeconds` stores the whole Unix epoch seconds used in `Thumb::MTime`; constructors from filesystem metadata must define truncation, pre-epoch, and overflow handling before validation or writes depend on the value. `PersonalThumbnailUri` and `SharedRelativeThumbnailUri` remain separate types so an absolute personal-cache URI cannot accidentally be reused as a shared-repository lookup key. `FailureNamespace` values must be validated direct directory names before use. The initial accepted character set is ASCII letters, digits, `.`, `_`, `+`, and `-`; empty values, `.`, `..`, path separators, NUL, and control characters are rejected.
+`UnixMTimeSeconds` stores the whole Unix epoch seconds used in `Thumb::MTime`; constructors from filesystem metadata must define truncation, pre-epoch, and overflow handling before validation or writes depend on the value. `PersonalOriginalUri` and `SharedRelativeOriginalUri` remain separate types so an absolute personal-cache URI cannot accidentally be reused as a shared-repository lookup key. `FailureNamespace` values must be validated direct directory names before use. The initial accepted character set is ASCII letters, digits, `.`, `_`, `+`, and `-`; empty values, `.`, `..`, path separators, NUL, and control characters are rejected.
 
 The exact names can change during implementation, but the direction should remain: the library describes cache entries and filesystem facts with enough precision to avoid accidental cleanup policy, while the prune CLI classifies entries, decides which cleanup policy to run, and requests destructive changes only through library-provided cache entry handles.
 
@@ -241,7 +255,7 @@ pub enum UriClass {
 }
 
 pub trait CleanupClassifier {
-    fn classify(&self, uri: &PersonalThumbnailUri) -> UriClass;
+    fn classify(&self, uri: &PersonalOriginalUri) -> UriClass;
 }
 ```
 
