@@ -11,13 +11,13 @@ use std::os::unix::ffi::OsStrExt;
 #[cfg(unix)]
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
+use crate::PersonalThumbnailUri;
 use crate::{
     CacheEntryProblem, CacheNamespace, FailureNamespace, ParsedThumbnailPng,
     ReadableOriginalIdentity, Result, ThumbnailError, ThumbnailMetadata, ThumbnailSize,
     ValidationOutcome, encode_rgba_png, normalized_personal_thumbnail_png,
     thumbnail_metadata_pairs, validate_personal_thumbnail,
 };
-use crate::{OriginalIdentity, PersonalThumbnailUri};
 
 /// Root directory of the personal thumbnail cache, usually `$XDG_CACHE_HOME/thumbnails`.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -114,7 +114,7 @@ impl CacheRoot {
         original: &ReadableOriginalIdentity,
         size: ThumbnailSize,
     ) -> Result<ThumbnailLookup<ValidatedThumbnailPath>> {
-        match self.validated_personal_entry(original.identity(), size)? {
+        match self.validated_personal_entry(original, size)? {
             ThumbnailLookup::Valid(entry) => Ok(ThumbnailLookup::Valid(ValidatedThumbnailPath {
                 path: entry.path,
                 metadata: entry.metadata,
@@ -133,7 +133,7 @@ impl CacheRoot {
         original: &ReadableOriginalIdentity,
         size: ThumbnailSize,
     ) -> Result<ThumbnailLookup<ValidatedThumbnailPayload>> {
-        match self.validated_personal_entry(original.identity(), size)? {
+        match self.validated_personal_entry(original, size)? {
             ThumbnailLookup::Valid(entry) => {
                 Ok(ThumbnailLookup::Valid(ValidatedThumbnailPayload {
                     path: entry.path,
@@ -181,10 +181,10 @@ impl CacheRoot {
 
     fn validated_personal_entry(
         &self,
-        original: &OriginalIdentity,
+        original: &ReadableOriginalIdentity,
         size: ThumbnailSize,
     ) -> Result<ThumbnailLookup<ValidatedPersonalEntry>> {
-        let path = self.personal_path(original.uri(), &CacheNamespace::Size(size));
+        let path = self.personal_path(original.identity().uri(), &CacheNamespace::Size(size));
         let bytes = match fs::read(&path) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {

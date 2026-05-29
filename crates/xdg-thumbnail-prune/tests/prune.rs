@@ -9,6 +9,9 @@ use xdg_thumbnail::{
     ReadableOriginalIdentity, ThumbnailSize, UnixMTimeSeconds,
 };
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 #[test]
 fn reports_missing_local_originals_without_deleting_by_default() {
     let fixture = Fixture::new();
@@ -222,6 +225,88 @@ fn verbose_human_output_includes_kept_entries() {
         .stdout(predicates::str::contains("local-stable-file"));
 }
 
+#[test]
+fn nonconforming_entries_still_apply_missing_original_policy() {
+    let fixture = Fixture::new();
+    let thumbnail = fixture.install_nonconforming_for_missing_original();
+
+    let output = Command::cargo_bin("xdg-thumbnail-prune")
+        .unwrap()
+        .env("XDG_CACHE_HOME", fixture.cache_home.path())
+        .env("HOME", fixture.home.path())
+        .args(["--format", "jsonl", "--age-basis", "modification-time"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let lines = String::from_utf8(output).unwrap();
+    let records = lines
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+
+    assert!(thumbnail.exists());
+    assert_eq!(records[0]["decision"], "delete");
+    assert_eq!(records[0]["reason"], "original-missing");
+}
+
+#[cfg(unix)]
+#[test]
+fn human_output_reports_delete_failures_as_errors() {
+    let fixture = Fixture::new();
+    let thumbnail = fixture.install_for_missing_original();
+    std::fs::set_permissions(
+        thumbnail.parent().unwrap(),
+        std::fs::Permissions::from_mode(0o500),
+    )
+    .unwrap();
+
+    Command::cargo_bin("xdg-thumbnail-prune")
+        .unwrap()
+        .env("XDG_CACHE_HOME", fixture.cache_home.path())
+        .env("HOME", fixture.home.path())
+        .args(["--delete", "--age-basis", "modification-time"])
+        .assert()
+        .code(1)
+        .stdout(predicates::str::contains("delete-failed"))
+        .stdout(predicates::str::contains("error=delete-failed"));
+
+    std::fs::set_permissions(
+        thumbnail.parent().unwrap(),
+        std::fs::Permissions::from_mode(0o700),
+    )
+    .unwrap();
+}
+
+#[test]
+fn nonfatal_inspection_errors_are_counted_in_summary_errors() {
+    let fixture = Fixture::new();
+    let dir = fixture.cache_home.path().join("thumbnails/normal");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::create_dir(dir.join("abcdefabcdefabcdefabcdefabcdefab.png")).unwrap();
+
+    let output = Command::cargo_bin("xdg-thumbnail-prune")
+        .unwrap()
+        .env("XDG_CACHE_HOME", fixture.cache_home.path())
+        .env("HOME", fixture.home.path())
+        .args(["--format", "jsonl", "--age-basis", "modification-time"])
+        .assert()
+        .code(4)
+        .get_output()
+        .stdout
+        .clone();
+    let lines = String::from_utf8(output).unwrap();
+    let records = lines
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+
+    assert_eq!(records[0]["decision"], "skip");
+    assert_eq!(records[0]["reason"], "unreadable-entry");
+    assert_eq!(records.last().unwrap()["errors"], 1);
+}
+
 struct Fixture {
     cache_home: TempDir,
     home: TempDir,
@@ -253,6 +338,22 @@ impl Fixture {
             original.identity().uri(),
             &CacheNamespace::Size(ThumbnailSize::Normal),
         )
+    }
+
+    fn install_nonconforming_for_missing_original(&self) -> std::path::PathBuf {
+        let root = CacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
+        let original = OriginalIdentity::new(
+            PersonalThumbnailUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-huge-missing.png")
+                .unwrap(),
+            UnixMTimeSeconds::new(42),
+            Some(12),
+            Some("image/png"),
+        )
+        .unwrap();
+        let path = root.personal_path(original.uri(), &CacheNamespace::Size(ThumbnailSize::Normal));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, png_with_metadata(129, 1, &original)).unwrap();
+        path
     }
 
     fn install_stale_failure_entry(&self) -> std::path::PathBuf {
@@ -349,6 +450,36 @@ fn rendered_png() -> Vec<u8> {
         encoder.set_depth(png::BitDepth::Eight);
         let mut writer = encoder.write_header().unwrap();
         writer.write_image_data(&[255; 8]).unwrap();
+    }
+    output
+}
+
+fn png_with_metadata(width: u32, height: u32, original: &OriginalIdentity) -> Vec<u8> {
+    let mut output = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut output, width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder
+            .add_text_chunk("Thumb::URI".to_owned(), original.uri().as_str().to_owned())
+            .unwrap();
+        encoder
+            .add_text_chunk("Thumb::MTime".to_owned(), original.mtime().to_string())
+            .unwrap();
+        if let Some(size) = original.size() {
+            encoder
+                .add_text_chunk("Thumb::Size".to_owned(), size.to_string())
+                .unwrap();
+        }
+        if let Some(mime_type) = original.mime_type() {
+            encoder
+                .add_text_chunk("Thumb::Mimetype".to_owned(), mime_type.to_owned())
+                .unwrap();
+        }
+        let mut writer = encoder.write_header().unwrap();
+        writer
+            .write_image_data(&vec![255; width as usize * height as usize * 4])
+            .unwrap();
     }
     output
 }

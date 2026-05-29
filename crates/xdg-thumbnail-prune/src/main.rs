@@ -11,8 +11,9 @@ use clap::{Parser, ValueEnum};
 use serde::Serialize;
 use xdg_thumbnail::{
     AccessTimePreservation, CacheEntryInspection, CacheEntryProblem, CacheNamespace, CacheRoot,
-    OriginalIdentity, PersonalThumbnailUri, ThumbnailSize, ThumbnailUriIdentity, UnixMTimeSeconds,
-    ValidationOutcome, validate_personal_failure_entry, validate_personal_thumbnail,
+    PersonalThumbnailUri, ReadableOriginalIdentity, ThumbnailError, ThumbnailSize,
+    ThumbnailUriIdentity, ValidationOutcome, validate_personal_failure_entry,
+    validate_personal_thumbnail,
 };
 
 #[cfg(unix)]
@@ -277,6 +278,42 @@ fn evaluate_entry(
         if problems.contains(&CacheEntryProblem::NonstandardFilename) {
             decision = Decision::Skip;
             reason = Some("nonstandard-filename");
+        } else if only_nonconforming(problems) {
+            if let Some(uri) = &uri {
+                match classification {
+                    UriClass::LocalStableFile => {
+                        evaluate_local_file(
+                            uri,
+                            entry,
+                            cli,
+                            &mut decision,
+                            &mut reason,
+                            &mut error,
+                            summary,
+                        );
+                    }
+                    UriClass::Remote
+                    | UriClass::ArchiveOrVirtual
+                    | UriClass::LocalRemovableOrPortal => {
+                        evaluate_age_based(
+                            entry,
+                            cli,
+                            classification,
+                            timestamp,
+                            &mut decision,
+                            &mut reason,
+                            summary,
+                        );
+                    }
+                    UriClass::Unknown => {
+                        decision = Decision::Skip;
+                        reason = first_nonconforming_reason(problems);
+                    }
+                }
+            } else {
+                decision = Decision::Skip;
+                reason = first_nonconforming_reason(problems);
+            }
         } else if problems.contains(&CacheEntryProblem::InvalidPngStructure) {
             decision = Decision::Delete;
             reason = Some("invalid-png-structure");
@@ -295,10 +332,18 @@ fn evaluate_entry(
         } else if problems.contains(&CacheEntryProblem::DimensionsExceedNamespace) {
             decision = Decision::Skip;
             reason = Some("nonconforming-dimensions");
+        } else if problems.contains(&CacheEntryProblem::UnreadableEntry) {
+            decision = Decision::Skip;
+            reason = Some("unreadable-entry");
+            record_nonfatal_error(summary);
+        } else if problems.contains(&CacheEntryProblem::UnreadableOriginal) {
+            decision = Decision::Skip;
+            reason = Some("original-unverifiable");
+            record_nonfatal_error(summary);
         } else {
             decision = Decision::Skip;
             reason = Some("unreadable-entry");
-            summary.nonfatal_error = true;
+            record_nonfatal_error(summary);
         }
     } else if let Some(uri) = &uri {
         match classification {
@@ -402,52 +447,30 @@ fn evaluate_local_file(
         *reason = Some("original-unverifiable");
         return;
     };
-    let metadata = match std::fs::metadata(&path) {
-        Ok(metadata) => metadata,
-        Err(io_error) if io_error.kind() == std::io::ErrorKind::NotFound => {
+    let original = match ReadableOriginalIdentity::from_local_path(&path, None::<String>) {
+        Ok(original) => original,
+        Err(read_error) if is_not_found_error(&read_error) => {
             *decision = Decision::Delete;
             *reason = Some("original-missing");
             return;
         }
-        Err(io_error) => {
+        Err(read_error) => {
             *decision = Decision::Skip;
             *reason = Some("original-unverifiable");
             *error = Some(ErrorRecord {
                 kind: "original-unverifiable",
-                message: io_error.to_string(),
+                message: read_error.to_string(),
             });
-            summary.nonfatal_error = true;
+            record_nonfatal_error(summary);
             return;
         }
-    };
-    let Ok(modified) = metadata.modified() else {
-        *decision = Decision::Skip;
-        *reason = Some("original-unverifiable");
-        summary.nonfatal_error = true;
-        return;
-    };
-    let Ok(mtime) = UnixMTimeSeconds::from_system_time(modified) else {
-        *decision = Decision::Skip;
-        *reason = Some("original-unverifiable");
-        summary.nonfatal_error = true;
-        return;
     };
     let Ok(bytes) = std::fs::read(entry.path()) else {
         *decision = Decision::Skip;
         *reason = Some("unreadable-entry");
-        summary.nonfatal_error = true;
+        record_nonfatal_error(summary);
         return;
     };
-    let original =
-        match OriginalIdentity::new(uri.clone(), mtime, Some(metadata.len()), None::<String>) {
-            Ok(original) => original,
-            Err(_) => {
-                *decision = Decision::Skip;
-                *reason = Some("original-unverifiable");
-                summary.nonfatal_error = true;
-                return;
-            }
-        };
     let validation = if let Some(size) = successful_size(entry.namespace()) {
         validate_personal_thumbnail(&bytes, &original, size)
     } else {
@@ -481,11 +504,48 @@ fn evaluate_local_file(
             *decision = Decision::Delete;
             *reason = Some("missing-required-metadata");
         }
+        ValidationOutcome::Invalid(problems) if only_nonconforming(&problems) => {
+            *decision = Decision::Skip;
+            *reason = first_nonconforming_reason(&problems);
+        }
         _ => {
             *decision = Decision::Skip;
             *reason = Some("original-unverifiable");
         }
     }
+}
+
+fn only_nonconforming(problems: &[CacheEntryProblem]) -> bool {
+    !problems.is_empty()
+        && problems.iter().all(|problem| {
+            matches!(
+                problem,
+                CacheEntryProblem::NonconformingPngFormat
+                    | CacheEntryProblem::DimensionsExceedNamespace
+            )
+        })
+}
+
+fn first_nonconforming_reason(problems: &[CacheEntryProblem]) -> Option<&'static str> {
+    if problems.contains(&CacheEntryProblem::NonconformingPngFormat) {
+        Some("nonconforming-format")
+    } else if problems.contains(&CacheEntryProblem::DimensionsExceedNamespace) {
+        Some("nonconforming-dimensions")
+    } else {
+        None
+    }
+}
+
+fn record_nonfatal_error(summary: &mut Summary) {
+    summary.nonfatal_error = true;
+    summary.errors += 1;
+}
+
+fn is_not_found_error(error: &ThumbnailError) -> bool {
+    matches!(
+        error,
+        ThumbnailError::Io { source, .. } if source.kind() == std::io::ErrorKind::NotFound
+    )
 }
 
 fn evaluate_age_based(
@@ -531,7 +591,13 @@ fn write_human(records: &[EntryRecord], summary: &Summary, age_basis: AgeBasisAr
         if record.decision == "keep" && !verbose {
             continue;
         }
-        let action = if record.decision == "delete" && record.applied {
+        let action = if record
+            .error
+            .as_ref()
+            .is_some_and(|error| error.kind == "delete-failed")
+        {
+            "delete-failed"
+        } else if record.decision == "delete" && record.applied {
             "deleted"
         } else if record.decision == "delete" {
             "would-delete"
@@ -539,12 +605,21 @@ fn write_human(records: &[EntryRecord], summary: &Summary, age_basis: AgeBasisAr
             record.decision
         };
         println!(
-            "{action} {} uri={} class={} reason={} basis={}",
+            "{action} {} uri={} class={} decision={} applied={} reason={} basis={} error={}",
             record.thumbnail_path_display,
             record.uri.as_deref().unwrap_or(""),
             record.classification,
+            record.decision,
+            record.applied,
             record.reason.unwrap_or("none"),
-            record.age_basis
+            record.age_basis,
+            record
+                .error
+                .as_ref()
+                .map_or("none".to_owned(), |error| format!(
+                    "{}:{}",
+                    error.kind, error.message
+                ))
         );
     }
     println!(
@@ -642,7 +717,12 @@ impl Classifier {
                 }
             }
             "http" | "https" | "ftp" | "sftp" | "smb" | "dav" => UriClass::Remote,
-            "zip" | "tar" | "trash" | "recent" | "mtp" => UriClass::ArchiveOrVirtual,
+            "zip" | "tar" | "trash" | "recent" | "recentlyused" | "mtp" | "krarc" | "sevenz"
+            | "rar" | "gdrive" | "timeline" | "tags" | "applications" | "desktop" | "programs"
+            | "fonts" | "remote" | "network" | "bluetooth" | "camera" | "audiocd" | "obexftp"
+            | "thumbnail" | "activities" | "filenamesearch" | "baloosearch" | "zeroconf" => {
+                UriClass::ArchiveOrVirtual
+            }
             _ => UriClass::Unknown,
         }
     }

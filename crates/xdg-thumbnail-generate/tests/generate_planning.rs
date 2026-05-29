@@ -163,6 +163,31 @@ fn matching_invalid_thumbnailer_with_valid_match_emits_warning() {
 }
 
 #[test]
+fn unrelated_invalid_thumbnailer_discovery_emits_warning() {
+    let fixture = Fixture::new();
+    let input = fixture.write_png_input("photo.png");
+    fixture.write_raw_thumbnailer("unrelated.thumbnailer", "[Desktop Entry]\nName=Broken\n");
+    fixture.write_thumbnailer("valid.thumbnailer", "/bin/true %i %o %s", "image/png;");
+
+    let records = fixture.run_jsonl([
+        "--dry-run",
+        "--sandbox",
+        "off",
+        "--format",
+        "jsonl",
+        input.to_str().unwrap(),
+    ]);
+
+    assert_eq!(records[0]["event"], "entry");
+    assert_eq!(records[0]["decision"], "generate");
+    assert_eq!(records[1]["event"], "warning");
+    assert_eq!(records[1]["input_path_display"], Value::Null);
+    assert_eq!(records[1]["thumbnailer"], "unrelated.thumbnailer");
+    assert_eq!(records[1]["reason"], "thumbnailer-entry-invalid");
+    assert_eq!(records.last().unwrap()["warnings"], 1);
+}
+
+#[test]
 fn thumbnailer_matching_accepts_mime_supertypes() {
     let fixture = Fixture::new();
     let input = fixture.write_png_input("photo.png");
@@ -371,6 +396,12 @@ impl Fixture {
             format!("[Thumbnailer Entry]\nMimeType={mime_type}\n"),
         )
         .unwrap();
+    }
+
+    fn write_raw_thumbnailer(&self, name: &str, content: &str) {
+        let dir = self.data_home.path().join("thumbnailers");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(name), content).unwrap();
     }
 
     fn install_existing_thumbnail(&self, input: &std::path::Path) {

@@ -3,6 +3,8 @@
 
 use std::collections::HashSet;
 use std::ffi::OsString;
+use std::fs::File;
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command as ProcessCommand, ExitCode};
 use std::time::{Duration, Instant};
@@ -31,7 +33,7 @@ struct Cli {
     dry_run: bool,
     #[arg(long, default_value = "30s", value_parser = parse_duration)]
     timeout: Duration,
-    #[arg(long, value_enum, default_value_t = SandboxArg::Required)]
+    #[arg(long, value_enum, default_value_t = SandboxArg::Required, help = SANDBOX_HELP)]
     sandbox: SandboxArg,
     #[arg(long, value_enum, default_value_t = FormatArg::Human)]
     format: FormatArg,
@@ -84,6 +86,9 @@ struct Summary {
     warnings: u64,
 }
 
+const SANDBOX_HELP: &str = "Sandbox mode. The default requires Linux bubblewrap support and never falls back to unsandboxed execution; use --sandbox off only if you intentionally trust the selected thumbnailer.";
+const SANDBOX_REQUIREMENT: &str = "default sandbox mode requires Linux bubblewrap support and never falls back to unsandboxed execution; use --sandbox off only if you intentionally trust the selected thumbnailer";
+
 #[derive(Clone, Debug)]
 struct Thumbnailer {
     filename: String,
@@ -92,6 +97,11 @@ struct Thumbnailer {
     mime_types: Vec<String>,
     from_user_dir: bool,
     invalid_message: Option<String>,
+}
+
+struct Discovery {
+    thumbnailers: Vec<Thumbnailer>,
+    warnings: Vec<WarningRecord>,
 }
 
 #[derive(Serialize)]
@@ -126,9 +136,9 @@ struct ErrorRecord {
 struct WarningRecord {
     schema_version: u8,
     event: &'static str,
-    input_path_display: String,
+    input_path_display: Option<String>,
     input_path_bytes_b64: Option<String>,
-    mime_type: String,
+    mime_type: Option<String>,
     thumbnailer: String,
     reason: &'static str,
     error: ErrorRecord,
@@ -152,6 +162,7 @@ struct SummaryRecord {
     skipped: u64,
     failed: u64,
     warnings: u64,
+    sandbox_requirement: Option<&'static str>,
     exit_code: u8,
 }
 
@@ -175,7 +186,8 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> std::result::Result<u8, String> {
     let root = CacheRoot::resolve_from_env().map_err(|error| error.to_string())?;
-    let thumbnailers = discover_thumbnailers();
+    let discovery = discover_thumbnailers();
+    let thumbnailers = discovery.thumbnailers;
     let sandbox_backend_error = if cli.sandbox == SandboxArg::Required {
         check_required_sandbox_backend().err()
     } else {
@@ -191,7 +203,8 @@ fn run(cli: Cli) -> std::result::Result<u8, String> {
 
     let mut summary = Summary::default();
     let mut records = Vec::new();
-    let mut warnings = Vec::new();
+    let mut warnings = discovery.warnings;
+    summary.warnings = warnings.len() as u64;
     for input in &cli.paths {
         let path = resolve_input_path(&cwd, input);
         let context = PlanContext {
@@ -243,10 +256,11 @@ fn plan_one(
     let original = match readable_original_for_path(path, None::<String>) {
         Ok(original) => original,
         Err(error) => {
+            let reason = original_error_reason(&error);
             record.decision = "skip";
-            record.reason = "input-unreadable";
+            record.reason = reason;
             record.error = Some(ErrorRecord {
-                kind: "input-unreadable",
+                kind: reason,
                 message: error.to_string(),
             });
             summary.skipped += 1;
@@ -328,9 +342,9 @@ fn plan_one(
         warnings.push(WarningRecord {
             schema_version: 0,
             event: "warning",
-            input_path_display: path.display().to_string(),
+            input_path_display: Some(path.display().to_string()),
             input_path_bytes_b64: path_bytes_b64(path),
-            mime_type: mime_type.clone(),
+            mime_type: Some(mime_type.clone()),
             thumbnailer: invalid.filename.clone(),
             reason: "thumbnailer-entry-invalid",
             error: ErrorRecord {
@@ -419,6 +433,7 @@ fn plan_one(
             summary.generated += 1;
         }
         Err(error) => {
+            record.sandbox_applied = error.sandbox_applied;
             record.reason = error.reason;
             record.error = Some(ErrorRecord {
                 kind: error.reason,
@@ -467,12 +482,18 @@ fn write_human(
 ) {
     for record in records {
         println!(
-            "{} {} input={} mime={} thumbnailer={} reason={}",
+            "{} {} input={} uri={} thumbnailer-uri={} mime={} thumbnailer={} sandbox={} sandbox-applied={} cache={} applied={} reason={}",
             record.decision,
             record.namespace,
             record.input_path_display,
+            record.uri.as_deref().unwrap_or(""),
+            record.thumbnailer_uri.as_deref().unwrap_or(""),
             record.mime_type.as_deref().unwrap_or(""),
             record.thumbnailer.as_deref().unwrap_or(""),
+            record.sandbox_mode,
+            record.sandbox_applied,
+            record.cache_path_display.as_deref().unwrap_or(""),
+            record.applied,
             record.reason
         );
         if let Some(error) = &record.error {
@@ -482,12 +503,15 @@ fn write_human(
     for warning in warnings {
         println!(
             "warning input={} mime={} thumbnailer={} reason={} message={}",
-            warning.input_path_display,
-            warning.mime_type,
+            warning.input_path_display.as_deref().unwrap_or(""),
+            warning.mime_type.as_deref().unwrap_or(""),
             warning.thumbnailer,
             warning.reason,
             warning.error.message
         );
+    }
+    if needs_sandbox_requirement(records) {
+        println!("sandbox requirement: {SANDBOX_REQUIREMENT}");
     }
     println!(
         "summary requested={} generated={} kept={} skipped={} failed={} warnings={} exit-code={}",
@@ -528,12 +552,19 @@ fn write_jsonl(
         skipped: summary.skipped,
         failed: summary.failed,
         warnings: summary.warnings,
+        sandbox_requirement: needs_sandbox_requirement(records).then_some(SANDBOX_REQUIREMENT),
         exit_code,
     };
     println!(
         "{}",
         serde_json::to_string(&summary).expect("serialize summary")
     );
+}
+
+fn needs_sandbox_requirement(records: &[EntryRecord]) -> bool {
+    records
+        .iter()
+        .any(|record| matches!(record.reason, "sandbox-unavailable" | "sandbox-ineligible"))
 }
 
 fn resolve_input_path(cwd: &Path, input: &Path) -> PathBuf {
@@ -581,7 +612,51 @@ fn detect_mime_type(mime_db: &xdg_mime::SharedMimeInfo, path: &Path) -> Option<S
     }
 }
 
-fn discover_thumbnailers() -> Vec<Thumbnailer> {
+fn original_error_reason(error: &ThumbnailError) -> &'static str {
+    match error {
+        ThumbnailError::UnsupportedPlatform => "unsupported-input",
+        ThumbnailError::InvalidUriIdentity(_) => "uri-construction-failed",
+        ThumbnailError::InvalidMetadata(_) => "original-metadata-unavailable",
+        ThumbnailError::Io {
+            context: "open original for reading",
+            ..
+        } => "input-unreadable",
+        ThumbnailError::Io {
+            context: "read original metadata" | "read original modification time",
+            ..
+        } => "original-metadata-unavailable",
+        ThumbnailError::Io { .. } => "input-unreadable",
+        _ => "input-unreadable",
+    }
+}
+
+fn installation_error_reason(error: &ThumbnailError) -> &'static str {
+    match error {
+        ThumbnailError::UnsupportedRenderedThumbnail(message) => {
+            if message.contains("unsupported") || message.contains("animated") {
+                "output-unsupported-png"
+            } else {
+                "output-normalization-failed"
+            }
+        }
+        ThumbnailError::Png(_) => "output-normalization-failed",
+        ThumbnailError::InvalidMetadata(_) => "metadata-write-failed",
+        ThumbnailError::InsecureCacheDirectory(_) => "permission-setup-failed",
+        ThumbnailError::Io {
+            context:
+                "create parent thumbnail cache directories"
+                | "create thumbnail cache directory"
+                | "set thumbnail cache directory permissions"
+                | "create thumbnail temporary file"
+                | "set thumbnail temporary file permissions",
+            ..
+        } => "permission-setup-failed",
+        ThumbnailError::Io { .. } => "cache-install-failed",
+        _ => "cache-install-failed",
+    }
+}
+
+fn discover_thumbnailers() -> Discovery {
     let mut dirs = Vec::new();
     if let Some(data_home) = valid_data_home() {
         dirs.push((data_home.join("thumbnailers"), true));
@@ -592,6 +667,7 @@ fn discover_thumbnailers() -> Vec<Thumbnailer> {
 
     let mut seen = HashSet::new();
     let mut thumbnailers = Vec::new();
+    let mut warnings = Vec::new();
     for (dir, from_user_dir) in dirs {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
@@ -613,42 +689,71 @@ fn discover_thumbnailers() -> Vec<Thumbnailer> {
             if !seen.insert(filename.clone()) {
                 continue;
             }
-            if let Some(thumbnailer) = parse_thumbnailer(path, filename, from_user_dir) {
-                thumbnailers.push(thumbnailer);
+            match parse_thumbnailer(path, filename.clone(), from_user_dir) {
+                Ok(Some(thumbnailer)) => thumbnailers.push(thumbnailer),
+                Ok(None) => {}
+                Err(message) => warnings.push(WarningRecord {
+                    schema_version: 0,
+                    event: "warning",
+                    input_path_display: None,
+                    input_path_bytes_b64: None,
+                    mime_type: None,
+                    thumbnailer: filename,
+                    reason: "thumbnailer-entry-invalid",
+                    error: ErrorRecord {
+                        kind: "thumbnailer-entry-invalid",
+                        message,
+                    },
+                }),
             }
         }
     }
-    thumbnailers
+    Discovery {
+        thumbnailers,
+        warnings,
+    }
 }
 
-fn parse_thumbnailer(path: PathBuf, filename: String, from_user_dir: bool) -> Option<Thumbnailer> {
-    let entry = freedesktop_entry_parser::parse_entry(&path).ok()?;
-    let section = entry.section("Thumbnailer Entry")?;
-    let mime = section.attr("MimeType").first()?.to_owned();
+fn parse_thumbnailer(
+    path: PathBuf,
+    filename: String,
+    from_user_dir: bool,
+) -> Result<Option<Thumbnailer>, String> {
+    let entry = freedesktop_entry_parser::parse_entry(&path).map_err(|error| error.to_string())?;
+    let section = entry
+        .section("Thumbnailer Entry")
+        .ok_or_else(|| "thumbnailer entry is missing [Thumbnailer Entry]".to_owned())?;
+    let mime = section
+        .attr("MimeType")
+        .first()
+        .ok_or_else(|| "thumbnailer entry is missing MimeType".to_owned())?
+        .to_owned();
     let mime_types = mime
         .split(';')
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
         .collect::<Vec<_>>();
     if mime_types.is_empty() {
-        return None;
+        return Err("thumbnailer entry has empty MimeType".to_owned());
     }
     if let Some(try_exec) = section.attr("TryExec").first() {
-        resolve_executable(try_exec)?;
+        if resolve_executable(try_exec).is_none() {
+            return Ok(None);
+        }
     }
     let exec = section.attr("Exec").first().map(ToOwned::to_owned);
     let invalid_message = match exec.as_deref() {
         Some(exec) => validate_thumbnailer_exec_template(exec).err(),
         None => Some("thumbnailer entry is missing Exec".to_owned()),
     };
-    Some(Thumbnailer {
+    Ok(Some(Thumbnailer {
         filename,
         path,
         exec,
         mime_types,
         from_user_dir,
         invalid_message,
-    })
+    }))
 }
 
 fn select_thumbnailer<'a>(
@@ -744,6 +849,29 @@ fn validate_field_codes(word: &str) -> Result<(), String> {
 struct ExecutionError {
     reason: &'static str,
     message: String,
+    sandbox_applied: bool,
+}
+
+impl ExecutionError {
+    fn new(reason: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            reason,
+            message: message.into(),
+            sandbox_applied: false,
+        }
+    }
+
+    fn with_sandbox(
+        reason: &'static str,
+        message: impl Into<String>,
+        sandbox_applied: bool,
+    ) -> Self {
+        Self {
+            reason,
+            message: message.into(),
+            sandbox_applied,
+        }
+    }
 }
 
 fn execute_thumbnailer(
@@ -754,10 +882,8 @@ fn execute_thumbnailer(
     input_path: &Path,
     size: ThumbnailSize,
 ) -> Result<(), ExecutionError> {
-    let output_dir = tempfile::tempdir().map_err(|error| ExecutionError {
-        reason: "thumbnailer-output-missing",
-        message: error.to_string(),
-    })?;
+    let output_dir = tempfile::tempdir()
+        .map_err(|error| ExecutionError::new("thumbnailer-output-missing", error.to_string()))?;
     let (exec_input_path, exec_input_uri, exec_output_path, host_output_path) =
         if cli.sandbox == SandboxArg::Required {
             (
@@ -781,9 +907,11 @@ fn execute_thumbnailer(
         &exec_output_path,
         size,
     )?;
-    let (program, args) = argv.split_first().ok_or_else(|| ExecutionError {
-        reason: "thumbnailer-entry-invalid",
-        message: "thumbnailer Exec expanded to an empty command".to_owned(),
+    let (program, args) = argv.split_first().ok_or_else(|| {
+        ExecutionError::new(
+            "thumbnailer-entry-invalid",
+            "thumbnailer Exec expanded to an empty command",
+        )
     })?;
 
     let mut command = if cli.sandbox == SandboxArg::Required {
@@ -818,14 +946,17 @@ fn execute_thumbnailer(
         command
     };
 
-    let mut child = command.spawn().map_err(|error| ExecutionError {
-        reason: if cli.sandbox == SandboxArg::Required {
-            "sandbox-unavailable"
-        } else {
-            "thumbnailer-exit"
-        },
-        message: error.to_string(),
+    let mut child = command.spawn().map_err(|error| {
+        ExecutionError::new(
+            if cli.sandbox == SandboxArg::Required {
+                "sandbox-unavailable"
+            } else {
+                "thumbnailer-exit"
+            },
+            error.to_string(),
+        )
     })?;
+    let sandbox_applied = cli.sandbox == SandboxArg::Required;
     let started = Instant::now();
     let status = loop {
         match child.try_wait() {
@@ -833,26 +964,29 @@ fn execute_thumbnailer(
             Ok(None) if started.elapsed() >= cli.timeout => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(ExecutionError {
-                    reason: "thumbnailer-timeout",
-                    message: "thumbnailer exceeded configured timeout".to_owned(),
-                });
+                return Err(ExecutionError::with_sandbox(
+                    "thumbnailer-timeout",
+                    "thumbnailer exceeded configured timeout",
+                    sandbox_applied,
+                ));
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(10)),
             Err(error) => {
                 let _ = child.kill();
-                return Err(ExecutionError {
-                    reason: "thumbnailer-exit",
-                    message: error.to_string(),
-                });
+                return Err(ExecutionError::with_sandbox(
+                    "thumbnailer-exit",
+                    error.to_string(),
+                    sandbox_applied,
+                ));
             }
         }
     };
     if !status.success() {
-        return Err(ExecutionError {
-            reason: "thumbnailer-exit",
-            message: status.to_string(),
-        });
+        return Err(ExecutionError::with_sandbox(
+            "thumbnailer-exit",
+            status.to_string(),
+            sandbox_applied,
+        ));
     }
     let rendered = std::fs::read(&host_output_path).map_err(|error| {
         let reason = if error.kind() == std::io::ErrorKind::NotFound {
@@ -860,86 +994,67 @@ fn execute_thumbnailer(
         } else {
             "thumbnailer-output-unreadable"
         };
-        ExecutionError {
-            reason,
-            message: error.to_string(),
-        }
+        ExecutionError::with_sandbox(reason, error.to_string(), sandbox_applied)
     })?;
     if xdg_thumbnail::ParsedThumbnailPng::parse(&rendered).is_err() {
-        return Err(ExecutionError {
-            reason: "output-invalid-png",
-            message: "thumbnailer output is not a valid PNG".to_owned(),
-        });
+        return Err(ExecutionError::with_sandbox(
+            "output-invalid-png",
+            "thumbnailer output is not a valid PNG",
+            sandbox_applied,
+        ));
     }
     root.install_personal_thumbnail(original, size, &rendered)
         .map(|_| ())
         .map_err(|error| {
-            let reason = match &error {
-                ThumbnailError::Png(_) => "output-invalid-png",
-                ThumbnailError::UnsupportedRenderedThumbnail(_) => "output-normalization-failed",
-                _ => "cache-install-failed",
-            };
-            ExecutionError {
-                reason,
-                message: error.to_string(),
-            }
+            ExecutionError::with_sandbox(
+                installation_error_reason(&error),
+                error.to_string(),
+                sandbox_applied,
+            )
         })
 }
 
 fn check_required_sandbox_eligibility(thumbnailer: &Thumbnailer) -> Result<(), ExecutionError> {
     let words = exec_words(selected_thumbnailer_exec(thumbnailer))?;
     let Some((_, args)) = words.split_first() else {
-        return Err(ExecutionError {
-            reason: "thumbnailer-entry-invalid",
-            message: "thumbnailer Exec is empty".to_owned(),
-        });
+        return Err(ExecutionError::new(
+            "thumbnailer-entry-invalid",
+            "thumbnailer Exec is empty",
+        ));
     };
     let program = thumbnailer_program_from_words(&words)?;
     if is_shell(&program) {
-        return Err(ExecutionError {
-            reason: "sandbox-ineligible",
-            message: sandbox_message(
-                "shell-based thumbnailer entries are not eligible for the required sandbox",
-            ),
-        });
+        return Err(sandbox_ineligible(
+            "shell-based thumbnailer entries are not eligible for the required sandbox",
+        ));
     }
     if let Some(command) = env_wrapped_command(&program, args) {
         if is_shell(&command) {
-            return Err(ExecutionError {
-                reason: "sandbox-ineligible",
-                message: sandbox_message(
-                    "shell-based thumbnailer entries are not eligible for the required sandbox",
-                ),
-            });
+            return Err(sandbox_ineligible(
+                "shell-based thumbnailer entries are not eligible for the required sandbox",
+            ));
         }
         if !is_system_runtime_path(&command) {
-            return Err(ExecutionError {
-                reason: "sandbox-ineligible",
-                message: sandbox_message(&format!(
-                    "thumbnailer env-wrapped command {} is outside the required sandbox runtime profile",
-                    command.display()
-                )),
-            });
+            return Err(sandbox_ineligible(&format!(
+                "thumbnailer env-wrapped command {} is outside the required sandbox runtime profile",
+                command.display()
+            )));
         }
+        check_script_interpreter(&command)?;
     }
     if !is_system_runtime_path(&program) {
-        return Err(ExecutionError {
-            reason: "sandbox-ineligible",
-            message: sandbox_message(&format!(
-                "thumbnailer executable {} is outside the required sandbox runtime profile",
-                program.display()
-            )),
-        });
+        return Err(sandbox_ineligible(&format!(
+            "thumbnailer executable {} is outside the required sandbox runtime profile",
+            program.display()
+        )));
     }
+    check_script_interpreter(&program)?;
     for literal_path in args.iter().filter_map(|word| literal_host_path(word)) {
         if !is_system_runtime_path(literal_path) {
-            return Err(ExecutionError {
-                reason: "sandbox-ineligible",
-                message: sandbox_message(&format!(
-                    "thumbnailer literal host path {} is outside the required sandbox runtime profile",
-                    literal_path.display()
-                )),
-            });
+            return Err(sandbox_ineligible(&format!(
+                "thumbnailer literal host path {} is outside the required sandbox runtime profile",
+                literal_path.display()
+            )));
         }
     }
     Ok(())
@@ -947,20 +1062,22 @@ fn check_required_sandbox_eligibility(thumbnailer: &Thumbnailer) -> Result<(), E
 
 fn check_required_sandbox_backend() -> Result<(), ExecutionError> {
     if !cfg!(target_os = "linux") {
-        return Err(ExecutionError {
-            reason: "sandbox-unavailable",
-            message: sandbox_message("default mode is unsupported on this platform"),
-        });
+        return Err(ExecutionError::new(
+            "sandbox-unavailable",
+            sandbox_message("default mode is unsupported on this platform"),
+        ));
     }
     if resolve_executable("bwrap").is_none() {
-        return Err(ExecutionError {
-            reason: "sandbox-unavailable",
-            message: sandbox_message("bubblewrap was not found in PATH"),
-        });
+        return Err(ExecutionError::new(
+            "sandbox-unavailable",
+            sandbox_message("bubblewrap was not found in PATH"),
+        ));
     }
-    let true_path = resolve_executable("true").ok_or_else(|| ExecutionError {
-        reason: "sandbox-unavailable",
-        message: sandbox_message("could not find a runtime helper for sandbox probing"),
+    let true_path = resolve_executable("true").ok_or_else(|| {
+        ExecutionError::new(
+            "sandbox-unavailable",
+            sandbox_message("could not find a runtime helper for sandbox probing"),
+        )
     })?;
     let mut command = ProcessCommand::new("bwrap");
     command
@@ -975,18 +1092,24 @@ fn check_required_sandbox_backend() -> Result<(), ExecutionError> {
         .arg("/tmp");
     add_system_binds(&mut command);
     command.arg(true_path);
-    let status = command.status().map_err(|error| ExecutionError {
-        reason: "sandbox-unavailable",
-        message: sandbox_message(&format!("bubblewrap probe could not start: {error}")),
+    let status = command.status().map_err(|error| {
+        ExecutionError::new(
+            "sandbox-unavailable",
+            sandbox_message(&format!("bubblewrap probe could not start: {error}")),
+        )
     })?;
     if status.success() {
         Ok(())
     } else {
-        Err(ExecutionError {
-            reason: "sandbox-unavailable",
-            message: sandbox_message(&format!("bubblewrap probe failed: {status}")),
-        })
+        Err(ExecutionError::new(
+            "sandbox-unavailable",
+            sandbox_message(&format!("bubblewrap probe failed: {status}")),
+        ))
     }
+}
+
+fn sandbox_ineligible(detail: &str) -> ExecutionError {
+    ExecutionError::new("sandbox-ineligible", sandbox_message(detail))
 }
 
 fn sandbox_message(detail: &str) -> String {
@@ -995,26 +1118,90 @@ fn sandbox_message(detail: &str) -> String {
     )
 }
 
+fn check_script_interpreter(program: &Path) -> Result<(), ExecutionError> {
+    let Some(words) = script_interpreter_words(program)? else {
+        return Ok(());
+    };
+    let Some((interpreter, args)) = words.split_first() else {
+        return Ok(());
+    };
+    let interpreter = resolve_executable(interpreter).ok_or_else(|| {
+        sandbox_ineligible(&format!(
+            "thumbnailer script interpreter {interpreter} was not found"
+        ))
+    })?;
+    check_sandbox_runtime_path("thumbnailer script interpreter", &interpreter)?;
+    if interpreter.file_name().and_then(|name| name.to_str()) == Some("env") {
+        let command = env_wrapped_command(&interpreter, args).ok_or_else(|| {
+            sandbox_ineligible("thumbnailer script env interpreter did not resolve a command")
+        })?;
+        check_sandbox_runtime_path("thumbnailer script env-wrapped command", &command)?;
+    }
+    Ok(())
+}
+
+fn script_interpreter_words(program: &Path) -> Result<Option<Vec<String>>, ExecutionError> {
+    let mut file = File::open(program).map_err(|error| {
+        sandbox_ineligible(&format!(
+            "thumbnailer executable {} could not be inspected for a script interpreter: {error}",
+            program.display()
+        ))
+    })?;
+    let mut buffer = [0; 512];
+    let bytes_read = file.read(&mut buffer).map_err(|error| {
+        sandbox_ineligible(&format!(
+            "thumbnailer executable {} could not be inspected for a script interpreter: {error}",
+            program.display()
+        ))
+    })?;
+    let buffer = &buffer[..bytes_read];
+    if !buffer.starts_with(b"#!") {
+        return Ok(None);
+    }
+    let line_end = buffer
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .unwrap_or(buffer.len());
+    let line = String::from_utf8_lossy(&buffer[2..line_end]);
+    let words = shell_words::split(line.trim())
+        .unwrap_or_else(|_| line.split_whitespace().map(ToOwned::to_owned).collect());
+    Ok(Some(words))
+}
+
+fn check_sandbox_runtime_path(label: &str, path: &Path) -> Result<(), ExecutionError> {
+    if is_shell(path) {
+        return Err(sandbox_ineligible(
+            "shell-based thumbnailer entries are not eligible for the required sandbox",
+        ));
+    }
+    if !is_system_runtime_path(path) {
+        return Err(sandbox_ineligible(&format!(
+            "{label} {} is outside the required sandbox runtime profile",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
 fn thumbnailer_program(thumbnailer: &Thumbnailer) -> Result<PathBuf, ExecutionError> {
     let words = exec_words(selected_thumbnailer_exec(thumbnailer))?;
     thumbnailer_program_from_words(&words)
 }
 
 fn exec_words(exec: &str) -> Result<Vec<String>, ExecutionError> {
-    shell_words::split(exec).map_err(|error| ExecutionError {
-        reason: "thumbnailer-entry-invalid",
-        message: error.to_string(),
-    })
+    shell_words::split(exec)
+        .map_err(|error| ExecutionError::new("thumbnailer-entry-invalid", error.to_string()))
 }
 
 fn thumbnailer_program_from_words(words: &[String]) -> Result<PathBuf, ExecutionError> {
-    let program = words.first().ok_or_else(|| ExecutionError {
-        reason: "thumbnailer-entry-invalid",
-        message: "thumbnailer Exec is empty".to_owned(),
+    let program = words.first().ok_or_else(|| {
+        ExecutionError::new("thumbnailer-entry-invalid", "thumbnailer Exec is empty")
     })?;
-    resolve_executable(program).ok_or_else(|| ExecutionError {
-        reason: "thumbnailer-entry-invalid",
-        message: format!("thumbnailer executable {program} was not found"),
+    resolve_executable(program).ok_or_else(|| {
+        ExecutionError::new(
+            "thumbnailer-entry-invalid",
+            format!("thumbnailer executable {program} was not found"),
+        )
     })
 }
 
@@ -1135,10 +1322,8 @@ fn expand_exec(
     output_path: &Path,
     size: ThumbnailSize,
 ) -> Result<Vec<OsString>, ExecutionError> {
-    let words = shell_words::split(exec).map_err(|error| ExecutionError {
-        reason: "thumbnailer-entry-invalid",
-        message: error.to_string(),
-    })?;
+    let words = shell_words::split(exec)
+        .map_err(|error| ExecutionError::new("thumbnailer-entry-invalid", error.to_string()))?;
     words
         .into_iter()
         .map(|word| expand_field_codes(&word, input_path, input_uri, output_path, size))
@@ -1174,10 +1359,10 @@ fn expand_field_codes_platform(
         }
         index += 1;
         let Some(&code) = bytes.get(index) else {
-            return Err(ExecutionError {
-                reason: "thumbnailer-entry-invalid",
-                message: "dangling percent field code".to_owned(),
-            });
+            return Err(ExecutionError::new(
+                "thumbnailer-entry-invalid",
+                "dangling percent field code",
+            ));
         };
         match code {
             b'i' => output.extend_from_slice(input_path.as_os_str().as_bytes()),
@@ -1186,10 +1371,10 @@ fn expand_field_codes_platform(
             b's' => output.extend_from_slice(size.max_dimension().to_string().as_bytes()),
             b'%' => output.push(b'%'),
             _ => {
-                return Err(ExecutionError {
-                    reason: "thumbnailer-entry-invalid",
-                    message: format!("unknown thumbnailer field code %{}", char::from(code)),
-                });
+                return Err(ExecutionError::new(
+                    "thumbnailer-entry-invalid",
+                    format!("unknown thumbnailer field code %{}", char::from(code)),
+                ));
             }
         }
         index += 1;
@@ -1213,10 +1398,10 @@ fn expand_field_codes_platform(
             continue;
         }
         let Some(code) = chars.next() else {
-            return Err(ExecutionError {
-                reason: "thumbnailer-entry-invalid",
-                message: "dangling percent field code".to_owned(),
-            });
+            return Err(ExecutionError::new(
+                "thumbnailer-entry-invalid",
+                "dangling percent field code",
+            ));
         };
         match code {
             'i' => output.push_str(&input_path.display().to_string()),
@@ -1225,10 +1410,10 @@ fn expand_field_codes_platform(
             's' => output.push_str(&size.max_dimension().to_string()),
             '%' => output.push('%'),
             _ => {
-                return Err(ExecutionError {
-                    reason: "thumbnailer-entry-invalid",
-                    message: format!("unknown thumbnailer field code %{code}"),
-                });
+                return Err(ExecutionError::new(
+                    "thumbnailer-entry-invalid",
+                    format!("unknown thumbnailer field code %{code}"),
+                ));
             }
         }
     }
@@ -1351,5 +1536,15 @@ mod tests {
         assert_eq!(argv[2].as_bytes(), b"file:///tmp/input-%FF.png");
         assert_eq!(argv[3].as_bytes(), b"/tmp/output-\xFE.png");
         assert_eq!(argv[4].as_bytes(), b"128");
+    }
+
+    #[test]
+    fn script_interpreter_words_parse_env_shebang() {
+        let temp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(temp.path(), b"#!/usr/bin/env -S python3 -I\nprint('x')\n").unwrap();
+
+        let words = script_interpreter_words(temp.path()).unwrap().unwrap();
+
+        assert_eq!(words, vec!["/usr/bin/env", "-S", "python3", "-I"]);
     }
 }

@@ -8,8 +8,8 @@ use std::path::Path;
 
 use xdg_thumbnail::{
     CacheEntryProblem, OriginalIdentity, ParsedThumbnailPng, PersonalThumbnailUri,
-    SharedRepositoryContext, ThumbnailSize, UnixMTimeSeconds, ValidationOutcome,
-    validate_personal_thumbnail, validate_shared_thumbnail,
+    ReadableOriginalIdentity, SharedRepositoryContext, ThumbnailSize, UnixMTimeSeconds,
+    ValidationOutcome, validate_personal_thumbnail, validate_shared_thumbnail,
 };
 
 #[test]
@@ -31,7 +31,7 @@ fn parses_standard_thumbnail_metadata() {
 
 #[test]
 fn validates_personal_thumbnail_metadata_and_conformance() {
-    let original = original_identity();
+    let original = ReadableOriginalIdentity::new(original_identity());
     let valid = png_with_metadata(2, 1, png::ColorType::Rgba, metadata());
     assert_eq!(
         validate_personal_thumbnail(&valid, &original, ThumbnailSize::Normal),

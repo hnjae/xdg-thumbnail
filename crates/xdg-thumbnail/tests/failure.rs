@@ -38,7 +38,7 @@ fn writes_deterministic_failure_namespace_entries() {
     assert_eq!(parsed.metadata().thumb_size(), Some(12));
     assert_eq!(parsed.metadata().thumb_mimetype(), Some("image/png"));
     assert_eq!(
-        validate_personal_failure_entry(first.bytes(), original.identity()),
+        validate_personal_failure_entry(first.bytes(), &original),
         ValidationOutcome::FullyVerified
     );
 }
@@ -49,7 +49,7 @@ fn validates_failure_entry_metadata_without_successful_thumbnail_size_limits() {
     let bytes = failure_png_with_metadata(2048, 1, original.identity());
 
     assert_eq!(
-        validate_personal_failure_entry(&bytes, original.identity()),
+        validate_personal_failure_entry(&bytes, &original),
         ValidationOutcome::FullyVerified
     );
 }
@@ -58,13 +58,15 @@ fn validates_failure_entry_metadata_without_successful_thumbnail_size_limits() {
 fn reports_stale_failure_entry_metadata() {
     let original = readable_original();
     let bytes = failure_png_with_metadata(1, 1, original.identity());
-    let stale_original = OriginalIdentity::new(
-        original.identity().uri().clone(),
-        UnixMTimeSeconds::new(43),
-        Some(12),
-        Some("image/png"),
-    )
-    .unwrap();
+    let stale_original = ReadableOriginalIdentity::new(
+        OriginalIdentity::new(
+            original.identity().uri().clone(),
+            UnixMTimeSeconds::new(43),
+            Some(12),
+            Some("image/png"),
+        )
+        .unwrap(),
+    );
 
     assert_eq!(
         validate_personal_failure_entry(&bytes, &stale_original),

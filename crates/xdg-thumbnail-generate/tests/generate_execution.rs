@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::ffi::OsString;
 use std::os::unix::fs::PermissionsExt;
 
 use assert_cmd::Command;
@@ -71,6 +72,31 @@ fn thumbnailer_timeout_is_reported_without_installing_output() {
     assert_eq!(records[0]["decision"], "failed");
     assert_eq!(records[0]["reason"], "thumbnailer-timeout");
     assert_eq!(records[0]["applied"], false);
+    assert_eq!(records[0]["sandbox_applied"], false);
+}
+
+#[test]
+fn required_sandbox_execution_failures_report_sandbox_applied() {
+    let fixture = Fixture::new();
+    fixture.write_script("bwrap", "#!/bin/sh\nexit 0\n");
+    let input = fixture.write_png_input("sandboxed.png");
+    fixture.write_thumbnailer("missing.thumbnailer", "/bin/true %i %o %s", "image/png;");
+
+    let output = fixture
+        .command(["--format", "jsonl", input.to_str().unwrap()])
+        .code(1)
+        .get_output()
+        .stdout
+        .clone();
+    let records = String::from_utf8(output)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+
+    assert_eq!(records[0]["decision"], "failed");
+    assert_eq!(records[0]["reason"], "thumbnailer-output-missing");
+    assert_eq!(records[0]["sandbox_applied"], true);
 }
 
 struct Fixture {
@@ -92,11 +118,15 @@ impl Fixture {
 
     fn command<const N: usize>(&self, args: [&str; N]) -> assert_cmd::assert::Assert {
         let mut command = Command::cargo_bin("xdg-thumbnail-generate").unwrap();
+        let mut path = OsString::from(self.root.path());
+        path.push(":");
+        path.push(std::env::var_os("PATH").unwrap_or_default());
         command
             .env("XDG_CACHE_HOME", self.cache_home.path())
             .env("HOME", self.home.path())
             .env("XDG_DATA_HOME", self.data_home.path())
             .env("XDG_DATA_DIRS", "")
+            .env("PATH", path)
             .args(args);
         command.assert()
     }

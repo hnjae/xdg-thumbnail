@@ -287,7 +287,7 @@ fn inspect_cache_entry(
         Ok(metadata) => metadata,
         Err(_) => {
             return CacheEntryInspection {
-                outcome: ValidationOutcome::Invalid(vec![CacheEntryProblem::UnreadableOriginal]),
+                outcome: ValidationOutcome::Invalid(vec![CacheEntryProblem::UnreadableEntry]),
                 original_uri: None,
                 timestamps,
                 namespace,
@@ -299,7 +299,7 @@ fn inspect_cache_entry(
 
     if metadata.file_type().is_symlink() || !metadata.is_file() {
         return CacheEntryInspection {
-            outcome: ValidationOutcome::Invalid(vec![CacheEntryProblem::UnreadableOriginal]),
+            outcome: ValidationOutcome::Invalid(vec![CacheEntryProblem::UnreadableEntry]),
             original_uri: None,
             timestamps,
             namespace,
@@ -314,7 +314,7 @@ fn inspect_cache_entry(
         Ok(bytes) => bytes,
         Err(_) => {
             return CacheEntryInspection {
-                outcome: ValidationOutcome::Invalid(vec![CacheEntryProblem::UnreadableOriginal]),
+                outcome: ValidationOutcome::Invalid(vec![CacheEntryProblem::UnreadableEntry]),
                 original_uri: None,
                 timestamps,
                 namespace,
