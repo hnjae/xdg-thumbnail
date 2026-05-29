@@ -135,6 +135,11 @@ pub struct CacheEntryHandle {
 
 impl CacheEntryHandle {
     /// Removes the handled entry after containment and symlink checks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the handled path no longer passes containment or symlink safety checks
+    /// or when filesystem removal fails.
     pub fn remove(&self) -> Result<()> {
         remove_cache_entry_handle(self)
     }
@@ -148,6 +153,10 @@ impl CacheEntryHandle {
 
 impl PersonalCacheRoot {
     /// Inspects standard successful thumbnail size directories.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a selected namespace directory cannot be inspected.
     pub fn inspect_thumbnails(
         &self,
         sizes: &[ThumbnailSize],
@@ -169,6 +178,10 @@ impl PersonalCacheRoot {
     }
 
     /// Inspects direct files in immediate real failure-entry namespaces.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the failure root or a selected failure namespace cannot be inspected.
     pub fn inspect_failure_entries(
         &self,
         include_nonstandard: bool,

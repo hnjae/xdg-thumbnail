@@ -18,6 +18,11 @@ impl PersonalOriginalUri {
     ///
     /// This constructor preserves Unix path bytes, performs byte-level percent-encoding, and never
     /// expands shell syntax or resolves symlinks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the path is not absolute or contains bytes that cannot be represented
+    /// as a local thumbnail URI identity.
     pub fn from_absolute_path(path: impl AsRef<Path>) -> Result<Self> {
         Self::from_absolute_path_bytes(path.as_ref().as_os_str().as_bytes())
     }
@@ -26,6 +31,10 @@ impl PersonalOriginalUri {
     ///
     /// This is the low-level byte-preserving constructor for callers that already have raw Unix
     /// path bytes. Most callers should use [`Self::from_absolute_path`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the path bytes are not absolute or contain NUL.
     pub fn from_absolute_path_bytes(path: &[u8]) -> Result<Self> {
         if !path.starts_with(b"/") {
             return Err(ThumbnailError::invalid_uri("local path must be absolute"));
@@ -42,6 +51,11 @@ impl PersonalOriginalUri {
     }
 
     /// Accepts textual local `file:` URI input and normalizes local file URI casing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the input is not an ASCII absolute local `file:` URI, has a non-local
+    /// authority, or contains invalid percent escapes or decoded path bytes.
     pub fn from_local_file_uri(uri: &str) -> Result<Self> {
         validate_ascii_uri_identity(uri)?;
         let scheme_end = uri
@@ -84,6 +98,11 @@ impl PersonalOriginalUri {
     }
 
     /// Accepts a caller-selected non-local absolute thumbnail URI identity and preserves it exactly.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the URI is relative, not ASCII percent-encoded text, syntactically
+    /// invalid as an absolute URI identity, or uses the local `file:` scheme.
     pub fn from_caller_selected_absolute_uri(uri: &str) -> Result<Self> {
         let scheme = validate_absolute_uri_identity(uri)?;
         if scheme.eq_ignore_ascii_case("file") {
@@ -131,6 +150,10 @@ pub struct SharedRelativeOriginalUri {
 
 impl SharedRelativeOriginalUri {
     /// Constructs a shared URI from one raw direct child filename.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the filename is empty, is `.` or `..`, contains `/`, or contains NUL.
     pub fn from_raw_child_name(name: &[u8]) -> Result<Self> {
         validate_raw_shared_child_name(name)?;
 
@@ -140,6 +163,11 @@ impl SharedRelativeOriginalUri {
     }
 
     /// Parses textual `./` shared URI input without allowing encoded path separators.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the URI is not ASCII `./` text for exactly one direct child filename,
+    /// contains invalid percent escapes, or decodes to an invalid child filename.
     pub fn parse(uri: &str) -> Result<Self> {
         validate_ascii_uri_identity(uri)?;
         let encoded = uri

@@ -42,6 +42,11 @@ pub struct FailureNamespace {
 
 impl FailureNamespace {
     /// Creates a failure namespace from an ASCII direct directory name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the value is empty, is `.` or `..`, or contains bytes outside ASCII
+    /// letters, digits, `.`, `_`, `+`, and `-`.
     pub fn new(value: impl Into<String>) -> Result<Self> {
         let value = value.into();
         if value.is_empty() || value == "." || value == ".." {

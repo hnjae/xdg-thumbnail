@@ -32,6 +32,10 @@ pub struct PersonalCacheRoot {
 
 impl PersonalCacheRoot {
     /// Creates a cache root from an already resolved absolute thumbnail root path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `path` is not absolute.
     pub fn new(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         if !path.is_absolute() {
@@ -45,6 +49,11 @@ impl PersonalCacheRoot {
     }
 
     /// Resolves the personal thumbnail cache root from the process environment.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when neither an absolute `XDG_CACHE_HOME` nor an absolute `HOME` fallback
+    /// is available.
     pub fn resolve_from_env() -> Result<Self> {
         let xdg_cache_home = std::env::var_os("XDG_CACHE_HOME");
         let home = std::env::var_os("HOME");
@@ -55,6 +64,10 @@ impl PersonalCacheRoot {
     ///
     /// Relative, unset, and blank `XDG_CACHE_HOME` values are ignored. `HOME`
     /// must be absolute when fallback is needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the resolved thumbnail root would not be absolute.
     pub fn resolve_from_values(
         xdg_cache_home: Option<&OsStr>,
         home: Option<&OsStr>,
@@ -104,6 +117,11 @@ impl PersonalCacheRoot {
     /// The original identity must have already been confirmed readable. The candidate PNG is
     /// opened and validated before this method returns. Callers that reopen the returned path
     /// accept that another process may replace it after validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for unexpected filesystem I/O while reading the candidate or for PNG
+    /// metadata parse failures after validation succeeds.
     pub fn validated_personal_path(
         &self,
         original: &ReadableOriginalIdentity,
@@ -126,6 +144,11 @@ impl PersonalCacheRoot {
     /// Returns exact validated PNG bytes from the personal thumbnail cache.
     ///
     /// The original identity must have already been confirmed readable.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for unexpected filesystem I/O while reading the candidate or for PNG
+    /// metadata parse failures after validation succeeds.
     pub fn validated_personal_bytes(
         &self,
         original: &ReadableOriginalIdentity,
@@ -147,6 +170,11 @@ impl PersonalCacheRoot {
     }
 
     /// Normalizes rendered PNG data, atomically installs a personal-cache thumbnail, and returns its path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when rendered PNG normalization fails, final thumbnail validation fails,
+    /// cache directories are unavailable or insecure, or atomic installation fails.
     pub fn install_personal_thumbnail_path(
         &self,
         original: &ReadableOriginalIdentity,
@@ -158,6 +186,11 @@ impl PersonalCacheRoot {
     }
 
     /// Normalizes rendered PNG data, atomically installs a personal-cache thumbnail, and returns final bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when rendered PNG normalization fails, final thumbnail validation fails,
+    /// cache directories are unavailable or insecure, or atomic installation fails.
     pub fn install_personal_thumbnail_bytes(
         &self,
         original: &ReadableOriginalIdentity,
@@ -169,6 +202,11 @@ impl PersonalCacheRoot {
     }
 
     /// Normalizes raw pixel data, atomically installs a personal-cache thumbnail, and returns its path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when raw conversion or normalization fails, final thumbnail validation
+    /// fails, cache directories are unavailable or insecure, or atomic installation fails.
     pub fn install_personal_thumbnail_raw_path(
         &self,
         original: &ReadableOriginalIdentity,
@@ -180,6 +218,11 @@ impl PersonalCacheRoot {
     }
 
     /// Normalizes raw pixel data, atomically installs a personal-cache thumbnail, and returns final bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when raw conversion or normalization fails, final thumbnail validation
+    /// fails, cache directories are unavailable or insecure, or atomic installation fails.
     pub fn install_personal_thumbnail_raw_bytes(
         &self,
         original: &ReadableOriginalIdentity,
@@ -217,6 +260,11 @@ impl PersonalCacheRoot {
     }
 
     /// Writes a deterministic 1x1 transparent failure entry and returns its path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when failure-entry PNG encoding fails, cache directories are unavailable or
+    /// insecure, or atomic installation fails.
     pub fn write_failure_entry_path(
         &self,
         namespace: &FailureNamespace,
@@ -227,6 +275,11 @@ impl PersonalCacheRoot {
     }
 
     /// Writes a deterministic 1x1 transparent failure entry and returns final bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when failure-entry PNG encoding fails, cache directories are unavailable or
+    /// insecure, or atomic installation fails.
     pub fn write_failure_entry_bytes(
         &self,
         namespace: &FailureNamespace,
@@ -343,6 +396,11 @@ impl PersonalCacheRoot {
 
 impl SharedRepositoryContext {
     /// Returns a validated shared-repository path for integrations that must pass a filename.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for unexpected filesystem I/O while reading the candidate or for PNG
+    /// metadata parse failures after validation succeeds.
     pub fn lookup_thumbnail_path(
         &self,
         size: ThumbnailSize,
@@ -374,6 +432,11 @@ impl SharedRepositoryContext {
     }
 
     /// Returns exact validated PNG bytes from a shared thumbnail repository.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for unexpected filesystem I/O while reading the candidate or for PNG
+    /// metadata parse failures after validation succeeds.
     pub fn lookup_thumbnail_bytes(
         &self,
         size: ThumbnailSize,
@@ -407,6 +470,11 @@ impl SharedRepositoryContext {
     }
 
     /// Inspects existing shared-repository thumbnails without exposing removal handles.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a selected shared thumbnail cannot be inspected due to unexpected
+    /// filesystem I/O.
     pub fn inspect_thumbnails(
         &self,
         sizes: &[ThumbnailSize],
@@ -576,6 +644,10 @@ impl PersonalThumbnailLookupRequest {
     }
 
     /// Returns a validated personal-cache path for the owned request.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`PersonalCacheRoot::validated_personal_path`].
     pub fn validated_path(self) -> Result<PersonalThumbnailLookup<ThumbnailPathLookupEntry>> {
         let Self {
             root,
@@ -586,6 +658,10 @@ impl PersonalThumbnailLookupRequest {
     }
 
     /// Returns exact validated personal-cache PNG bytes for the owned request.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`PersonalCacheRoot::validated_personal_bytes`].
     pub fn validated_bytes(self) -> Result<PersonalThumbnailLookup<ThumbnailBytesLookupEntry>> {
         let Self {
             root,
@@ -607,12 +683,38 @@ impl PersonalThumbnailLookupRequest {
 /// Constructing this request does not perform filesystem I/O. Normalization and installation happen
 /// only when [`Self::install_path`] or [`Self::install_bytes`] is called.
 ///
-/// ```ignore
-/// let request = PersonalThumbnailInstallRequest::new(root, original, size, rendered_png);
+/// ```no_run
+/// use xdg_thumbnail::{
+///     PersonalCacheRoot, PersonalThumbnailInstallRequest, ReadableOriginalIdentity, ThumbnailSize,
+/// };
 ///
-/// let installed = tokio::task::spawn_blocking(move || request.install_bytes())
-///     .await
-///     .expect("blocking thumbnail task panicked")?;
+/// fn spawn_blocking<F, R>(operation: F) -> R
+/// where
+///     F: FnOnce() -> R + Send + 'static,
+///     R: Send + 'static,
+/// {
+///     operation()
+/// }
+///
+/// fn render_thumbnail_png() -> Vec<u8> {
+///     unimplemented!("return PNG bytes produced by the caller's renderer")
+/// }
+///
+/// fn main() -> xdg_thumbnail::Result<()> {
+///     let root = PersonalCacheRoot::resolve_from_env()?;
+///     let original = ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
+///     let rendered_png = render_thumbnail_png();
+///     let request = PersonalThumbnailInstallRequest::new(
+///         root,
+///         original,
+///         ThumbnailSize::Normal,
+///         rendered_png,
+///     );
+///
+///     let installed = spawn_blocking(move || request.install_bytes())?;
+///     let _path = installed.path();
+///     Ok(())
+/// }
 /// ```
 #[derive(Debug, Eq, PartialEq)]
 pub struct PersonalThumbnailInstallRequest {
@@ -640,6 +742,10 @@ impl PersonalThumbnailInstallRequest {
     }
 
     /// Normalizes rendered PNG data, installs a personal-cache thumbnail, and returns its path.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`PersonalCacheRoot::install_personal_thumbnail_path`].
     pub fn install_path(self) -> Result<InstalledThumbnailPath> {
         let Self {
             root,
@@ -651,6 +757,10 @@ impl PersonalThumbnailInstallRequest {
     }
 
     /// Normalizes rendered PNG data, installs a personal-cache thumbnail, and returns final bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`PersonalCacheRoot::install_personal_thumbnail_bytes`].
     pub fn install_bytes(self) -> Result<InstalledThumbnailBytes> {
         let Self {
             root,
@@ -705,6 +815,10 @@ impl PersonalThumbnailRawInstallRequest {
     }
 
     /// Normalizes raw pixel data, installs a personal-cache thumbnail, and returns its path.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`PersonalCacheRoot::install_personal_thumbnail_raw_path`].
     pub fn install_path(self) -> Result<InstalledThumbnailPath> {
         let Self {
             root,
@@ -716,6 +830,10 @@ impl PersonalThumbnailRawInstallRequest {
     }
 
     /// Normalizes raw pixel data, installs a personal-cache thumbnail, and returns final bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`PersonalCacheRoot::install_personal_thumbnail_raw_bytes`].
     pub fn install_bytes(self) -> Result<InstalledThumbnailBytes> {
         let Self {
             root,
@@ -767,6 +885,10 @@ impl FailureEntryWriteRequest {
     }
 
     /// Writes a deterministic 1x1 transparent failure entry and returns its path.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`PersonalCacheRoot::write_failure_entry_path`].
     pub fn write_path(self) -> Result<InstalledThumbnailPath> {
         let Self {
             root,
@@ -777,6 +899,10 @@ impl FailureEntryWriteRequest {
     }
 
     /// Writes a deterministic 1x1 transparent failure entry and returns final bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`PersonalCacheRoot::write_failure_entry_bytes`].
     pub fn write_bytes(self) -> Result<InstalledThumbnailBytes> {
         let Self {
             root,
@@ -826,6 +952,10 @@ impl PersonalThumbnailInspectionRequest {
     }
 
     /// Inspects standard successful thumbnail size directories.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`PersonalCacheRoot::inspect_thumbnails`].
     pub fn inspect(self) -> Result<Vec<CacheEntryInspection>> {
         let Self {
             root,
@@ -875,6 +1005,10 @@ impl SharedThumbnailLookupRequest {
     }
 
     /// Returns a validated shared-repository path for the owned request.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`SharedRepositoryContext::lookup_thumbnail_path`].
     pub fn lookup_path(self) -> Result<SharedThumbnailLookup<ThumbnailPathLookupEntry>> {
         let Self {
             context,
@@ -887,6 +1021,10 @@ impl SharedThumbnailLookupRequest {
     }
 
     /// Returns exact validated shared-repository PNG bytes for the owned request.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`SharedRepositoryContext::lookup_thumbnail_bytes`].
     pub fn lookup_bytes(self) -> Result<SharedThumbnailLookup<ThumbnailBytesLookupEntry>> {
         let Self {
             context,
@@ -949,6 +1087,10 @@ impl SharedThumbnailInspectionRequest {
     }
 
     /// Inspects existing shared-repository thumbnails without exposing removal handles.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`SharedRepositoryContext::inspect_thumbnails`].
     pub fn inspect(self) -> Result<Vec<SharedCacheEntryInspection>> {
         let Self {
             context,

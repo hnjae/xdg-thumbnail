@@ -139,7 +139,7 @@ pub enum CacheNamespace {
 }
 
 pub struct FailureNamespace {
-    program_version: String,
+    value: String,
 }
 
 pub struct PersonalOriginalUri {
@@ -151,7 +151,7 @@ pub struct SharedRelativeOriginalUri {
 }
 
 pub struct UnixMTimeSeconds {
-    seconds: i64,
+    seconds: u64,
 }
 
 pub struct OriginalIdentity {
@@ -181,6 +181,7 @@ pub enum OriginalUriIdentity {
     Shared(SharedRelativeOriginalUri),
 }
 
+#[non_exhaustive]
 pub enum CacheEntryProblem {
     StaleMetadata,
     UnreadableEntry,
@@ -191,6 +192,8 @@ pub enum CacheEntryProblem {
     NonconformingPngFormat,
     DimensionsExceedNamespace,
     ResourceLimitExceeded,
+    NonstandardFilename,
+    UriFilenameMismatch,
 }
 
 #[non_exhaustive]
@@ -221,9 +224,9 @@ pub enum CacheEntryInspectionOutcome {
 pub struct CacheEntryInspection {
     outcome: CacheEntryInspectionOutcome,
     original_uri: Option<OriginalUriIdentity>,
-    thumbnail_timestamps: ThumbnailTimestamps,
+    timestamps: ThumbnailTimestamps,
     namespace: CacheNamespace,
-    cache_location: CacheLocation,
+    path: std::path::PathBuf,
     handle: CacheEntryHandle,
 }
 
@@ -242,7 +245,7 @@ pub enum AccessTimePreservation {
 }
 
 pub struct CacheEntryHandle {
-    cache_root: PersonalCacheRoot,
+    cache_dir: std::path::PathBuf,
     path: std::path::PathBuf,
 }
 ```

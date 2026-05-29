@@ -44,10 +44,14 @@
 //!     operation()
 //! }
 //!
+//! fn render_thumbnail_png() -> Vec<u8> {
+//!     unimplemented!("return PNG bytes produced by the caller's renderer")
+//! }
+//!
 //! fn main() -> xdg_thumbnail::Result<()> {
 //!     let root = PersonalCacheRoot::resolve_from_env()?;
 //!     let original = ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
-//!     let rendered_png = Vec::new();
+//!     let rendered_png = render_thumbnail_png();
 //!     let request = PersonalThumbnailInstallRequest::new(
 //!         root,
 //!         original,

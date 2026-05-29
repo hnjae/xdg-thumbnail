@@ -47,6 +47,11 @@ pub struct RawThumbnailImage<'a> {
 
 impl<'a> RawThumbnailImage<'a> {
     /// Creates a validated borrowed raw thumbnail image.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when dimensions are zero or exceed resource limits, stride is too small,
+    /// the supplied buffer is too short, or required size arithmetic overflows.
     pub fn new(
         width: u32,
         height: u32,
@@ -107,6 +112,11 @@ pub struct OwnedRawThumbnailImage {
 
 impl OwnedRawThumbnailImage {
     /// Creates a validated owned raw thumbnail image.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when dimensions are zero or exceed resource limits, stride is too small,
+    /// the supplied buffer is too short, or required size arithmetic overflows.
     pub fn new(
         width: u32,
         height: u32,
@@ -255,6 +265,11 @@ impl ThumbnailMetadata {
     }
 
     /// Returns parsed `Thumb::MTime`, distinguishing missing metadata from invalid syntax.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `Thumb::MTime` is present but not a non-negative whole Unix epoch
+    /// second value.
     pub fn try_thumb_mtime(&self) -> Result<Option<UnixMTimeSeconds>> {
         self.get("Thumb::MTime").map(parse_thumb_mtime).transpose()
     }
@@ -270,6 +285,10 @@ impl ThumbnailMetadata {
     }
 
     /// Returns parsed `Thumb::Size`, distinguishing missing metadata from invalid syntax.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `Thumb::Size` is present but is not an unsigned integer.
     pub fn try_thumb_size(&self) -> Result<Option<u64>> {
         self.get("Thumb::Size").map(parse_thumb_size).transpose()
     }
@@ -365,6 +384,11 @@ pub struct ParsedThumbnailPng {
 
 impl ParsedThumbnailPng {
     /// Parses PNG structure and Freedesktop text metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when PNG decoding fails, text metadata cannot be decoded, or decoding would
+    /// exceed the crate's pixel or output-buffer resource limits.
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let decoder = png::Decoder::new(Cursor::new(bytes));
         let mut reader = decoder

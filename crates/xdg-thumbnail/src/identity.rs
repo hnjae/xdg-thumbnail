@@ -28,6 +28,10 @@ impl UnixMTimeSeconds {
     }
 
     /// Creates a timestamp from signed whole Unix epoch seconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `seconds` is negative.
     pub const fn try_from_i64(seconds: i64) -> Result<Self> {
         if seconds < 0 {
             return Err(ThumbnailError::InvalidMetadata(
@@ -40,6 +44,10 @@ impl UnixMTimeSeconds {
     }
 
     /// Converts a [`SystemTime`] to whole non-negative Unix epoch seconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `time` is before the Unix epoch.
     pub fn from_system_time(time: SystemTime) -> Result<Self> {
         let duration = time
             .duration_since(UNIX_EPOCH)
@@ -100,6 +108,10 @@ impl OriginalIdentity {
     }
 
     /// Creates an original identity from caller-confirmed facts with a MIME type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `mime_type` is not valid thumbnail metadata.
     pub fn with_mime_type(
         uri: PersonalOriginalUri,
         mtime: UnixMTimeSeconds,
@@ -158,6 +170,11 @@ impl ReadableOriginalIdentity {
     ///
     /// This performs blocking filesystem I/O. Async applications should call it from a blocking
     /// adapter rather than directly on an async executor worker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the path is not absolute, the original cannot be opened for reading,
+    /// metadata or modification time cannot be read, or the path cannot form a canonical local URI.
     pub fn from_local_path(path: impl AsRef<Path>) -> Result<Self> {
         Self::from_local_path_inner(path.as_ref(), None)
     }
@@ -166,6 +183,11 @@ impl ReadableOriginalIdentity {
     ///
     /// This performs blocking filesystem I/O. Async applications should call it from a blocking
     /// adapter rather than directly on an async executor worker.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Self::from_local_path`] and also rejects invalid MIME type
+    /// metadata.
     pub fn from_local_path_with_mime_type(
         path: impl AsRef<Path>,
         mime_type: impl Into<String>,
@@ -217,6 +239,11 @@ pub struct SharedRepositoryContext {
 
 impl SharedRepositoryContext {
     /// Creates a shared repository context for one direct child of `repository_root`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `repository_root` is not absolute or `original_child_name` cannot be
+    /// represented as a shared direct-child URI identity.
     pub fn new(repository_root: impl AsRef<Path>, original_child_name: &OsStr) -> Result<Self> {
         let repository_root = repository_root.as_ref();
         if !repository_root.is_absolute() {
