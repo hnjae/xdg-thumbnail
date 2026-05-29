@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: MPL-2.0
 
-use xdg_thumbnail::{PersonalThumbnailUri, SharedRelativeThumbnailUri};
+use xdg_thumbnail::{PersonalOriginalUri, SharedRelativeOriginalUri};
 
 #[test]
 fn local_path_vectors_match_freedesktop_compatibility_hashes() {
@@ -49,7 +49,7 @@ fn local_path_vectors_match_freedesktop_compatibility_hashes() {
     ];
 
     for (path, expected_uri, expected_stem) in cases {
-        let uri = PersonalThumbnailUri::from_absolute_path_bytes(path).unwrap();
+        let uri = PersonalOriginalUri::from_absolute_path_bytes(path).unwrap();
         assert_eq!(uri.as_str(), *expected_uri);
         assert_eq!(uri.md5_stem(), *expected_stem);
         assert_eq!(uri.thumbnail_filename(), format!("{expected_stem}.png"));
@@ -59,58 +59,56 @@ fn local_path_vectors_match_freedesktop_compatibility_hashes() {
 #[test]
 fn textual_local_file_uri_normalizes_localhost_only() {
     let uri =
-        PersonalThumbnailUri::from_local_file_uri("file://localhost/home/alice/photo.png").unwrap();
+        PersonalOriginalUri::from_local_file_uri("file://localhost/home/alice/photo.png").unwrap();
 
     assert_eq!(uri.as_str(), "file:///home/alice/photo.png");
     assert_eq!(uri.md5_stem(), "82346fd12242a0f50d9cf25786189951");
 
     let encoded_space =
-        PersonalThumbnailUri::from_local_file_uri("file:///home/alice/My%20Photo.png").unwrap();
+        PersonalOriginalUri::from_local_file_uri("file:///home/alice/My%20Photo.png").unwrap();
     assert_eq!(encoded_space.as_str(), "file:///home/alice/My%20Photo.png");
     assert_eq!(encoded_space.md5_stem(), "a760eeee894f58795a5fb0ce8e4235f5");
 
-    let lowercase_escape =
-        PersonalThumbnailUri::from_local_file_uri("file:///tmp/%ff.png").unwrap();
+    let lowercase_escape = PersonalOriginalUri::from_local_file_uri("file:///tmp/%ff.png").unwrap();
     assert_eq!(lowercase_escape.as_str(), "file:///tmp/%FF.png");
 
-    assert!(PersonalThumbnailUri::from_local_file_uri("file://server/share/photo.png").is_err());
-    assert!(PersonalThumbnailUri::from_local_file_uri("file:///home/alice/My Photo.png").is_err());
-    assert!(PersonalThumbnailUri::from_local_file_uri("file:///home/alice/has#hash.png").is_err());
+    assert!(PersonalOriginalUri::from_local_file_uri("file://server/share/photo.png").is_err());
+    assert!(PersonalOriginalUri::from_local_file_uri("file:///home/alice/My Photo.png").is_err());
+    assert!(PersonalOriginalUri::from_local_file_uri("file:///home/alice/has#hash.png").is_err());
 }
 
 #[test]
 fn caller_provided_absolute_uri_is_validated_and_preserved() {
-    let uri = PersonalThumbnailUri::from_caller_selected_absolute_uri(
-        "smb://server/share/My%20Photo.png",
-    )
-    .unwrap();
+    let uri =
+        PersonalOriginalUri::from_caller_selected_absolute_uri("smb://server/share/My%20Photo.png")
+            .unwrap();
 
     assert_eq!(uri.as_str(), "smb://server/share/My%20Photo.png");
     assert_eq!(uri.md5_stem(), "9225e92d750e899fbcc3b764c3085162");
 
     assert!(
-        PersonalThumbnailUri::from_caller_selected_absolute_uri("file:///home/alice/photo.png")
+        PersonalOriginalUri::from_caller_selected_absolute_uri("file:///home/alice/photo.png")
             .is_err()
     );
     assert!(
-        PersonalThumbnailUri::from_caller_selected_absolute_uri(
+        PersonalOriginalUri::from_caller_selected_absolute_uri(
             "file://localhost/home/alice/photo.png"
         )
         .is_err()
     );
-    assert!(PersonalThumbnailUri::from_caller_selected_absolute_uri("relative/path.png").is_err());
+    assert!(PersonalOriginalUri::from_caller_selected_absolute_uri("relative/path.png").is_err());
     assert!(
-        PersonalThumbnailUri::from_caller_selected_absolute_uri("http://example.test/My Photo.png")
+        PersonalOriginalUri::from_caller_selected_absolute_uri("http://example.test/My Photo.png")
             .is_err()
     );
     assert!(
-        PersonalThumbnailUri::from_caller_selected_absolute_uri(
+        PersonalOriginalUri::from_caller_selected_absolute_uri(
             "http://example.test/snowman-\u{2603}.png"
         )
         .is_err()
     );
     assert!(
-        PersonalThumbnailUri::from_caller_selected_absolute_uri("http://example.test/a\nb.png")
+        PersonalOriginalUri::from_caller_selected_absolute_uri("http://example.test/a\nb.png")
             .is_err()
     );
 }
@@ -146,7 +144,7 @@ fn shared_child_vectors_match_compatibility_hashes() {
     ];
 
     for (name, expected_uri, expected_stem) in cases {
-        let uri = SharedRelativeThumbnailUri::from_raw_child_name(name).unwrap();
+        let uri = SharedRelativeOriginalUri::from_raw_child_name(name).unwrap();
         assert_eq!(uri.as_str(), *expected_uri);
         assert_eq!(uri.md5_stem(), *expected_stem);
     }
@@ -154,25 +152,25 @@ fn shared_child_vectors_match_compatibility_hashes() {
 
 #[test]
 fn shared_text_parser_rejects_encoded_slash_and_parent_segments() {
-    assert!(SharedRelativeThumbnailUri::parse("./picture.png").is_ok());
+    assert!(SharedRelativeOriginalUri::parse("./picture.png").is_ok());
     assert_eq!(
-        SharedRelativeThumbnailUri::parse("./name%5cpart.png")
+        SharedRelativeOriginalUri::parse("./name%5cpart.png")
             .unwrap()
             .as_str(),
         "./name%5Cpart.png"
     );
     assert_eq!(
-        SharedRelativeThumbnailUri::parse("./%70icture.png")
+        SharedRelativeOriginalUri::parse("./%70icture.png")
             .unwrap()
             .as_str(),
         "./picture.png"
     );
-    assert!(SharedRelativeThumbnailUri::from_raw_child_name(b"dir/picture.png").is_err());
-    assert!(SharedRelativeThumbnailUri::from_raw_child_name(b".").is_err());
-    assert!(SharedRelativeThumbnailUri::from_raw_child_name(b"..").is_err());
-    assert!(SharedRelativeThumbnailUri::parse("./dir%2Fpicture.png").is_err());
-    assert!(SharedRelativeThumbnailUri::parse("./My Photo.png").is_err());
-    assert!(SharedRelativeThumbnailUri::parse("./name\\part.png").is_err());
-    assert!(SharedRelativeThumbnailUri::parse("./").is_err());
-    assert!(SharedRelativeThumbnailUri::parse("picture.png").is_err());
+    assert!(SharedRelativeOriginalUri::from_raw_child_name(b"dir/picture.png").is_err());
+    assert!(SharedRelativeOriginalUri::from_raw_child_name(b".").is_err());
+    assert!(SharedRelativeOriginalUri::from_raw_child_name(b"..").is_err());
+    assert!(SharedRelativeOriginalUri::parse("./dir%2Fpicture.png").is_err());
+    assert!(SharedRelativeOriginalUri::parse("./My Photo.png").is_err());
+    assert!(SharedRelativeOriginalUri::parse("./name\\part.png").is_err());
+    assert!(SharedRelativeOriginalUri::parse("./").is_err());
+    assert!(SharedRelativeOriginalUri::parse("picture.png").is_err());
 }

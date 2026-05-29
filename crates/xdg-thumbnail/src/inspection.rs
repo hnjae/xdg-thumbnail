@@ -12,17 +12,26 @@ use std::os::unix::fs::MetadataExt;
 
 use crate::{
     CacheEntryProblem, CacheNamespace, CacheRoot, FailureNamespace, ParsedThumbnailPng,
-    PersonalThumbnailUri, Result, SharedRelativeThumbnailUri, ThumbnailError, ThumbnailMetadata,
-    ThumbnailSize, ValidationOutcome, push_problem, validate_mime_type,
+    PersonalOriginalUri, Result, SharedRelativeOriginalUri, ThumbnailError, ThumbnailMetadata,
+    ThumbnailSize, push_problem, validate_mime_type,
 };
 
 /// Original URI identity parsed from a cache entry.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum ThumbnailUriIdentity {
+pub enum OriginalUriIdentity {
     /// Absolute personal-cache URI identity.
-    Personal(PersonalThumbnailUri),
+    Personal(PersonalOriginalUri),
     /// Shared repository relative URI identity.
-    Shared(SharedRelativeThumbnailUri),
+    Shared(SharedRelativeOriginalUri),
+}
+
+/// Validation confidence and validity for policy-neutral cache inspection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CacheEntryInspectionOutcome {
+    /// Inspection parsed the entry but did not validate it against an original.
+    Unchecked,
+    /// The entry is invalid for inspection or cache-management use.
+    Invalid(Vec<CacheEntryProblem>),
 }
 
 /// Whether access time was preserved while inspecting an entry.
@@ -69,8 +78,8 @@ impl ThumbnailTimestamps {
 /// Policy-neutral inspection facts for a cache entry.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CacheEntryInspection {
-    outcome: ValidationOutcome,
-    original_uri: Option<ThumbnailUriIdentity>,
+    outcome: CacheEntryInspectionOutcome,
+    original_uri: Option<OriginalUriIdentity>,
     timestamps: ThumbnailTimestamps,
     namespace: CacheNamespace,
     path: PathBuf,
@@ -80,13 +89,13 @@ pub struct CacheEntryInspection {
 impl CacheEntryInspection {
     /// Returns the validation or inspection outcome.
     #[must_use]
-    pub const fn outcome(&self) -> &ValidationOutcome {
+    pub const fn outcome(&self) -> &CacheEntryInspectionOutcome {
         &self.outcome
     }
 
     /// Returns the original URI parsed from metadata when present and valid.
     #[must_use]
-    pub const fn original_uri(&self) -> Option<&ThumbnailUriIdentity> {
+    pub const fn original_uri(&self) -> Option<&OriginalUriIdentity> {
         self.original_uri.as_ref()
     }
 
@@ -264,7 +273,9 @@ fn inspect_namespace_dir(
         } else {
             let timestamps = thumbnail_timestamps(&path, AccessTimePreservation::NotNeeded);
             inspections.push(CacheEntryInspection {
-                outcome: ValidationOutcome::Invalid(vec![CacheEntryProblem::NonstandardFilename]),
+                outcome: CacheEntryInspectionOutcome::Invalid(vec![
+                    CacheEntryProblem::NonstandardFilename,
+                ]),
                 original_uri: None,
                 timestamps,
                 namespace: namespace.clone(),
@@ -287,7 +298,9 @@ fn inspect_cache_entry(
         Ok(metadata) => metadata,
         Err(_) => {
             return CacheEntryInspection {
-                outcome: ValidationOutcome::Invalid(vec![CacheEntryProblem::UnreadableEntry]),
+                outcome: CacheEntryInspectionOutcome::Invalid(vec![
+                    CacheEntryProblem::UnreadableEntry,
+                ]),
                 original_uri: None,
                 timestamps,
                 namespace,
@@ -299,7 +312,7 @@ fn inspect_cache_entry(
 
     if metadata.file_type().is_symlink() || !metadata.is_file() {
         return CacheEntryInspection {
-            outcome: ValidationOutcome::Invalid(vec![CacheEntryProblem::UnreadableEntry]),
+            outcome: CacheEntryInspectionOutcome::Invalid(vec![CacheEntryProblem::UnreadableEntry]),
             original_uri: None,
             timestamps,
             namespace,
@@ -314,7 +327,9 @@ fn inspect_cache_entry(
         Ok(bytes) => bytes,
         Err(_) => {
             return CacheEntryInspection {
-                outcome: ValidationOutcome::Invalid(vec![CacheEntryProblem::UnreadableEntry]),
+                outcome: CacheEntryInspectionOutcome::Invalid(vec![
+                    CacheEntryProblem::UnreadableEntry,
+                ]),
                 original_uri: None,
                 timestamps,
                 namespace,
@@ -326,9 +341,23 @@ fn inspect_cache_entry(
 
     let parsed = match ParsedThumbnailPng::parse(&bytes) {
         Ok(parsed) => parsed,
+        Err(ThumbnailError::ResourceLimitExceeded(_)) => {
+            return CacheEntryInspection {
+                outcome: CacheEntryInspectionOutcome::Invalid(vec![
+                    CacheEntryProblem::ResourceLimitExceeded,
+                ]),
+                original_uri: None,
+                timestamps,
+                namespace,
+                path,
+                handle,
+            };
+        }
         Err(_) => {
             return CacheEntryInspection {
-                outcome: ValidationOutcome::Invalid(vec![CacheEntryProblem::InvalidPngStructure]),
+                outcome: CacheEntryInspectionOutcome::Invalid(vec![
+                    CacheEntryProblem::InvalidPngStructure,
+                ]),
                 original_uri: None,
                 timestamps,
                 namespace,
@@ -341,13 +370,13 @@ fn inspect_cache_entry(
     let mut problems =
         successful_size.map_or_else(Vec::new, |size| parsed.conformance_problems(size));
     let original_uri = inspect_required_metadata(&mut problems, parsed.metadata());
-    if let Some(ThumbnailUriIdentity::Personal(uri)) = &original_uri {
+    if let Some(OriginalUriIdentity::Personal(uri)) = &original_uri {
         inspect_filename_uri_match(&mut problems, &path, uri);
     }
     let outcome = if problems.is_empty() {
-        ValidationOutcome::UncheckedInspection
+        CacheEntryInspectionOutcome::Unchecked
     } else {
-        ValidationOutcome::Invalid(problems)
+        CacheEntryInspectionOutcome::Invalid(problems)
     };
 
     CacheEntryInspection {
@@ -363,10 +392,10 @@ fn inspect_cache_entry(
 fn inspect_required_metadata(
     problems: &mut Vec<CacheEntryProblem>,
     metadata: &ThumbnailMetadata,
-) -> Option<ThumbnailUriIdentity> {
+) -> Option<OriginalUriIdentity> {
     let original_uri = match metadata.thumb_uri() {
-        Some(uri) => match PersonalThumbnailUri::from_validated_absolute_uri(uri) {
-            Ok(uri) => Some(ThumbnailUriIdentity::Personal(uri)),
+        Some(uri) => match PersonalOriginalUri::from_validated_absolute_uri(uri) {
+            Ok(uri) => Some(OriginalUriIdentity::Personal(uri)),
             Err(_) => {
                 push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax);
                 None
@@ -396,7 +425,7 @@ fn inspect_required_metadata(
 fn inspect_filename_uri_match(
     problems: &mut Vec<CacheEntryProblem>,
     path: &Path,
-    uri: &PersonalThumbnailUri,
+    uri: &PersonalOriginalUri,
 ) {
     let Some(filename) = path.file_name().and_then(OsStr::to_str) else {
         push_problem(problems, CacheEntryProblem::UriFilenameMismatch);

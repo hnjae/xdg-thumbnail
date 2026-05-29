@@ -11,9 +11,9 @@ use base64::Engine;
 use clap::{CommandFactory, Parser, ValueEnum};
 use serde::Serialize;
 use xdg_thumbnail::{
-    AccessTimePreservation, CacheEntryInspection, CacheEntryProblem, CacheNamespace, CacheRoot,
-    PersonalThumbnailUri, ReadableOriginalIdentity, ThumbnailError, ThumbnailSize,
-    ThumbnailUriIdentity, ValidationOutcome, validate_personal_failure_entry,
+    AccessTimePreservation, CacheEntryInspection, CacheEntryInspectionOutcome, CacheEntryProblem,
+    CacheNamespace, CacheRoot, OriginalUriIdentity, PersonalOriginalUri, PersonalValidationOutcome,
+    ReadableOriginalIdentity, ThumbnailError, ThumbnailSize, validate_personal_failure_entry,
     validate_personal_thumbnail,
 };
 
@@ -314,7 +314,7 @@ fn evaluate_entry(
     let mut reason = None;
     let mut error = None;
 
-    if let ValidationOutcome::Invalid(problems) = entry.outcome() {
+    if let CacheEntryInspectionOutcome::Invalid(problems) = entry.outcome() {
         if problems.contains(&CacheEntryProblem::NonstandardFilename) {
             decision = Decision::Skip;
             reason = Some("nonstandard-filename");
@@ -372,6 +372,9 @@ fn evaluate_entry(
         } else if problems.contains(&CacheEntryProblem::DimensionsExceedNamespace) {
             decision = Decision::Skip;
             reason = Some("nonconforming-dimensions");
+        } else if problems.contains(&CacheEntryProblem::ResourceLimitExceeded) {
+            decision = Decision::Skip;
+            reason = Some("resource-limit-exceeded");
         } else if problems.contains(&CacheEntryProblem::UnreadableEntry) {
             decision = Decision::Skip;
             reason = Some("unreadable-entry");
@@ -474,7 +477,7 @@ fn evaluate_entry(
 }
 
 fn evaluate_local_file(
-    uri: &PersonalThumbnailUri,
+    uri: &PersonalOriginalUri,
     entry: &CacheEntryInspection,
     cli: &Cli,
     decision: &mut Decision,
@@ -517,11 +520,11 @@ fn evaluate_local_file(
         validate_personal_failure_entry(&bytes, &original)
     };
     match validation {
-        ValidationOutcome::FullyVerified => {
+        PersonalValidationOutcome::FullyVerified => {
             *decision = Decision::Keep;
             *reason = None;
         }
-        ValidationOutcome::Invalid(problems)
+        PersonalValidationOutcome::Invalid(problems)
             if problems.contains(&CacheEntryProblem::StaleMetadata) =>
         {
             if cli.delete_stale_local && cli.delete {
@@ -532,23 +535,23 @@ fn evaluate_local_file(
                 *reason = Some("stale-local-metadata");
             }
         }
-        ValidationOutcome::Invalid(problems)
+        PersonalValidationOutcome::Invalid(problems)
             if problems.contains(&CacheEntryProblem::InvalidMetadataSyntax) =>
         {
             *decision = Decision::Delete;
             *reason = Some("invalid-metadata-syntax");
         }
-        ValidationOutcome::Invalid(problems)
+        PersonalValidationOutcome::Invalid(problems)
             if problems.contains(&CacheEntryProblem::MissingRequiredMetadata) =>
         {
             *decision = Decision::Delete;
             *reason = Some("missing-required-metadata");
         }
-        ValidationOutcome::Invalid(problems) if only_nonconforming(&problems) => {
+        PersonalValidationOutcome::Invalid(problems) if only_nonconforming(&problems) => {
             *decision = Decision::Skip;
             *reason = first_nonconforming_reason(&problems);
         }
-        _ => {
+        PersonalValidationOutcome::Invalid(_) => {
             *decision = Decision::Skip;
             *reason = Some("original-unverifiable");
         }
@@ -737,7 +740,7 @@ impl Classifier {
         }
     }
 
-    fn classify(&self, uri: &PersonalThumbnailUri) -> UriClass {
+    fn classify(&self, uri: &PersonalOriginalUri) -> UriClass {
         let text = uri.as_str();
         let scheme = text.split_once(':').map_or("", |(scheme, _)| scheme);
         match scheme {
@@ -768,9 +771,9 @@ impl Classifier {
     }
 }
 
-fn personal_uri(entry: &CacheEntryInspection) -> Option<&PersonalThumbnailUri> {
+fn personal_uri(entry: &CacheEntryInspection) -> Option<&PersonalOriginalUri> {
     match entry.original_uri() {
-        Some(ThumbnailUriIdentity::Personal(uri)) => Some(uri),
+        Some(OriginalUriIdentity::Personal(uri)) => Some(uri),
         _ => None,
     }
 }

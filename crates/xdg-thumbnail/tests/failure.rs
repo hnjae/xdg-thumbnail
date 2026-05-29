@@ -4,8 +4,8 @@
 use tempfile::TempDir;
 use xdg_thumbnail::{
     CacheEntryProblem, CacheNamespace, CacheRoot, FailureNamespace, OriginalIdentity,
-    ParsedThumbnailPng, PersonalThumbnailUri, ReadableOriginalIdentity, UnixMTimeSeconds,
-    ValidationOutcome, validate_personal_failure_entry,
+    ParsedThumbnailPng, PersonalOriginalUri, PersonalValidationOutcome, ReadableOriginalIdentity,
+    ThumbnailPngColorType, UnixMTimeSeconds, validate_personal_failure_entry,
 };
 
 #[test]
@@ -33,7 +33,7 @@ fn writes_deterministic_failure_namespace_entries() {
     let parsed = ParsedThumbnailPng::parse(first.bytes()).unwrap();
     assert_eq!(parsed.width(), 1);
     assert_eq!(parsed.height(), 1);
-    assert_eq!(parsed.color_type(), png::ColorType::Rgba);
+    assert_eq!(parsed.color_type(), ThumbnailPngColorType::Rgba);
     assert_eq!(
         parsed.metadata().thumb_uri(),
         Some("file:///home/alice/photo.png")
@@ -43,7 +43,7 @@ fn writes_deterministic_failure_namespace_entries() {
     assert_eq!(parsed.metadata().thumb_mimetype(), Some("image/png"));
     assert_eq!(
         validate_personal_failure_entry(first.bytes(), &original),
-        ValidationOutcome::FullyVerified
+        PersonalValidationOutcome::FullyVerified
     );
 }
 
@@ -73,7 +73,7 @@ fn validates_failure_entry_metadata_without_successful_thumbnail_size_limits() {
 
     assert_eq!(
         validate_personal_failure_entry(&bytes, &original),
-        ValidationOutcome::FullyVerified
+        PersonalValidationOutcome::FullyVerified
     );
 }
 
@@ -81,7 +81,7 @@ fn validates_failure_entry_metadata_without_successful_thumbnail_size_limits() {
 fn reports_stale_failure_entry_metadata() {
     let original = readable_original();
     let bytes = failure_png_with_metadata(1, 1, original.identity());
-    let stale_original = ReadableOriginalIdentity::new(
+    let stale_original = ReadableOriginalIdentity::from_confirmed_readable_identity(
         OriginalIdentity::with_mime_type(
             original.identity().uri().clone(),
             UnixMTimeSeconds::new(43),
@@ -93,14 +93,14 @@ fn reports_stale_failure_entry_metadata() {
 
     assert_eq!(
         validate_personal_failure_entry(&bytes, &stale_original),
-        ValidationOutcome::Invalid(vec![CacheEntryProblem::StaleMetadata])
+        PersonalValidationOutcome::Invalid(vec![CacheEntryProblem::StaleMetadata])
     );
 }
 
 fn readable_original() -> ReadableOriginalIdentity {
-    ReadableOriginalIdentity::new(
+    ReadableOriginalIdentity::from_confirmed_readable_identity(
         OriginalIdentity::with_mime_type(
-            PersonalThumbnailUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
+            PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             UnixMTimeSeconds::new(42),
             Some(12),
             "image/png",

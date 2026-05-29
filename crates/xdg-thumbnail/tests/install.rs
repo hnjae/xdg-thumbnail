@@ -6,9 +6,9 @@ use std::os::unix::fs::symlink;
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    CacheNamespace, CacheRoot, OriginalIdentity, ParsedThumbnailPng, PersonalThumbnailUri,
+    CacheNamespace, CacheRoot, OriginalIdentity, ParsedThumbnailPng, PersonalOriginalUri,
     RawThumbnailImage, RawThumbnailPixelFormat, ReadableOriginalIdentity, ThumbnailError,
-    ThumbnailSize, UnixMTimeSeconds,
+    ThumbnailPngBitDepth, ThumbnailPngColorType, ThumbnailSize, UnixMTimeSeconds,
 };
 
 #[test]
@@ -32,8 +32,8 @@ fn installs_normalized_downscaled_personal_thumbnail_atomically() {
     let parsed = ParsedThumbnailPng::parse(installed.bytes()).unwrap();
     assert_eq!(parsed.width(), 128);
     assert_eq!(parsed.height(), 64);
-    assert_eq!(parsed.bit_depth(), png::BitDepth::Eight);
-    assert_eq!(parsed.color_type(), png::ColorType::Rgba);
+    assert_eq!(parsed.bit_depth(), ThumbnailPngBitDepth::Eight);
+    assert_eq!(parsed.color_type(), ThumbnailPngColorType::Rgba);
     assert!(!parsed.interlaced());
     assert_eq!(
         parsed.metadata().thumb_uri(),
@@ -208,7 +208,7 @@ fn raw_thumbnail_oversized_input_is_downscaled() {
     let parsed = ParsedThumbnailPng::parse(installed.bytes()).unwrap();
     assert_eq!(parsed.width(), 128);
     assert_eq!(parsed.height(), 64);
-    assert_eq!(parsed.color_type(), png::ColorType::Rgba);
+    assert_eq!(parsed.color_type(), ThumbnailPngColorType::Rgba);
 }
 
 #[test]
@@ -238,9 +238,9 @@ fn raw_thumbnail_rejects_short_buffer() {
 }
 
 fn readable_original() -> ReadableOriginalIdentity {
-    ReadableOriginalIdentity::new(
+    ReadableOriginalIdentity::from_confirmed_readable_identity(
         OriginalIdentity::with_mime_type(
-            PersonalThumbnailUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
+            PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             UnixMTimeSeconds::new(42),
             Some(12),
             "image/png",

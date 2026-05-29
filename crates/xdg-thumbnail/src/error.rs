@@ -41,6 +41,9 @@ pub enum ThumbnailError {
     /// Rendered thumbnail payload is unsupported.
     #[error("unsupported rendered thumbnail: {0}")]
     UnsupportedRenderedThumbnail(&'static str),
+    /// PNG parsing or thumbnail normalization would exceed configured resource limits.
+    #[error("resource limit exceeded: {0}")]
+    ResourceLimitExceeded(&'static str),
     /// Cache entry removal was refused by safety checks.
     #[error("refused to remove cache entry: {0}")]
     UnsafeRemoval(&'static str),

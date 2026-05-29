@@ -24,16 +24,17 @@ pub use identity::{
     OriginalIdentity, ReadableOriginalIdentity, SharedRepositoryContext, UnixMTimeSeconds,
 };
 pub use inspection::{
-    AccessTimePreservation, CacheEntryHandle, CacheEntryInspection, ThumbnailTimestamps,
-    ThumbnailUriIdentity,
+    AccessTimePreservation, CacheEntryHandle, CacheEntryInspection, CacheEntryInspectionOutcome,
+    OriginalUriIdentity, ThumbnailTimestamps,
 };
 pub use namespace::{CacheNamespace, FailureNamespace, ThumbnailSize};
 pub use png::{
-    CacheEntryProblem, OwnedRawThumbnailImage, ParsedThumbnailPng, RawThumbnailImage,
-    RawThumbnailPixelFormat, ThumbnailMetadata, ValidationOutcome, validate_personal_failure_entry,
+    CacheEntryProblem, OwnedRawThumbnailImage, ParsedThumbnailPng, PersonalValidationOutcome,
+    RawThumbnailImage, RawThumbnailPixelFormat, SharedValidationOutcome, ThumbnailMetadata,
+    ThumbnailPngBitDepth, ThumbnailPngColorType, validate_personal_failure_entry,
     validate_personal_thumbnail, validate_shared_thumbnail,
 };
-pub use uri::{PersonalThumbnailUri, SharedRelativeThumbnailUri};
+pub use uri::{PersonalOriginalUri, SharedRelativeOriginalUri};
 
 pub(crate) use png::{
     encode_rgba_png, normalized_personal_thumbnail_png, normalized_personal_thumbnail_raw_png,

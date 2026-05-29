@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use std::ffi::OsStr;
-use std::fs;
-use std::io::Write;
+use std::fs::{self, File};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
@@ -11,18 +11,19 @@ use std::os::unix::ffi::OsStrExt;
 #[cfg(unix)]
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
-use crate::PersonalThumbnailUri;
+use crate::PersonalOriginalUri;
 use crate::inspection::{
     CacheEntryInspection, read_thumbnail_for_inspection, thumbnail_timestamps,
     thumbnail_timestamps_from_metadata,
 };
 use crate::{
     AccessTimePreservation, CacheEntryProblem, CacheNamespace, FailureNamespace,
-    OwnedRawThumbnailImage, ParsedThumbnailPng, RawThumbnailImage, ReadableOriginalIdentity,
-    Result, SharedRelativeThumbnailUri, SharedRepositoryContext, ThumbnailError, ThumbnailMetadata,
-    ThumbnailSize, ThumbnailTimestamps, UnixMTimeSeconds, ValidationOutcome, encode_rgba_png,
-    normalized_personal_thumbnail_png, normalized_personal_thumbnail_raw_png,
-    thumbnail_metadata_pairs, validate_personal_thumbnail, validate_shared_thumbnail,
+    OwnedRawThumbnailImage, ParsedThumbnailPng, PersonalValidationOutcome, RawThumbnailImage,
+    ReadableOriginalIdentity, Result, SharedRelativeOriginalUri, SharedRepositoryContext,
+    SharedValidationOutcome, ThumbnailError, ThumbnailMetadata, ThumbnailSize, ThumbnailTimestamps,
+    UnixMTimeSeconds, encode_rgba_png, normalized_personal_thumbnail_png,
+    normalized_personal_thumbnail_raw_png, thumbnail_metadata_pairs, validate_personal_thumbnail,
+    validate_shared_thumbnail,
 };
 
 /// Root directory of the personal thumbnail cache, usually `$XDG_CACHE_HOME/thumbnails`.
@@ -106,7 +107,7 @@ impl CacheRoot {
 
     /// Computes the personal-cache path for an accepted URI and namespace without reading it.
     #[must_use]
-    pub fn personal_path(&self, uri: &PersonalThumbnailUri, namespace: &CacheNamespace) -> PathBuf {
+    pub fn personal_path(&self, uri: &PersonalOriginalUri, namespace: &CacheNamespace) -> PathBuf {
         namespace.join_under(&self.path, &uri.thumbnail_filename())
     }
 
@@ -266,21 +267,18 @@ impl CacheRoot {
         size: ThumbnailSize,
     ) -> Result<ThumbnailLookup<ValidatedPersonalEntry>> {
         let path = self.personal_path(original.identity().uri(), &CacheNamespace::Size(size));
-        let bytes = match fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(ThumbnailLookup::Missing);
-            }
-            Err(source) => {
-                return Err(ThumbnailError::Io {
-                    context: "read thumbnail cache entry",
-                    source,
-                });
+        let bytes = match read_cache_entry_no_follow(&path, "read thumbnail cache entry")? {
+            CacheEntryRead::Bytes(bytes) => bytes,
+            CacheEntryRead::Missing => return Ok(ThumbnailLookup::Missing),
+            CacheEntryRead::Unreadable => {
+                return Ok(ThumbnailLookup::Invalid(vec![
+                    CacheEntryProblem::UnreadableEntry,
+                ]));
             }
         };
 
         match validate_personal_thumbnail(&bytes, original, size) {
-            ValidationOutcome::FullyVerified => {
+            PersonalValidationOutcome::FullyVerified => {
                 let parsed = ParsedThumbnailPng::parse(&bytes)?;
                 Ok(ThumbnailLookup::Valid(ValidatedPersonalEntry {
                     path,
@@ -288,11 +286,7 @@ impl CacheRoot {
                     metadata: parsed.into_metadata(),
                 }))
             }
-            ValidationOutcome::Invalid(problems) => Ok(ThumbnailLookup::Invalid(problems)),
-            ValidationOutcome::SharedMetadataIncomplete
-            | ValidationOutcome::UncheckedInspection => Ok(ThumbnailLookup::Invalid(vec![
-                CacheEntryProblem::UnverifiableOriginal,
-            ])),
+            PersonalValidationOutcome::Invalid(problems) => Ok(ThumbnailLookup::Invalid(problems)),
         }
     }
 
@@ -439,21 +433,18 @@ impl SharedRepositoryContext {
         size: ThumbnailSize,
     ) -> Result<SharedThumbnailLookup<ValidatedSharedEntry>> {
         let path = self.thumbnail_path(size);
-        let bytes = match fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(SharedThumbnailLookup::Missing);
-            }
-            Err(source) => {
-                return Err(ThumbnailError::Io {
-                    context: "read shared thumbnail cache entry",
-                    source,
-                });
+        let bytes = match read_cache_entry_no_follow(&path, "read shared thumbnail cache entry")? {
+            CacheEntryRead::Bytes(bytes) => bytes,
+            CacheEntryRead::Missing => return Ok(SharedThumbnailLookup::Missing),
+            CacheEntryRead::Unreadable => {
+                return Ok(SharedThumbnailLookup::Invalid(vec![
+                    CacheEntryProblem::UnreadableEntry,
+                ]));
             }
         };
 
         match validate_shared_thumbnail(&bytes, self, mtime, original_size, size) {
-            ValidationOutcome::FullyVerified => {
+            SharedValidationOutcome::FullyVerified => {
                 let parsed = ParsedThumbnailPng::parse(&bytes)?;
                 Ok(SharedThumbnailLookup::FullyVerified(ValidatedSharedEntry {
                     path,
@@ -461,7 +452,7 @@ impl SharedRepositoryContext {
                     metadata: parsed.into_metadata(),
                 }))
             }
-            ValidationOutcome::SharedMetadataIncomplete => {
+            SharedValidationOutcome::MetadataIncomplete => {
                 let parsed = ParsedThumbnailPng::parse(&bytes)?;
                 Ok(SharedThumbnailLookup::MetadataIncomplete(
                     ValidatedSharedEntry {
@@ -471,13 +462,12 @@ impl SharedRepositoryContext {
                     },
                 ))
             }
-            ValidationOutcome::Invalid(problems) if only_unverifiable_original(&problems) => {
+            SharedValidationOutcome::Invalid(problems) if only_unverifiable_original(&problems) => {
                 Ok(SharedThumbnailLookup::Unverifiable(problems))
             }
-            ValidationOutcome::Invalid(problems) => Ok(SharedThumbnailLookup::Invalid(problems)),
-            ValidationOutcome::UncheckedInspection => Ok(SharedThumbnailLookup::Invalid(vec![
-                CacheEntryProblem::UnverifiableOriginal,
-            ])),
+            SharedValidationOutcome::Invalid(problems) => {
+                Ok(SharedThumbnailLookup::Invalid(problems))
+            }
         }
     }
 
@@ -583,14 +573,23 @@ impl PersonalThumbnailLookupRequest {
     }
 
     /// Returns a validated personal-cache path for the owned request.
-    pub fn validated_path(&self) -> Result<ThumbnailLookup<ValidatedThumbnailPath>> {
-        self.root.validated_personal_path(&self.original, self.size)
+    pub fn validated_path(self) -> Result<ThumbnailLookup<ValidatedThumbnailPath>> {
+        let Self {
+            root,
+            original,
+            size,
+        } = self;
+        root.validated_personal_path(&original, size)
     }
 
     /// Returns exact validated personal-cache PNG bytes for the owned request.
-    pub fn validated_payload(&self) -> Result<ThumbnailLookup<ValidatedThumbnailPayload>> {
-        self.root
-            .validated_personal_payload(&self.original, self.size)
+    pub fn validated_payload(self) -> Result<ThumbnailLookup<ValidatedThumbnailPayload>> {
+        let Self {
+            root,
+            original,
+            size,
+        } = self;
+        root.validated_personal_payload(&original, size)
     }
 
     /// Splits this request into its owned parts.
@@ -638,15 +637,25 @@ impl PersonalThumbnailInstallRequest {
     }
 
     /// Normalizes rendered PNG data, installs a personal-cache thumbnail, and returns its path.
-    pub fn install_path(&self) -> Result<InstalledThumbnailPath> {
-        self.root
-            .install_personal_thumbnail_path(&self.original, self.size, &self.rendered_png)
+    pub fn install_path(self) -> Result<InstalledThumbnailPath> {
+        let Self {
+            root,
+            original,
+            size,
+            rendered_png,
+        } = self;
+        root.install_personal_thumbnail_path(&original, size, &rendered_png)
     }
 
     /// Normalizes rendered PNG data, installs a personal-cache thumbnail, and returns final bytes.
-    pub fn install_payload(&self) -> Result<InstalledThumbnailPayload> {
-        self.root
-            .install_personal_thumbnail_payload(&self.original, self.size, &self.rendered_png)
+    pub fn install_payload(self) -> Result<InstalledThumbnailPayload> {
+        let Self {
+            root,
+            original,
+            size,
+            rendered_png,
+        } = self;
+        root.install_personal_thumbnail_payload(&original, size, &rendered_png)
     }
 
     /// Splits this request into its owned parts.
@@ -686,21 +695,25 @@ impl PersonalThumbnailRawInstallRequest {
     }
 
     /// Normalizes raw pixel data, installs a personal-cache thumbnail, and returns its path.
-    pub fn install_path(&self) -> Result<InstalledThumbnailPath> {
-        self.root.install_personal_thumbnail_raw_path(
-            &self.original,
-            self.size,
-            self.image.as_borrowed(),
-        )
+    pub fn install_path(self) -> Result<InstalledThumbnailPath> {
+        let Self {
+            root,
+            original,
+            size,
+            image,
+        } = self;
+        root.install_personal_thumbnail_raw_path(&original, size, image.as_borrowed())
     }
 
     /// Normalizes raw pixel data, installs a personal-cache thumbnail, and returns final bytes.
-    pub fn install_payload(&self) -> Result<InstalledThumbnailPayload> {
-        self.root.install_personal_thumbnail_raw_payload(
-            &self.original,
-            self.size,
-            self.image.as_borrowed(),
-        )
+    pub fn install_payload(self) -> Result<InstalledThumbnailPayload> {
+        let Self {
+            root,
+            original,
+            size,
+            image,
+        } = self;
+        root.install_personal_thumbnail_raw_payload(&original, size, image.as_borrowed())
     }
 
     /// Splits this request into its owned parts.
@@ -744,15 +757,23 @@ impl FailureEntryWriteRequest {
     }
 
     /// Writes a deterministic 1x1 transparent failure entry and returns its path.
-    pub fn write_path(&self) -> Result<InstalledThumbnailPath> {
-        self.root
-            .write_failure_entry_path(&self.namespace, &self.original)
+    pub fn write_path(self) -> Result<InstalledThumbnailPath> {
+        let Self {
+            root,
+            namespace,
+            original,
+        } = self;
+        root.write_failure_entry_path(&namespace, &original)
     }
 
     /// Writes a deterministic 1x1 transparent failure entry and returns final bytes.
-    pub fn write_payload(&self) -> Result<InstalledThumbnailPayload> {
-        self.root
-            .write_failure_entry_payload(&self.namespace, &self.original)
+    pub fn write_payload(self) -> Result<InstalledThumbnailPayload> {
+        let Self {
+            root,
+            namespace,
+            original,
+        } = self;
+        root.write_failure_entry_payload(&namespace, &original)
     }
 
     /// Splits this request into its owned parts.
@@ -789,9 +810,13 @@ impl PersonalThumbnailInspectionRequest {
     }
 
     /// Inspects standard successful thumbnail size directories.
-    pub fn inspect(&self) -> Result<Vec<CacheEntryInspection>> {
-        self.root
-            .inspect_thumbnails(&self.sizes, self.include_nonstandard)
+    pub fn inspect(self) -> Result<Vec<CacheEntryInspection>> {
+        let Self {
+            root,
+            sizes,
+            include_nonstandard,
+        } = self;
+        root.inspect_thumbnails(&sizes, include_nonstandard)
     }
 
     /// Splits this request into its owned parts.
@@ -831,15 +856,25 @@ impl SharedThumbnailLookupRequest {
     }
 
     /// Returns a validated shared-repository path for the owned request.
-    pub fn validated_path(&self) -> Result<SharedThumbnailLookup<ValidatedThumbnailPath>> {
-        self.context
-            .validated_thumbnail_path(self.mtime, self.original_size, self.size)
+    pub fn validated_path(self) -> Result<SharedThumbnailLookup<ValidatedThumbnailPath>> {
+        let Self {
+            context,
+            mtime,
+            original_size,
+            size,
+        } = self;
+        context.validated_thumbnail_path(mtime, original_size, size)
     }
 
     /// Returns exact validated shared-repository PNG bytes for the owned request.
-    pub fn validated_payload(&self) -> Result<SharedThumbnailLookup<ValidatedThumbnailPayload>> {
-        self.context
-            .validated_thumbnail_payload(self.mtime, self.original_size, self.size)
+    pub fn validated_payload(self) -> Result<SharedThumbnailLookup<ValidatedThumbnailPayload>> {
+        let Self {
+            context,
+            mtime,
+            original_size,
+            size,
+        } = self;
+        context.validated_thumbnail_payload(mtime, original_size, size)
     }
 
     /// Splits this request into its owned parts.
@@ -886,9 +921,14 @@ impl SharedThumbnailInspectionRequest {
     }
 
     /// Inspects existing shared-repository thumbnails without exposing removal handles.
-    pub fn inspect(&self) -> Result<Vec<SharedCacheEntryInspection>> {
-        self.context
-            .inspect_thumbnails(&self.sizes, self.mtime, self.original_size)
+    pub fn inspect(self) -> Result<Vec<SharedCacheEntryInspection>> {
+        let Self {
+            context,
+            sizes,
+            mtime,
+            original_size,
+        } = self;
+        context.inspect_thumbnails(&sizes, mtime, original_size)
     }
 
     /// Splits this request into its owned parts.
@@ -912,17 +952,84 @@ fn only_unverifiable_original(problems: &[CacheEntryProblem]) -> bool {
             .all(|problem| *problem == CacheEntryProblem::UnverifiableOriginal)
 }
 
-fn shared_cache_entry_outcome(outcome: ValidationOutcome) -> SharedCacheEntryOutcome {
-    match outcome {
-        ValidationOutcome::FullyVerified => SharedCacheEntryOutcome::FullyVerified,
-        ValidationOutcome::SharedMetadataIncomplete => SharedCacheEntryOutcome::MetadataIncomplete,
-        ValidationOutcome::UncheckedInspection => {
-            SharedCacheEntryOutcome::Unverifiable(vec![CacheEntryProblem::UnverifiableOriginal])
+enum CacheEntryRead {
+    Missing,
+    Unreadable,
+    Bytes(Vec<u8>),
+}
+
+#[cfg(unix)]
+fn read_cache_entry_no_follow(path: &Path, context: &'static str) -> Result<CacheEntryRead> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(CacheEntryRead::Missing);
         }
-        ValidationOutcome::Invalid(problems) if only_unverifiable_original(&problems) => {
+        Err(source) => return Err(ThumbnailError::Io { context, source }),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Ok(CacheEntryRead::Unreadable);
+    }
+
+    let flags = rustix::fs::OFlags::RDONLY
+        | rustix::fs::OFlags::CLOEXEC
+        | rustix::fs::OFlags::NOFOLLOW
+        | rustix::fs::OFlags::NONBLOCK;
+    let fd = match rustix::fs::open(path, flags, rustix::fs::Mode::empty()) {
+        Ok(fd) => fd,
+        Err(rustix::io::Errno::NOENT) => return Ok(CacheEntryRead::Missing),
+        Err(rustix::io::Errno::LOOP | rustix::io::Errno::ISDIR | rustix::io::Errno::NOTDIR) => {
+            return Ok(CacheEntryRead::Unreadable);
+        }
+        Err(source) => {
+            return Err(ThumbnailError::Io {
+                context,
+                source: std::io::Error::from(source),
+            });
+        }
+    };
+
+    let stat = rustix::fs::fstat(&fd).map_err(|source| ThumbnailError::Io {
+        context,
+        source: std::io::Error::from(source),
+    })?;
+    let file_type = rustix::fs::FileType::from_raw_mode(stat.st_mode);
+    if !file_type.is_file() {
+        return Ok(CacheEntryRead::Unreadable);
+    }
+
+    let mut file = File::from(fd);
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)
+        .map_err(|source| ThumbnailError::Io { context, source })?;
+    Ok(CacheEntryRead::Bytes(bytes))
+}
+
+#[cfg(not(unix))]
+fn read_cache_entry_no_follow(path: &Path, context: &'static str) -> Result<CacheEntryRead> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(CacheEntryRead::Missing);
+        }
+        Err(source) => return Err(ThumbnailError::Io { context, source }),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Ok(CacheEntryRead::Unreadable);
+    }
+    fs::read(path)
+        .map(CacheEntryRead::Bytes)
+        .map_err(|source| ThumbnailError::Io { context, source })
+}
+
+fn shared_cache_entry_outcome(outcome: SharedValidationOutcome) -> SharedCacheEntryOutcome {
+    match outcome {
+        SharedValidationOutcome::FullyVerified => SharedCacheEntryOutcome::FullyVerified,
+        SharedValidationOutcome::MetadataIncomplete => SharedCacheEntryOutcome::MetadataIncomplete,
+        SharedValidationOutcome::Invalid(problems) if only_unverifiable_original(&problems) => {
             SharedCacheEntryOutcome::Unverifiable(problems)
         }
-        ValidationOutcome::Invalid(problems) => SharedCacheEntryOutcome::Invalid(problems),
+        SharedValidationOutcome::Invalid(problems) => SharedCacheEntryOutcome::Invalid(problems),
     }
 }
 
@@ -983,7 +1090,7 @@ pub enum SharedCacheEntryOutcome {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SharedCacheEntryInspection {
     outcome: SharedCacheEntryOutcome,
-    shared_uri: SharedRelativeThumbnailUri,
+    shared_uri: SharedRelativeOriginalUri,
     timestamps: ThumbnailTimestamps,
     size: ThumbnailSize,
     path: PathBuf,
@@ -999,7 +1106,7 @@ impl SharedCacheEntryInspection {
 
     /// Returns the shared relative URI used for hashing and metadata comparison.
     #[must_use]
-    pub const fn shared_uri(&self) -> &SharedRelativeThumbnailUri {
+    pub const fn shared_uri(&self) -> &SharedRelativeOriginalUri {
         &self.shared_uri
     }
 
@@ -1047,6 +1154,12 @@ impl ValidatedThumbnailPath {
     pub const fn metadata(&self) -> &ThumbnailMetadata {
         &self.metadata
     }
+
+    /// Splits this result into its owned path and metadata.
+    #[must_use]
+    pub fn into_parts(self) -> (PathBuf, ThumbnailMetadata) {
+        (self.path, self.metadata)
+    }
 }
 
 /// Exact validated PNG bytes and metadata facts.
@@ -1075,6 +1188,12 @@ impl ValidatedThumbnailPayload {
     pub const fn metadata(&self) -> &ThumbnailMetadata {
         &self.metadata
     }
+
+    /// Splits this result into its owned path, bytes, and metadata.
+    #[must_use]
+    pub fn into_parts(self) -> (PathBuf, Vec<u8>, ThumbnailMetadata) {
+        (self.path, self.bytes, self.metadata)
+    }
 }
 
 /// Path result of a successful personal-cache install or failure-entry write.
@@ -1088,6 +1207,12 @@ impl InstalledThumbnailPath {
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Returns the installed path as an owned [`PathBuf`].
+    #[must_use]
+    pub fn into_path_buf(self) -> PathBuf {
+        self.path
     }
 }
 
@@ -1109,6 +1234,12 @@ impl InstalledThumbnailPayload {
     #[must_use]
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
+    }
+
+    /// Splits this result into its owned path and final PNG bytes.
+    #[must_use]
+    pub fn into_parts(self) -> (PathBuf, Vec<u8>) {
+        (self.path, self.bytes)
     }
 }
 

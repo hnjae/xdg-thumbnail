@@ -6,9 +6,9 @@ use std::os::unix::fs::symlink;
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    AccessTimePreservation, CacheEntryProblem, CacheNamespace, CacheRoot, FailureNamespace,
-    OriginalIdentity, PersonalThumbnailUri, ReadableOriginalIdentity, ThumbnailSize,
-    ThumbnailUriIdentity, ValidationOutcome,
+    AccessTimePreservation, CacheEntryInspectionOutcome, CacheEntryProblem, CacheNamespace,
+    CacheRoot, FailureNamespace, OriginalIdentity, OriginalUriIdentity, PersonalOriginalUri,
+    ReadableOriginalIdentity, ThumbnailSize,
 };
 
 #[test]
@@ -37,7 +37,7 @@ fn inspection_iterates_standard_entries_and_reports_facts() {
     );
     assert_eq!(
         default_entries[0].outcome(),
-        &ValidationOutcome::UncheckedInspection
+        &CacheEntryInspectionOutcome::Unchecked
     );
     assert!(default_entries[0].timestamps().modified_at().is_some());
     assert_eq!(
@@ -48,7 +48,7 @@ fn inspection_iterates_standard_entries_and_reports_facts() {
     );
     assert!(matches!(
         default_entries[0].original_uri(),
-        Some(ThumbnailUriIdentity::Personal(uri)) if uri.as_str() == "file:///home/alice/photo.png"
+        Some(OriginalUriIdentity::Personal(uri)) if uri.as_str() == "file:///home/alice/photo.png"
     ));
 
     let visible_entries = root
@@ -56,7 +56,7 @@ fn inspection_iterates_standard_entries_and_reports_facts() {
         .unwrap();
     assert_eq!(visible_entries.len(), 2);
     assert!(visible_entries.iter().any(|entry| {
-        matches!(entry.outcome(), ValidationOutcome::Invalid(problems) if problems.contains(&CacheEntryProblem::NonstandardFilename))
+        matches!(entry.outcome(), CacheEntryInspectionOutcome::Invalid(problems) if problems.contains(&CacheEntryProblem::NonstandardFilename))
     }));
 }
 
@@ -82,8 +82,8 @@ fn inspection_reports_invalid_uri_metadata_and_filename_uri_mismatch() {
     .unwrap();
 
     let expected_uri =
-        PersonalThumbnailUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap();
-    let wrong_uri = PersonalThumbnailUri::from_absolute_path_bytes(b"/home/alice/other.png")
+        PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap();
+    let wrong_uri = PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/other.png")
         .unwrap()
         .thumbnail_filename();
     let mismatched_path = dir.join(wrong_uri);
@@ -106,11 +106,11 @@ fn inspection_reports_invalid_uri_metadata_and_filename_uri_mismatch() {
 
     assert!(entries.iter().any(|entry| {
         entry.path() == invalid_uri_path.as_path()
-            && matches!(entry.outcome(), ValidationOutcome::Invalid(problems) if problems.contains(&CacheEntryProblem::InvalidMetadataSyntax))
+            && matches!(entry.outcome(), CacheEntryInspectionOutcome::Invalid(problems) if problems.contains(&CacheEntryProblem::InvalidMetadataSyntax))
     }));
     assert!(entries.iter().any(|entry| {
         entry.path() == mismatched_path.as_path()
-            && matches!(entry.outcome(), ValidationOutcome::Invalid(problems) if problems.contains(&CacheEntryProblem::UriFilenameMismatch))
+            && matches!(entry.outcome(), CacheEntryInspectionOutcome::Invalid(problems) if problems.contains(&CacheEntryProblem::UriFilenameMismatch))
     }));
 }
 
@@ -201,9 +201,9 @@ fn cache_entry_handles_remove_files_without_following_symlinks() {
 }
 
 fn readable_original() -> ReadableOriginalIdentity {
-    ReadableOriginalIdentity::new(
+    ReadableOriginalIdentity::from_confirmed_readable_identity(
         OriginalIdentity::with_mime_type(
-            PersonalThumbnailUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
+            PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             xdg_thumbnail::UnixMTimeSeconds::new(42),
             Some(12),
             "image/png",

@@ -6,7 +6,7 @@ use std::io::Cursor;
 
 use crate::uri::validate_absolute_uri_identity;
 use crate::{
-    OriginalIdentity, ReadableOriginalIdentity, Result, SharedRelativeThumbnailUri,
+    OriginalIdentity, ReadableOriginalIdentity, Result, SharedRelativeOriginalUri,
     SharedRepositoryContext, ThumbnailError, ThumbnailSize, UnixMTimeSeconds,
 };
 
@@ -159,21 +159,30 @@ pub enum CacheEntryProblem {
     NonconformingPngFormat,
     /// PNG dimensions exceed the requested namespace.
     DimensionsExceedNamespace,
+    /// PNG decoding would exceed configured resource limits.
+    ResourceLimitExceeded,
     /// The cache directory entry is not a standard thumbnail filename.
     NonstandardFilename,
     /// The standard cache filename does not match the stored thumbnail URI identity.
     UriFilenameMismatch,
 }
 
-/// Validation confidence and validity for a cache entry.
+/// Validation confidence and validity for a personal-cache entry.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ValidationOutcome {
+pub enum PersonalValidationOutcome {
+    /// Required metadata and PNG constraints are fully verified.
+    FullyVerified,
+    /// The entry is invalid for the requested validation context.
+    Invalid(Vec<CacheEntryProblem>),
+}
+
+/// Validation confidence and validity for a shared-repository entry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SharedValidationOutcome {
     /// Required metadata and PNG constraints are fully verified.
     FullyVerified,
     /// Shared thumbnail metadata is standard-allowed but incomplete.
-    SharedMetadataIncomplete,
-    /// Inspection did not validate the entry against an original.
-    UncheckedInspection,
+    MetadataIncomplete,
     /// The entry is invalid for the requested validation context.
     Invalid(Vec<CacheEntryProblem>),
 }
@@ -228,13 +237,67 @@ impl ThumbnailMetadata {
     }
 }
 
+/// PNG sample bit depth reported by [`ParsedThumbnailPng`].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ThumbnailPngBitDepth {
+    /// 1-bit samples.
+    One,
+    /// 2-bit samples.
+    Two,
+    /// 4-bit samples.
+    Four,
+    /// 8-bit samples.
+    Eight,
+    /// 16-bit samples.
+    Sixteen,
+}
+
+impl ThumbnailPngBitDepth {
+    fn from_png(value: png::BitDepth) -> Self {
+        match value {
+            png::BitDepth::One => Self::One,
+            png::BitDepth::Two => Self::Two,
+            png::BitDepth::Four => Self::Four,
+            png::BitDepth::Eight => Self::Eight,
+            png::BitDepth::Sixteen => Self::Sixteen,
+        }
+    }
+}
+
+/// PNG color type reported by [`ParsedThumbnailPng`].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ThumbnailPngColorType {
+    /// Grayscale samples without alpha.
+    Grayscale,
+    /// RGB samples without alpha.
+    Rgb,
+    /// Indexed-color samples.
+    Indexed,
+    /// Grayscale samples with alpha.
+    GrayscaleAlpha,
+    /// RGBA samples.
+    Rgba,
+}
+
+impl ThumbnailPngColorType {
+    fn from_png(value: png::ColorType) -> Self {
+        match value {
+            png::ColorType::Grayscale => Self::Grayscale,
+            png::ColorType::Rgb => Self::Rgb,
+            png::ColorType::Indexed => Self::Indexed,
+            png::ColorType::GrayscaleAlpha => Self::GrayscaleAlpha,
+            png::ColorType::Rgba => Self::Rgba,
+        }
+    }
+}
+
 /// Decoded facts from a thumbnail PNG.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParsedThumbnailPng {
     width: u32,
     height: u32,
-    bit_depth: png::BitDepth,
-    color_type: png::ColorType,
+    bit_depth: ThumbnailPngBitDepth,
+    color_type: ThumbnailPngColorType,
     interlaced: bool,
     metadata: ThumbnailMetadata,
 }
@@ -251,6 +314,8 @@ impl ParsedThumbnailPng {
                 "png output buffer size is unavailable".to_owned(),
             ));
         };
+        let info = reader.info();
+        ensure_parsed_png_resource_limits(info.width, info.height, output_buffer_size)?;
         let mut buffer = vec![0; output_buffer_size];
         reader
             .next_frame(&mut buffer)
@@ -277,8 +342,8 @@ impl ParsedThumbnailPng {
         Ok(Self {
             width: info.width,
             height: info.height,
-            bit_depth: info.bit_depth,
-            color_type: info.color_type,
+            bit_depth: ThumbnailPngBitDepth::from_png(info.bit_depth),
+            color_type: ThumbnailPngColorType::from_png(info.color_type),
             interlaced: info.interlaced,
             metadata: ThumbnailMetadata { values },
         })
@@ -298,13 +363,13 @@ impl ParsedThumbnailPng {
 
     /// Returns the image bit depth.
     #[must_use]
-    pub const fn bit_depth(&self) -> png::BitDepth {
+    pub const fn bit_depth(&self) -> ThumbnailPngBitDepth {
         self.bit_depth
     }
 
     /// Returns the image color type.
     #[must_use]
-    pub const fn color_type(&self) -> png::ColorType {
+    pub const fn color_type(&self) -> ThumbnailPngColorType {
         self.color_type
     }
 
@@ -326,11 +391,11 @@ impl ParsedThumbnailPng {
 
     pub(crate) fn conformance_problems(&self, size: ThumbnailSize) -> Vec<CacheEntryProblem> {
         let mut problems = Vec::new();
-        if self.bit_depth != png::BitDepth::Eight
+        if self.bit_depth != ThumbnailPngBitDepth::Eight
             || self.interlaced
             || !matches!(
                 self.color_type,
-                png::ColorType::Rgba | png::ColorType::GrayscaleAlpha
+                ThumbnailPngColorType::Rgba | ThumbnailPngColorType::GrayscaleAlpha
             )
         {
             push_problem(&mut problems, CacheEntryProblem::NonconformingPngFormat);
@@ -342,13 +407,39 @@ impl ParsedThumbnailPng {
     }
 }
 
+fn ensure_parsed_png_resource_limits(
+    width: u32,
+    height: u32,
+    output_buffer_size: usize,
+) -> Result<()> {
+    let pixels = u64::from(width) * u64::from(height);
+    if pixels > MAX_RENDERED_PIXELS || output_buffer_size > MAX_RENDERED_DECODE_BYTES {
+        return Err(ThumbnailError::ResourceLimitExceeded(
+            "PNG decode resource limit exceeded",
+        ));
+    }
+    Ok(())
+}
+
+fn parse_thumbnail_for_validation(
+    bytes: &[u8],
+) -> std::result::Result<ParsedThumbnailPng, CacheEntryProblem> {
+    match ParsedThumbnailPng::parse(bytes) {
+        Ok(parsed) => Ok(parsed),
+        Err(ThumbnailError::ResourceLimitExceeded(_)) => {
+            Err(CacheEntryProblem::ResourceLimitExceeded)
+        }
+        Err(_) => Err(CacheEntryProblem::InvalidPngStructure),
+    }
+}
+
 /// Validates a personal-cache successful thumbnail PNG against a readable original identity.
 #[must_use]
 pub fn validate_personal_thumbnail(
     bytes: &[u8],
     original: &ReadableOriginalIdentity,
     size: ThumbnailSize,
-) -> ValidationOutcome {
+) -> PersonalValidationOutcome {
     validate_personal_thumbnail_identity(bytes, original.identity(), size)
 }
 
@@ -356,11 +447,11 @@ pub(crate) fn validate_personal_thumbnail_identity(
     bytes: &[u8],
     original: &OriginalIdentity,
     size: ThumbnailSize,
-) -> ValidationOutcome {
-    let parsed = match ParsedThumbnailPng::parse(bytes) {
+) -> PersonalValidationOutcome {
+    let parsed = match parse_thumbnail_for_validation(bytes) {
         Ok(parsed) => parsed,
-        Err(_) => {
-            return ValidationOutcome::Invalid(vec![CacheEntryProblem::InvalidPngStructure]);
+        Err(problem) => {
+            return PersonalValidationOutcome::Invalid(vec![problem]);
         }
     };
 
@@ -368,9 +459,9 @@ pub(crate) fn validate_personal_thumbnail_identity(
     compare_personal_metadata(&mut problems, parsed.metadata(), original);
 
     if problems.is_empty() {
-        ValidationOutcome::FullyVerified
+        PersonalValidationOutcome::FullyVerified
     } else {
-        ValidationOutcome::Invalid(problems)
+        PersonalValidationOutcome::Invalid(problems)
     }
 }
 
@@ -383,18 +474,18 @@ pub(crate) fn validate_personal_thumbnail_identity(
 pub fn validate_personal_failure_entry(
     bytes: &[u8],
     original: &ReadableOriginalIdentity,
-) -> ValidationOutcome {
+) -> PersonalValidationOutcome {
     validate_personal_failure_entry_identity(bytes, original.identity())
 }
 
 pub(crate) fn validate_personal_failure_entry_identity(
     bytes: &[u8],
     original: &OriginalIdentity,
-) -> ValidationOutcome {
-    let parsed = match ParsedThumbnailPng::parse(bytes) {
+) -> PersonalValidationOutcome {
+    let parsed = match parse_thumbnail_for_validation(bytes) {
         Ok(parsed) => parsed,
-        Err(_) => {
-            return ValidationOutcome::Invalid(vec![CacheEntryProblem::InvalidPngStructure]);
+        Err(problem) => {
+            return PersonalValidationOutcome::Invalid(vec![problem]);
         }
     };
 
@@ -402,9 +493,9 @@ pub(crate) fn validate_personal_failure_entry_identity(
     compare_personal_metadata(&mut problems, parsed.metadata(), original);
 
     if problems.is_empty() {
-        ValidationOutcome::FullyVerified
+        PersonalValidationOutcome::FullyVerified
     } else {
-        ValidationOutcome::Invalid(problems)
+        PersonalValidationOutcome::Invalid(problems)
     }
 }
 
@@ -416,11 +507,11 @@ pub fn validate_shared_thumbnail(
     mtime: Option<UnixMTimeSeconds>,
     original_size: Option<u64>,
     size: ThumbnailSize,
-) -> ValidationOutcome {
-    let parsed = match ParsedThumbnailPng::parse(bytes) {
+) -> SharedValidationOutcome {
+    let parsed = match parse_thumbnail_for_validation(bytes) {
         Ok(parsed) => parsed,
-        Err(_) => {
-            return ValidationOutcome::Invalid(vec![CacheEntryProblem::InvalidPngStructure]);
+        Err(problem) => {
+            return SharedValidationOutcome::Invalid(vec![problem]);
         }
     };
 
@@ -430,7 +521,7 @@ pub fn validate_shared_thumbnail(
 
     match metadata.thumb_uri() {
         Some(uri) if uri == context.shared_uri().as_str() => {}
-        Some(uri) if SharedRelativeThumbnailUri::parse(uri).is_err() => {
+        Some(uri) if SharedRelativeOriginalUri::parse(uri).is_err() => {
             push_problem(&mut problems, CacheEntryProblem::InvalidMetadataSyntax);
         }
         Some(_) => push_problem(&mut problems, CacheEntryProblem::StaleMetadata),
@@ -448,11 +539,11 @@ pub fn validate_shared_thumbnail(
     compare_optional_size(&mut problems, metadata, original_size);
 
     if !problems.is_empty() {
-        ValidationOutcome::Invalid(problems)
+        SharedValidationOutcome::Invalid(problems)
     } else if incomplete {
-        ValidationOutcome::SharedMetadataIncomplete
+        SharedValidationOutcome::MetadataIncomplete
     } else {
-        ValidationOutcome::FullyVerified
+        SharedValidationOutcome::FullyVerified
     }
 }
 
@@ -550,20 +641,19 @@ fn normalized_personal_thumbnail_rgba_png(
     let metadata = thumbnail_metadata_pairs(original);
     let png = encode_rgba_png(image.width, image.height, &image.pixels, &metadata)?;
     match validate_personal_thumbnail_identity(&png, original, size) {
-        ValidationOutcome::FullyVerified => Ok(png),
-        ValidationOutcome::Invalid(problems) => Err(ThumbnailError::UnsupportedRenderedThumbnail(
-            rendered_validation_error(problems.as_slice()),
-        )),
-        ValidationOutcome::SharedMetadataIncomplete | ValidationOutcome::UncheckedInspection => {
+        PersonalValidationOutcome::FullyVerified => Ok(png),
+        PersonalValidationOutcome::Invalid(problems) => {
             Err(ThumbnailError::UnsupportedRenderedThumbnail(
-                "normalized thumbnail could not be verified",
+                rendered_validation_error(problems.as_slice()),
             ))
         }
     }
 }
 
 fn rendered_validation_error(problems: &[CacheEntryProblem]) -> &'static str {
-    if problems.contains(&CacheEntryProblem::DimensionsExceedNamespace) {
+    if problems.contains(&CacheEntryProblem::ResourceLimitExceeded) {
+        "resource limit exceeded"
+    } else if problems.contains(&CacheEntryProblem::DimensionsExceedNamespace) {
         "dimensions exceed namespace"
     } else if problems.contains(&CacheEntryProblem::NonconformingPngFormat) {
         "nonconforming final PNG"

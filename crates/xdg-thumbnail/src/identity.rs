@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::os::unix::ffi::OsStrExt;
 
 use crate::{
-    PersonalThumbnailUri, Result, SharedRelativeThumbnailUri, ThumbnailError, ThumbnailSize,
+    PersonalOriginalUri, Result, SharedRelativeOriginalUri, ThumbnailError, ThumbnailSize,
     validate_mime_type,
 };
 
@@ -54,7 +54,7 @@ impl fmt::Display for UnixMTimeSeconds {
 /// Original identity and freshness facts needed for validation and writes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OriginalIdentity {
-    uri: PersonalThumbnailUri,
+    uri: PersonalOriginalUri,
     mtime: UnixMTimeSeconds,
     size: Option<u64>,
     mime_type: Option<String>,
@@ -63,7 +63,7 @@ pub struct OriginalIdentity {
 impl OriginalIdentity {
     /// Creates an original identity from caller-confirmed facts without a MIME type.
     #[must_use]
-    pub fn new(uri: PersonalThumbnailUri, mtime: UnixMTimeSeconds, size: Option<u64>) -> Self {
+    pub fn new(uri: PersonalOriginalUri, mtime: UnixMTimeSeconds, size: Option<u64>) -> Self {
         Self {
             uri,
             mtime,
@@ -74,7 +74,7 @@ impl OriginalIdentity {
 
     /// Creates an original identity from caller-confirmed facts with a MIME type.
     pub fn with_mime_type(
-        uri: PersonalThumbnailUri,
+        uri: PersonalOriginalUri,
         mtime: UnixMTimeSeconds,
         size: Option<u64>,
         mime_type: impl Into<String>,
@@ -91,7 +91,7 @@ impl OriginalIdentity {
 
     /// Returns the canonical personal-cache URI.
     #[must_use]
-    pub fn uri(&self) -> &PersonalThumbnailUri {
+    pub fn uri(&self) -> &PersonalOriginalUri {
         &self.uri
     }
 
@@ -123,7 +123,7 @@ pub struct ReadableOriginalIdentity {
 impl ReadableOriginalIdentity {
     /// Marks caller-confirmed original identity facts as readable.
     #[must_use]
-    pub const fn new(identity: OriginalIdentity) -> Self {
+    pub const fn from_confirmed_readable_identity(identity: OriginalIdentity) -> Self {
         Self { identity }
     }
 
@@ -152,7 +152,7 @@ impl ReadableOriginalIdentity {
             context: "read original metadata",
             source,
         })?;
-        let uri = PersonalThumbnailUri::from_absolute_path_bytes(path.as_os_str().as_bytes())?;
+        let uri = PersonalOriginalUri::from_absolute_path_bytes(path.as_os_str().as_bytes())?;
         let mtime = UnixMTimeSeconds::from_system_time(metadata.modified().map_err(|source| {
             ThumbnailError::Io {
                 context: "read original modification time",
@@ -194,7 +194,7 @@ impl ReadableOriginalIdentity {
 pub struct SharedRepositoryContext {
     repository_root: PathBuf,
     original_child_name: OsString,
-    shared_uri: SharedRelativeThumbnailUri,
+    shared_uri: SharedRelativeOriginalUri,
 }
 
 impl SharedRepositoryContext {
@@ -208,7 +208,7 @@ impl SharedRepositoryContext {
             ));
         }
         let shared_uri =
-            SharedRelativeThumbnailUri::from_raw_child_name(original_child_name.as_bytes())?;
+            SharedRelativeOriginalUri::from_raw_child_name(original_child_name.as_bytes())?;
         Ok(Self {
             repository_root: repository_root.to_owned(),
             original_child_name: original_child_name.to_owned(),
@@ -236,7 +236,7 @@ impl SharedRepositoryContext {
 
     /// Returns the shared URI used for hashing and optional metadata comparison.
     #[must_use]
-    pub const fn shared_uri(&self) -> &SharedRelativeThumbnailUri {
+    pub const fn shared_uri(&self) -> &SharedRelativeOriginalUri {
         &self.shared_uri
     }
 

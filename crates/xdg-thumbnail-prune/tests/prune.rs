@@ -5,7 +5,7 @@ use assert_cmd::Command;
 use serde_json::Value;
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    CacheNamespace, CacheRoot, FailureNamespace, OriginalIdentity, PersonalThumbnailUri,
+    CacheNamespace, CacheRoot, FailureNamespace, OriginalIdentity, PersonalOriginalUri,
     ReadableOriginalIdentity, ThumbnailSize, UnixMTimeSeconds,
 };
 
@@ -344,9 +344,9 @@ impl Fixture {
 
     fn install_for_missing_original(&self) -> std::path::PathBuf {
         let root = CacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
-        let original = ReadableOriginalIdentity::new(
+        let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
             OriginalIdentity::with_mime_type(
-                PersonalThumbnailUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-missing.png")
+                PersonalOriginalUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-missing.png")
                     .unwrap(),
                 UnixMTimeSeconds::new(42),
                 Some(12),
@@ -365,7 +365,7 @@ impl Fixture {
     fn install_nonconforming_for_missing_original(&self) -> std::path::PathBuf {
         let root = CacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
         let original = OriginalIdentity::with_mime_type(
-            PersonalThumbnailUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-huge-missing.png")
+            PersonalOriginalUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-huge-missing.png")
                 .unwrap(),
             UnixMTimeSeconds::new(42),
             Some(12),
@@ -381,12 +381,12 @@ impl Fixture {
     fn install_stale_failure_entry(&self) -> std::path::PathBuf {
         let original_path = self.home.path().join("original.png");
         std::fs::write(&original_path, b"new original").unwrap();
-        let uri = PersonalThumbnailUri::from_absolute_path_bytes(
+        let uri = PersonalOriginalUri::from_absolute_path_bytes(
             original_path.as_os_str().as_encoded_bytes(),
         )
         .unwrap();
         let root = CacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
-        let original = ReadableOriginalIdentity::new(
+        let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
             OriginalIdentity::with_mime_type(uri, UnixMTimeSeconds::new(1), Some(1), "image/png")
                 .unwrap(),
         );
@@ -401,9 +401,9 @@ impl Fixture {
 
     fn install_uri_filename_mismatch(&self) -> std::path::PathBuf {
         let root = CacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
-        let original = ReadableOriginalIdentity::new(
+        let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
             OriginalIdentity::with_mime_type(
-                PersonalThumbnailUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-photo.png")
+                PersonalOriginalUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-photo.png")
                     .unwrap(),
                 UnixMTimeSeconds::new(42),
                 Some(12),
@@ -415,8 +415,7 @@ impl Fixture {
             .install_personal_thumbnail_payload(&original, ThumbnailSize::Normal, &rendered_png())
             .unwrap();
         let wrong_uri =
-            PersonalThumbnailUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-other.png")
-                .unwrap();
+            PersonalOriginalUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-other.png").unwrap();
         let mismatched =
             root.personal_path(&wrong_uri, &CacheNamespace::Size(ThumbnailSize::Normal));
         std::fs::rename(installed.path(), &mismatched).unwrap();
@@ -426,11 +425,11 @@ impl Fixture {
     fn install_stale_local_thumbnail(&self) -> std::path::PathBuf {
         let original_path = self.home.path().join("stale-original.png");
         std::fs::write(&original_path, b"current original").unwrap();
-        let uri = PersonalThumbnailUri::from_absolute_path_bytes(
+        let uri = PersonalOriginalUri::from_absolute_path_bytes(
             original_path.as_os_str().as_encoded_bytes(),
         )
         .unwrap();
-        let original = ReadableOriginalIdentity::new(
+        let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
             OriginalIdentity::with_mime_type(uri, UnixMTimeSeconds::new(1), Some(1), "image/png")
                 .unwrap(),
         );
@@ -447,12 +446,12 @@ impl Fixture {
         let original_path = self.home.path().join("original.png");
         std::fs::write(&original_path, b"original").unwrap();
         let metadata = std::fs::metadata(&original_path).unwrap();
-        let uri = PersonalThumbnailUri::from_absolute_path_bytes(
+        let uri = PersonalOriginalUri::from_absolute_path_bytes(
             original_path.as_os_str().as_encoded_bytes(),
         )
         .unwrap();
         let mtime = UnixMTimeSeconds::from_system_time(metadata.modified().unwrap()).unwrap();
-        let original = ReadableOriginalIdentity::new(
+        let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
             OriginalIdentity::with_mime_type(uri, mtime, Some(metadata.len()), "image/png")
                 .unwrap(),
         );

@@ -7,11 +7,11 @@ use crate::{Result, ThumbnailError};
 
 /// A canonical absolute URI identity for entries in the personal thumbnail cache.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct PersonalThumbnailUri {
+pub struct PersonalOriginalUri {
     value: String,
 }
 
-impl PersonalThumbnailUri {
+impl PersonalOriginalUri {
     /// Constructs a canonical `file:///` URI from absolute Unix path bytes.
     ///
     /// This constructor performs byte-level percent-encoding and never expands
@@ -112,7 +112,7 @@ impl PersonalThumbnailUri {
     }
 }
 
-impl fmt::Display for PersonalThumbnailUri {
+impl fmt::Display for PersonalOriginalUri {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.value)
     }
@@ -120,11 +120,11 @@ impl fmt::Display for PersonalThumbnailUri {
 
 /// A canonical `./`-prefixed URI identity for direct children in shared repositories.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SharedRelativeThumbnailUri {
+pub struct SharedRelativeOriginalUri {
     value: String,
 }
 
-impl SharedRelativeThumbnailUri {
+impl SharedRelativeOriginalUri {
     /// Constructs a shared URI from one raw direct child filename.
     pub fn from_raw_child_name(name: &[u8]) -> Result<Self> {
         validate_raw_shared_child_name(name)?;
@@ -174,7 +174,7 @@ impl SharedRelativeThumbnailUri {
     }
 }
 
-impl fmt::Display for SharedRelativeThumbnailUri {
+impl fmt::Display for SharedRelativeOriginalUri {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.value)
     }

@@ -13,7 +13,7 @@ use base64::Engine;
 use clap::{CommandFactory, Parser, ValueEnum};
 use serde::Serialize;
 use xdg_thumbnail::{
-    CacheNamespace, CacheRoot, PersonalThumbnailUri, ReadableOriginalIdentity, ThumbnailError,
+    CacheNamespace, CacheRoot, PersonalOriginalUri, ReadableOriginalIdentity, ThumbnailError,
     ThumbnailLookup, ThumbnailSize,
 };
 
@@ -1350,7 +1350,7 @@ fn add_system_binds(command: &mut ProcessCommand) {
 
 fn thumbnailer_uri(sandbox: SandboxArg, host_uri: &str) -> String {
     if sandbox == SandboxArg::Required {
-        PersonalThumbnailUri::from_absolute_path_bytes(b"/run/xdg-thumbnail/input")
+        PersonalOriginalUri::from_absolute_path_bytes(b"/run/xdg-thumbnail/input")
             .map(|uri| uri.as_str().to_owned())
             .unwrap_or_else(|_| host_uri.to_owned())
     } else {

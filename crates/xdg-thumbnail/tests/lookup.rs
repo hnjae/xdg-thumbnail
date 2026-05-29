@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use std::collections::BTreeMap;
+use std::os::unix::fs::symlink;
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    CacheEntryProblem, CacheNamespace, CacheRoot, OriginalIdentity, PersonalThumbnailUri,
+    CacheEntryProblem, CacheNamespace, CacheRoot, OriginalIdentity, PersonalOriginalUri,
     ReadableOriginalIdentity, ThumbnailLookup, ThumbnailSize, UnixMTimeSeconds,
 };
 
@@ -80,10 +81,46 @@ fn validated_payload_lookup_returns_exact_validated_png_bytes() {
     }
 }
 
+#[test]
+fn validated_lookup_rejects_symlink_and_non_regular_entries() {
+    let temp = TempDir::new().unwrap();
+    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = original_identity(42);
+    let path = root.personal_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::Normal),
+    );
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let outside = temp.path().join("outside.png");
+    std::fs::write(&outside, png_with_metadata(metadata("42"))).unwrap();
+    symlink(&outside, &path).unwrap();
+
+    assert_unreadable_lookup(
+        root.validated_personal_payload(&original, ThumbnailSize::Normal)
+            .unwrap(),
+    );
+
+    std::fs::remove_file(&path).unwrap();
+    std::fs::create_dir(&path).unwrap();
+    assert_unreadable_lookup(
+        root.validated_personal_path(&original, ThumbnailSize::Normal)
+            .unwrap(),
+    );
+}
+
+fn assert_unreadable_lookup<T: std::fmt::Debug>(lookup: ThumbnailLookup<T>) {
+    match lookup {
+        ThumbnailLookup::Invalid(problems) => {
+            assert_eq!(problems, vec![CacheEntryProblem::UnreadableEntry]);
+        }
+        other => panic!("expected unreadable invalid lookup, got {other:?}"),
+    }
+}
+
 fn original_identity(mtime: i64) -> ReadableOriginalIdentity {
-    ReadableOriginalIdentity::new(
+    ReadableOriginalIdentity::from_confirmed_readable_identity(
         OriginalIdentity::with_mime_type(
-            PersonalThumbnailUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
+            PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             UnixMTimeSeconds::new(mtime),
             Some(12),
             "image/png",

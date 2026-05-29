@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::symlink;
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
@@ -131,6 +132,53 @@ fn shared_inspection_reports_read_only_facts_without_removal_handle() {
             .and_then(|metadata| metadata.thumb_uri()),
         Some("./picture.png")
     );
+}
+
+#[test]
+fn shared_validated_lookup_rejects_symlink_and_non_regular_entries() {
+    let temp = TempDir::new().unwrap();
+    let context =
+        SharedRepositoryContext::new(temp.path(), OsStr::from_bytes(b"picture.png")).unwrap();
+    let path = context.thumbnail_path(ThumbnailSize::Normal);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let outside = temp.path().join("outside.png");
+    std::fs::write(
+        &outside,
+        shared_png(metadata("./picture.png", Some("42"), Some("12"))),
+    )
+    .unwrap();
+    symlink(&outside, &path).unwrap();
+
+    assert_unreadable_shared_lookup(
+        context
+            .validated_thumbnail_payload(
+                Some(UnixMTimeSeconds::new(42)),
+                Some(12),
+                ThumbnailSize::Normal,
+            )
+            .unwrap(),
+    );
+
+    std::fs::remove_file(&path).unwrap();
+    std::fs::create_dir(&path).unwrap();
+    assert_unreadable_shared_lookup(
+        context
+            .validated_thumbnail_path(
+                Some(UnixMTimeSeconds::new(42)),
+                Some(12),
+                ThumbnailSize::Normal,
+            )
+            .unwrap(),
+    );
+}
+
+fn assert_unreadable_shared_lookup<T: std::fmt::Debug>(lookup: SharedThumbnailLookup<T>) {
+    match lookup {
+        SharedThumbnailLookup::Invalid(problems) => {
+            assert_eq!(problems, vec![CacheEntryProblem::UnreadableEntry]);
+        }
+        other => panic!("expected unreadable invalid shared lookup, got {other:?}"),
+    }
 }
 
 fn metadata(
