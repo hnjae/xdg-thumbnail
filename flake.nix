@@ -1,0 +1,96 @@
+# SPDX-FileCopyrightText: 2026 KIM Hyunjae
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+{
+  description = "Freedesktop thumbnail cache tools and library";
+
+  inputs = {
+    crane.url = "github:ipetkov/crane";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  };
+
+  outputs =
+    {
+      crane,
+      nixpkgs,
+      ...
+    }:
+    let
+      lib = nixpkgs.lib;
+      systems = [
+        "aarch64-darwin"
+        "aarch64-linux"
+        "x86_64-linux"
+      ];
+      forAllSystems = lib.genAttrs systems;
+      perSystem = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          craneLib = crane.mkLib pkgs;
+          src = craneLib.cleanCargoSource ./.;
+
+          commonArgs = {
+            pname = "xdg-thumbnail";
+            version = "0.1.0";
+
+            inherit src;
+
+            cargoExtraArgs = "--locked --workspace --all-features";
+            strictDeps = true;
+
+            meta = {
+              description = "Freedesktop thumbnail cache tools and library";
+              homepage = "https://github.com/hnjae/xdg-thumbnail";
+              license = [
+                lib.licenses.agpl3Plus
+                lib.licenses.mpl20
+              ];
+              mainProgram = "xdg-thumbnail-generate";
+              platforms = lib.platforms.unix;
+            };
+          };
+
+          cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+
+          lintAndTest = craneLib.mkCargoDerivation (
+            commonArgs
+            // {
+              pname = "xdg-thumbnail-lint-and-test";
+              inherit cargoArtifacts;
+
+              nativeBuildInputs = [
+                pkgs.clippy
+              ];
+
+              buildPhaseCargoCommand = ''
+                cargo clippy --profile release --locked --workspace --all-targets --all-features -- -D warnings
+                cargo test --profile release --locked --workspace --all-features
+              '';
+
+              installPhaseCommand = "mkdir -p $out";
+            }
+          );
+
+          package = craneLib.buildPackage (
+            commonArgs
+            // {
+              cargoArtifacts = lintAndTest;
+              doCheck = false;
+            }
+          );
+        in
+        {
+          checks.default = package;
+          packages = {
+            default = package;
+            xdg-thumbnail = package;
+          };
+        }
+      );
+    in
+    {
+      checks = forAllSystems (system: perSystem.${system}.checks);
+      packages = forAllSystems (system: perSystem.${system}.packages);
+    };
+}

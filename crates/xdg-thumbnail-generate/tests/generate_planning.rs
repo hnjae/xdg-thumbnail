@@ -17,7 +17,7 @@ use std::os::unix::fs::PermissionsExt;
 fn dry_run_reports_selected_thumbnailer_and_target_cache_path() {
     let fixture = Fixture::new();
     let input = fixture.write_png_input("photo.png");
-    fixture.write_thumbnailer("test.thumbnailer", "/bin/true %i %o %s", "image/png;");
+    fixture.write_thumbnailer("test.thumbnailer", "true %i %o %s", "image/png;");
 
     let records = fixture.run_jsonl([
         "--dry-run",
@@ -48,7 +48,7 @@ fn dry_run_keeps_existing_valid_thumbnail_unless_forced() {
     let fixture = Fixture::new();
     let input = fixture.write_png_input("existing.png");
     fixture.install_existing_thumbnail(&input);
-    fixture.write_thumbnailer("test.thumbnailer", "/bin/true %i %o %s", "image/png;");
+    fixture.write_thumbnailer("test.thumbnailer", "true %i %o %s", "image/png;");
 
     let records = fixture.run_jsonl([
         "--dry-run",
@@ -142,7 +142,7 @@ fn matching_invalid_thumbnailer_with_valid_match_emits_warning() {
     let fixture = Fixture::new();
     let input = fixture.write_png_input("photo.png");
     fixture.write_invalid_thumbnailer("broken.thumbnailer", "image/png;");
-    fixture.write_thumbnailer("valid.thumbnailer", "/bin/true %i %o %s", "image/png;");
+    fixture.write_thumbnailer("valid.thumbnailer", "true %i %o %s", "image/png;");
 
     let records = fixture.run_jsonl([
         "--dry-run",
@@ -167,7 +167,7 @@ fn unrelated_invalid_thumbnailer_discovery_emits_warning() {
     let fixture = Fixture::new();
     let input = fixture.write_png_input("photo.png");
     fixture.write_raw_thumbnailer("unrelated.thumbnailer", "[Desktop Entry]\nName=Broken\n");
-    fixture.write_thumbnailer("valid.thumbnailer", "/bin/true %i %o %s", "image/png;");
+    fixture.write_thumbnailer("valid.thumbnailer", "true %i %o %s", "image/png;");
 
     let records = fixture.run_jsonl([
         "--dry-run",
@@ -191,7 +191,7 @@ fn unrelated_invalid_thumbnailer_discovery_emits_warning() {
 fn thumbnailer_matching_accepts_mime_supertypes() {
     let fixture = Fixture::new();
     let input = fixture.write_png_input("photo.png");
-    fixture.write_thumbnailer("image.thumbnailer", "/bin/true %i %o %s", "image/*;");
+    fixture.write_thumbnailer("image.thumbnailer", "true %i %o %s", "image/*;");
 
     let records = fixture.run_jsonl([
         "--dry-run",
@@ -212,7 +212,7 @@ fn required_sandbox_reports_backend_probe_failure_before_execution() {
     let fixture = Fixture::new();
     fixture.write_executable("bwrap", "#!/bin/sh\nexit 99\n");
     let input = fixture.write_png_input("photo.png");
-    fixture.write_thumbnailer("valid.thumbnailer", "/bin/true %i %o %s", "image/png;");
+    fixture.write_thumbnailer("valid.thumbnailer", "true %i %o %s", "image/png;");
 
     let records = fixture.run_jsonl_code(
         ["--dry-run", "--format", "jsonl", input.to_str().unwrap()],
@@ -259,7 +259,7 @@ fn required_sandbox_rejects_literal_user_host_paths_before_execution() {
     let helper = fixture.write_executable("user-helper", "#!/bin/sh\nexit 0\n");
     fixture.write_thumbnailer(
         "host-path.thumbnailer",
-        &format!("/bin/true {} %i %o %s", helper.display()),
+        &format!("true {} %i %o %s", helper.display()),
         "image/png;",
     );
 

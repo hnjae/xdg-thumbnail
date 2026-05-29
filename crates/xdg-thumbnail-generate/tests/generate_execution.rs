@@ -80,7 +80,7 @@ fn required_sandbox_execution_failures_report_sandbox_applied() {
     let fixture = Fixture::new();
     fixture.write_script("bwrap", "#!/bin/sh\nexit 0\n");
     let input = fixture.write_png_input("sandboxed.png");
-    fixture.write_thumbnailer("missing.thumbnailer", "/bin/true %i %o %s", "image/png;");
+    fixture.write_thumbnailer("missing.thumbnailer", "true %i %o %s", "image/png;");
 
     let output = fixture
         .command(["--format", "jsonl", input.to_str().unwrap()])
