@@ -17,7 +17,7 @@ fn inspection_iterates_standard_entries_and_reports_facts() {
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let installed = root
-        .install_personal_thumbnail_png_bytes(
+        .install_thumbnail_png_bytes(
             &original,
             ThumbnailSize::Normal,
             &png_without_metadata(2, 1),
@@ -172,7 +172,7 @@ fn cache_entry_handles_remove_files_without_following_symlinks() {
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let installed = root
-        .install_personal_thumbnail_png_bytes(
+        .install_thumbnail_png_bytes(
             &original,
             ThumbnailSize::Normal,
             &png_without_metadata(2, 1),

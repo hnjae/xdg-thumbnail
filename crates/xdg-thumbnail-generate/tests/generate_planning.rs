@@ -438,7 +438,7 @@ impl Fixture {
         );
         PersonalCacheRoot::new(self.cache_home.path().join("thumbnails"))
             .unwrap()
-            .install_personal_thumbnail_png_bytes(&original, ThumbnailSize::Normal, &rendered_png())
+            .install_thumbnail_png_bytes(&original, ThumbnailSize::Normal, &rendered_png())
             .unwrap();
     }
 }

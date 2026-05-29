@@ -244,8 +244,12 @@ impl SharedRepositoryContext {
     ///
     /// Returns an error when `repository_root` is not absolute or `original_child_name` cannot be
     /// represented as a shared direct-child URI identity.
-    pub fn new(repository_root: impl AsRef<Path>, original_child_name: &OsStr) -> Result<Self> {
+    pub fn new(
+        repository_root: impl AsRef<Path>,
+        original_child_name: impl AsRef<OsStr>,
+    ) -> Result<Self> {
         let repository_root = repository_root.as_ref();
+        let original_child_name = original_child_name.as_ref();
         if !repository_root.is_absolute() {
             return Err(ThumbnailError::CacheRootUnavailable(
                 "shared repository root must be absolute",

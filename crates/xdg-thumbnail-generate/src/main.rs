@@ -1042,7 +1042,7 @@ fn execute_thumbnailer(
             sandbox_applied,
         ));
     }
-    root.install_personal_thumbnail_path(original, size, &rendered)
+    root.install_thumbnail_path(original, size, &rendered)
         .map(|_| ())
         .map_err(|error| {
             ExecutionError::with_sandbox(

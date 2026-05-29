@@ -354,12 +354,8 @@ impl Fixture {
             )
             .unwrap(),
         );
-        root.install_personal_thumbnail_png_bytes(
-            &original,
-            ThumbnailSize::Normal,
-            &rendered_png(),
-        )
-        .unwrap();
+        root.install_thumbnail_png_bytes(&original, ThumbnailSize::Normal, &rendered_png())
+            .unwrap();
         root.cache_entry_path(
             original.identity().uri(),
             &CacheNamespace::Size(ThumbnailSize::Normal),
@@ -417,7 +413,7 @@ impl Fixture {
             .unwrap(),
         );
         let installed = root
-            .install_personal_thumbnail_png_bytes(&original, ThumbnailSize::Normal, &rendered_png())
+            .install_thumbnail_png_bytes(&original, ThumbnailSize::Normal, &rendered_png())
             .unwrap();
         let wrong_uri =
             PersonalOriginalUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-other.png").unwrap();
@@ -439,12 +435,8 @@ impl Fixture {
                 .unwrap(),
         );
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
-        root.install_personal_thumbnail_png_bytes(
-            &original,
-            ThumbnailSize::Normal,
-            &rendered_png(),
-        )
-        .unwrap();
+        root.install_thumbnail_png_bytes(&original, ThumbnailSize::Normal, &rendered_png())
+            .unwrap();
         root.cache_entry_path(
             original.identity().uri(),
             &CacheNamespace::Size(ThumbnailSize::Normal),
@@ -465,12 +457,8 @@ impl Fixture {
                 .unwrap(),
         );
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
-        root.install_personal_thumbnail_png_bytes(
-            &original,
-            ThumbnailSize::Normal,
-            &rendered_png(),
-        )
-        .unwrap();
+        root.install_thumbnail_png_bytes(&original, ThumbnailSize::Normal, &rendered_png())
+            .unwrap();
         root.cache_entry_path(
             original.identity().uri(),
             &CacheNamespace::Size(ThumbnailSize::Normal),

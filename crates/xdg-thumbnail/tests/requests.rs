@@ -141,7 +141,7 @@ fn personal_install_request_matches_borrowed_install_and_normalizes() {
 
     let request_install = run_blocking_style(move || request.install_png_bytes()).unwrap();
     let borrowed_install = root
-        .install_personal_thumbnail_png_bytes(&original, ThumbnailSize::Normal, &rendered)
+        .install_thumbnail_png_bytes(&original, ThumbnailSize::Normal, &rendered)
         .unwrap();
 
     assert_eq!(request_install, borrowed_install);
@@ -185,8 +185,16 @@ fn personal_raw_install_request_matches_borrowed_install_and_normalizes() {
     assert_eq!(owned_image.stride(), stride as usize);
     assert_eq!(owned_image.format(), RawThumbnailPixelFormat::Rgb8);
     assert_eq!(owned_image.pixels(), pixels.as_slice());
+    let owned_image_for_parts = OwnedRawThumbnailImage::new(
+        width,
+        height,
+        stride as usize,
+        RawThumbnailPixelFormat::Rgb8,
+        pixels.clone(),
+    )
+    .unwrap();
     assert_eq!(
-        owned_image.clone().into_parts(),
+        owned_image_for_parts.into_parts(),
         (
             width,
             height,
@@ -212,7 +220,7 @@ fn personal_raw_install_request_matches_borrowed_install_and_normalizes() {
     )
     .unwrap();
     let borrowed_install = root
-        .install_personal_thumbnail_raw_png_bytes(&original, ThumbnailSize::Normal, borrowed_image)
+        .install_thumbnail_raw_png_bytes(&original, ThumbnailSize::Normal, borrowed_image)
         .unwrap();
 
     assert_eq!(request_install, borrowed_install);
@@ -261,11 +269,7 @@ fn personal_raw_install_request_matches_borrowed_install_and_normalizes() {
     assert_eq!(parts_original, original);
     assert_eq!(parts_size, ThumbnailSize::Large);
     let installed_from_parts = parts_root
-        .install_personal_thumbnail_raw_png_bytes(
-            &parts_original,
-            parts_size,
-            parts_image.as_borrowed(),
-        )
+        .install_thumbnail_raw_png_bytes(&parts_original, parts_size, parts_image.as_borrowed())
         .unwrap();
     assert!(installed_from_parts.path().exists());
 }
@@ -307,7 +311,7 @@ fn personal_inspection_request_owns_size_vector() {
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let installed = root
-        .install_personal_thumbnail_png_bytes(
+        .install_thumbnail_png_bytes(
             &original,
             ThumbnailSize::Normal,
             &png_without_metadata(2, 1, png::ColorType::Rgba),

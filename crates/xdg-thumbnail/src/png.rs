@@ -101,7 +101,7 @@ impl<'a> RawThumbnailImage<'a> {
 }
 
 /// Owned raw rendered thumbnail pixels.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct OwnedRawThumbnailImage {
     width: u32,
     height: u32,
