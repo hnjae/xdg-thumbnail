@@ -128,7 +128,6 @@ impl CacheRoot {
             })),
             ThumbnailLookup::Missing => Ok(ThumbnailLookup::Missing),
             ThumbnailLookup::Invalid(problems) => Ok(ThumbnailLookup::Invalid(problems)),
-            ThumbnailLookup::Unverifiable(problems) => Ok(ThumbnailLookup::Unverifiable(problems)),
         }
     }
 
@@ -150,7 +149,6 @@ impl CacheRoot {
             }
             ThumbnailLookup::Missing => Ok(ThumbnailLookup::Missing),
             ThumbnailLookup::Invalid(problems) => Ok(ThumbnailLookup::Invalid(problems)),
-            ThumbnailLookup::Unverifiable(problems) => Ok(ThumbnailLookup::Unverifiable(problems)),
         }
     }
 
@@ -1045,8 +1043,9 @@ struct ValidatedSharedEntry {
     metadata: ThumbnailMetadata,
 }
 
-/// Result of a validated thumbnail cache lookup.
+/// Result of a validated personal thumbnail cache lookup.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ThumbnailLookup<T> {
     /// The cache entry exists and passed validation.
     Valid(T),
@@ -1054,12 +1053,11 @@ pub enum ThumbnailLookup<T> {
     Missing,
     /// The cache entry exists but is invalid for the requested context.
     Invalid(Vec<CacheEntryProblem>),
-    /// The original could not be verified, so no existing cache entry is display-valid.
-    Unverifiable(Vec<CacheEntryProblem>),
 }
 
 /// Result of a validated shared thumbnail repository lookup.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum SharedThumbnailLookup<T> {
     /// The cache entry exists and required metadata and PNG constraints are fully verified.
     FullyVerified(T),
@@ -1075,6 +1073,7 @@ pub enum SharedThumbnailLookup<T> {
 
 /// Validation state for a shared cache entry inspection.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum SharedCacheEntryOutcome {
     /// Required metadata and PNG constraints are fully verified.
     FullyVerified,

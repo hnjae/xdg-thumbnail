@@ -138,6 +138,7 @@ impl OwnedRawThumbnailImage {
 
 /// Policy-neutral problem found while validating or inspecting a cache entry.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
 pub enum CacheEntryProblem {
     /// The original local file is missing.
     OriginalMissing,
@@ -169,6 +170,7 @@ pub enum CacheEntryProblem {
 
 /// Validation confidence and validity for a personal-cache entry.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum PersonalValidationOutcome {
     /// Required metadata and PNG constraints are fully verified.
     FullyVerified,
@@ -178,6 +180,7 @@ pub enum PersonalValidationOutcome {
 
 /// Validation confidence and validity for a shared-repository entry.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum SharedValidationOutcome {
     /// Required metadata and PNG constraints are fully verified.
     FullyVerified,

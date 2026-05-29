@@ -330,11 +330,8 @@ fn plan_one(
                 summary.kept += 1;
                 return record;
             }
-            Ok(
-                ThumbnailLookup::Missing
-                | ThumbnailLookup::Invalid(_)
-                | ThumbnailLookup::Unverifiable(_),
-            ) => {}
+            Ok(ThumbnailLookup::Missing | ThumbnailLookup::Invalid(_)) => {}
+            Ok(_) => {}
             Err(error) => {
                 record.decision = "skip";
                 record.reason = "cache-install-failed";

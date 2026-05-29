@@ -91,15 +91,15 @@ let computed_path = cache.thumbnail_path(&uri, CacheNamespace::Size(ThumbnailSiz
 match cache.read_valid_thumbnail(&identity, ThumbnailSize::Normal)? {
     ThumbnailLookup::Valid(thumbnail) => return Ok(Some(thumbnail)),
     ThumbnailLookup::Missing | ThumbnailLookup::Invalid(_) => {}
-    ThumbnailLookup::Unverifiable(_) => return Ok(None),
 }
 
 let shared = SharedRepositoryContext::for_direct_child(path)?;
 let shared_policy = SharedLookupPolicy::RequireFreshnessMetadata;
 match cache.read_valid_shared_thumbnail(&shared, &identity, shared_policy)? {
-    ThumbnailLookup::Valid(thumbnail) => return Ok(Some(thumbnail)),
-    ThumbnailLookup::Missing | ThumbnailLookup::Invalid(_) => {}
-    ThumbnailLookup::Unverifiable(_) => return Ok(None),
+    SharedThumbnailLookup::FullyVerified(thumbnail) => return Ok(Some(thumbnail)),
+    SharedThumbnailLookup::MetadataIncomplete(_) => {}
+    SharedThumbnailLookup::Missing | SharedThumbnailLookup::Invalid(_) => {}
+    SharedThumbnailLookup::Unverifiable(_) => return Ok(None),
 }
 
 Ok(None)
