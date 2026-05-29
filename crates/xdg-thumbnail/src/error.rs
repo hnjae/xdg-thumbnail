@@ -13,9 +13,6 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum ThumbnailError {
-    /// The requested operation depends on Unix path byte semantics.
-    #[error("operation is unsupported on this platform")]
-    UnsupportedPlatform,
     /// A URI or filename input is not valid for the requested thumbnail context.
     #[error("invalid thumbnail URI identity: {0}")]
     InvalidUriIdentity(&'static str),

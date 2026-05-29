@@ -62,14 +62,27 @@
 //! }
 //! ```
 
+#[cfg(not(unix))]
+compile_error!(
+    "xdg-thumbnail supports Unix-like targets only because thumbnail identity and cache safety depend on Unix path bytes, metadata, and permissions"
+);
+
+#[cfg(unix)]
 mod cache;
+#[cfg(unix)]
 mod error;
+#[cfg(unix)]
 mod identity;
+#[cfg(unix)]
 mod inspection;
+#[cfg(unix)]
 mod namespace;
+#[cfg(unix)]
 mod png;
+#[cfg(unix)]
 mod uri;
 
+#[cfg(unix)]
 pub use cache::{
     FailureEntryWriteRequest, InstalledThumbnailBytes, InstalledThumbnailPath, PersonalCacheRoot,
     PersonalThumbnailInspectionRequest, PersonalThumbnailInstallRequest, PersonalThumbnailLookup,
@@ -78,23 +91,30 @@ pub use cache::{
     SharedThumbnailLookupRequest, SharedThumbnailMetadataPolicy, ThumbnailBytesLookupEntry,
     ThumbnailPathLookupEntry,
 };
+#[cfg(unix)]
 pub use error::{Result, ThumbnailError};
+#[cfg(unix)]
 pub use identity::{
     OriginalIdentity, ReadableOriginalIdentity, SharedRepositoryContext, UnixMTimeSeconds,
 };
+#[cfg(unix)]
 pub use inspection::{
     AccessTimePreservation, CacheEntryHandle, CacheEntryInspection, CacheEntryInspectionOutcome,
     OriginalUriIdentity, ThumbnailTimestamps,
 };
+#[cfg(unix)]
 pub use namespace::{CacheNamespace, FailureNamespace, ThumbnailSize};
+#[cfg(unix)]
 pub use png::{
     CacheEntryProblem, OwnedRawThumbnailImage, ParsedThumbnailPng, PersonalValidationOutcome,
     RawThumbnailImage, RawThumbnailPixelFormat, SharedValidationOutcome, ThumbnailMetadata,
     ThumbnailPngBitDepth, ThumbnailPngColorType, validate_personal_failure_entry,
     validate_personal_thumbnail, validate_shared_thumbnail,
 };
+#[cfg(unix)]
 pub use uri::{PersonalOriginalUri, SharedRelativeOriginalUri};
 
+#[cfg(unix)]
 pub(crate) use png::{
     encode_rgba_png, normalized_personal_thumbnail_png, normalized_personal_thumbnail_raw_png,
     push_problem, thumbnail_metadata_pairs, validate_mime_type,

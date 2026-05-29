@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use std::fmt;
+use std::os::unix::ffi::OsStrExt;
+use std::path::Path;
 
 use crate::{Result, ThumbnailError};
 
@@ -12,11 +14,18 @@ pub struct PersonalOriginalUri {
 }
 
 impl PersonalOriginalUri {
+    /// Constructs a canonical `file:///` URI from an absolute local path.
+    ///
+    /// This constructor preserves Unix path bytes, performs byte-level percent-encoding, and never
+    /// expands shell syntax or resolves symlinks.
+    pub fn from_absolute_path(path: impl AsRef<Path>) -> Result<Self> {
+        Self::from_absolute_path_bytes(path.as_ref().as_os_str().as_bytes())
+    }
+
     /// Constructs a canonical `file:///` URI from absolute Unix path bytes.
     ///
-    /// This constructor performs byte-level percent-encoding and never expands
-    /// shell syntax or resolves symlinks.
-    #[cfg(unix)]
+    /// This is the low-level byte-preserving constructor for callers that already have raw Unix
+    /// path bytes. Most callers should use [`Self::from_absolute_path`].
     pub fn from_absolute_path_bytes(path: &[u8]) -> Result<Self> {
         if !path.starts_with(b"/") {
             return Err(ThumbnailError::invalid_uri("local path must be absolute"));
@@ -30,12 +39,6 @@ impl PersonalOriginalUri {
         Ok(Self {
             value: format!("file://{}", encode_uri_path_bytes(path, true)),
         })
-    }
-
-    /// Constructs a canonical `file:///` URI from absolute Unix path bytes.
-    #[cfg(not(unix))]
-    pub fn from_absolute_path_bytes(_path: &[u8]) -> Result<Self> {
-        Err(ThumbnailError::UnsupportedPlatform)
     }
 
     /// Accepts textual local `file:` URI input and normalizes local file URI casing.

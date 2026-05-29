@@ -6,9 +6,7 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-#[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
-#[cfg(unix)]
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
 use crate::PersonalOriginalUri;
@@ -57,7 +55,6 @@ impl PersonalCacheRoot {
     ///
     /// Relative, unset, and blank `XDG_CACHE_HOME` values are ignored. `HOME`
     /// must be absolute when fallback is needed.
-    #[cfg(unix)]
     pub fn resolve_from_values(
         xdg_cache_home: Option<&OsStr>,
         home: Option<&OsStr>,
@@ -88,15 +85,6 @@ impl PersonalCacheRoot {
             ));
         }
         Self::new(home.join(".cache").join("thumbnails"))
-    }
-
-    /// Resolves the personal thumbnail cache root from supplied XDG values.
-    #[cfg(not(unix))]
-    pub fn resolve_from_values(
-        _xdg_cache_home: Option<&OsStr>,
-        _home: Option<&OsStr>,
-    ) -> Result<Self> {
-        Err(ThumbnailError::UnsupportedPlatform)
     }
 
     /// Returns the resolved thumbnail root path.
@@ -1003,7 +991,6 @@ enum CacheEntryRead {
     Bytes(Vec<u8>),
 }
 
-#[cfg(unix)]
 fn read_cache_entry_no_follow(path: &Path, context: &'static str) -> Result<CacheEntryRead> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
@@ -1048,23 +1035,6 @@ fn read_cache_entry_no_follow(path: &Path, context: &'static str) -> Result<Cach
     file.read_to_end(&mut bytes)
         .map_err(|source| ThumbnailError::Io { context, source })?;
     Ok(CacheEntryRead::Bytes(bytes))
-}
-
-#[cfg(not(unix))]
-fn read_cache_entry_no_follow(path: &Path, context: &'static str) -> Result<CacheEntryRead> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(CacheEntryRead::Missing);
-        }
-        Err(source) => return Err(ThumbnailError::Io { context, source }),
-    };
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
-        return Ok(CacheEntryRead::Unreadable);
-    }
-    fs::read(path)
-        .map(CacheEntryRead::Bytes)
-        .map_err(|source| ThumbnailError::Io { context, source })
 }
 
 fn shared_cache_entry_outcome(outcome: SharedValidationOutcome) -> SharedCacheEntryOutcome {
@@ -1120,6 +1090,7 @@ pub enum SharedThumbnailLookup<T> {
 
 /// Metadata acceptance policy for shared-repository thumbnail lookups.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
 pub enum SharedThumbnailMetadataPolicy {
     /// Require `Thumb::URI` and `Thumb::MTime` to be present and verified.
     RequireComplete,
@@ -1272,6 +1243,10 @@ impl InstalledThumbnailPath {
 }
 
 /// Bytes result of a successful personal-cache install or failure-entry write.
+///
+/// The returned bytes are the final PNG bytes published to the cache after metadata writing and
+/// normalization. Installation metadata is determined from the supplied original facts; callers
+/// that need to inspect the installed metadata can parse these bytes with [`ParsedThumbnailPng`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InstalledThumbnailBytes {
     path: PathBuf,
@@ -1298,7 +1273,6 @@ impl InstalledThumbnailBytes {
     }
 }
 
-#[cfg(unix)]
 fn ensure_private_directory(path: &Path) -> Result<()> {
     match fs::symlink_metadata(path) {
         Ok(metadata) => {
@@ -1335,9 +1309,4 @@ fn ensure_private_directory(path: &Path) -> Result<()> {
             source,
         }),
     }
-}
-
-#[cfg(not(unix))]
-fn ensure_private_directory(_path: &Path) -> Result<()> {
-    Err(ThumbnailError::UnsupportedPlatform)
 }

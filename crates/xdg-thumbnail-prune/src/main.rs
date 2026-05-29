@@ -778,6 +778,7 @@ fn successful_size(namespace: &CacheNamespace) -> Option<ThumbnailSize> {
     match namespace {
         CacheNamespace::Size(size) => Some(*size),
         CacheNamespace::Failure(_) => None,
+        _ => None,
     }
 }
 
@@ -805,6 +806,7 @@ fn access_preservation_name(value: AccessTimePreservation) -> &'static str {
         AccessTimePreservation::NotPreserved => "not-preserved",
         AccessTimePreservation::NotNeeded => "not-needed",
         AccessTimePreservation::Unsupported => "unsupported",
+        _ => "unknown",
     }
 }
 

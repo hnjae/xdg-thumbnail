@@ -8,6 +8,7 @@ use crate::{Result, ThumbnailError};
 
 /// A successful-thumbnail size namespace or a program failure namespace.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
 pub enum CacheNamespace {
     /// A successful thumbnail size directory.
     Size(ThumbnailSize),
@@ -74,6 +75,7 @@ impl fmt::Display for FailureNamespace {
 
 /// A standard Freedesktop thumbnail size directory.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
 pub enum ThumbnailSize {
     /// 128px thumbnail cache directory.
     Normal,

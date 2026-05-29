@@ -1,6 +1,10 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: MPL-2.0
 
+use std::ffi::OsStr;
+use std::os::unix::ffi::OsStrExt;
+use std::path::Path;
+
 use xdg_thumbnail::{PersonalOriginalUri, SharedRelativeOriginalUri};
 
 #[test]
@@ -50,9 +54,17 @@ fn local_path_vectors_match_freedesktop_compatibility_hashes() {
 
     for (path, expected_uri, expected_stem) in cases {
         let uri = PersonalOriginalUri::from_absolute_path_bytes(path).unwrap();
+        let uri_from_path =
+            PersonalOriginalUri::from_absolute_path(Path::new(OsStr::from_bytes(path))).unwrap();
         assert_eq!(uri.as_str(), *expected_uri);
+        assert_eq!(uri_from_path, uri);
         assert_eq!(uri.thumbnail_filename(), format!("{expected_stem}.png"));
     }
+}
+
+#[test]
+fn local_path_constructor_rejects_relative_paths() {
+    assert!(PersonalOriginalUri::from_absolute_path(Path::new("relative.png")).is_err());
 }
 
 #[test]

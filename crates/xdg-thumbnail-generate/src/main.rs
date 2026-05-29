@@ -635,7 +635,7 @@ fn readable_original_for_path(
     _path: &Path,
     _mime_type: Option<&str>,
 ) -> xdg_thumbnail::Result<ReadableOriginalIdentity> {
-    Err(xdg_thumbnail::ThumbnailError::UnsupportedPlatform)
+    unreachable!("xdg-thumbnail rejects non-Unix targets at compile time")
 }
 
 fn detect_mime_type(mime_db: &xdg_mime::SharedMimeInfo, path: &Path) -> Option<String> {
@@ -654,7 +654,6 @@ fn detect_mime_type(mime_db: &xdg_mime::SharedMimeInfo, path: &Path) -> Option<S
 
 fn original_error_reason(error: &ThumbnailError) -> &'static str {
     match error {
-        ThumbnailError::UnsupportedPlatform => "unsupported-input",
         ThumbnailError::InvalidUriIdentity(_) => "uri-construction-failed",
         ThumbnailError::InvalidMetadata(_) => "original-metadata-unavailable",
         ThumbnailError::Io {

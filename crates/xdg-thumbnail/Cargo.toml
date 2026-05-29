@@ -19,6 +19,9 @@ categories = ["filesystem", "multimedia::images", "os::unix-apis"]
 name = "xdg_thumbnail"
 path = "src/lib.rs"
 
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
 [dependencies]
 md5.workspace = true
 percent-encoding.workspace = true

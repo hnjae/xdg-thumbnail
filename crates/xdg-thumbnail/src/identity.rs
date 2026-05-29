@@ -7,7 +7,6 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 
 use crate::{
@@ -71,7 +70,11 @@ impl fmt::Display for UnixMTimeSeconds {
     }
 }
 
-/// Original identity and freshness facts needed for validation and writes.
+/// Canonical personal URI plus original freshness and write facts needed for validation and writes.
+///
+/// This is not a URI-only identity. It carries the `Thumb::URI` value together with the
+/// modification time required for freshness checks and optional original size and MIME facts used
+/// when writing thumbnail metadata.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OriginalIdentity {
     uri: PersonalOriginalUri,
@@ -155,7 +158,6 @@ impl ReadableOriginalIdentity {
     ///
     /// This performs blocking filesystem I/O. Async applications should call it from a blocking
     /// adapter rather than directly on an async executor worker.
-    #[cfg(unix)]
     pub fn from_local_path(path: impl AsRef<Path>) -> Result<Self> {
         Self::from_local_path_inner(path.as_ref(), None)
     }
@@ -164,7 +166,6 @@ impl ReadableOriginalIdentity {
     ///
     /// This performs blocking filesystem I/O. Async applications should call it from a blocking
     /// adapter rather than directly on an async executor worker.
-    #[cfg(unix)]
     pub fn from_local_path_with_mime_type(
         path: impl AsRef<Path>,
         mime_type: impl Into<String>,
@@ -172,7 +173,6 @@ impl ReadableOriginalIdentity {
         Self::from_local_path_inner(path.as_ref(), Some(mime_type.into()))
     }
 
-    #[cfg(unix)]
     fn from_local_path_inner(path: &Path, mime_type: Option<String>) -> Result<Self> {
         if !path.is_absolute() {
             return Err(ThumbnailError::invalid_uri("local path must be absolute"));
@@ -200,21 +200,6 @@ impl ReadableOriginalIdentity {
         Ok(Self { identity })
     }
 
-    /// Opens a local original for reading and derives its identity facts.
-    #[cfg(not(unix))]
-    pub fn from_local_path(_path: impl AsRef<Path>) -> Result<Self> {
-        Err(ThumbnailError::UnsupportedPlatform)
-    }
-
-    /// Opens a local original for reading and derives its identity facts with a MIME type.
-    #[cfg(not(unix))]
-    pub fn from_local_path_with_mime_type(
-        _path: impl AsRef<Path>,
-        _mime_type: impl Into<String>,
-    ) -> Result<Self> {
-        Err(ThumbnailError::UnsupportedPlatform)
-    }
-
     /// Returns the readable identity facts.
     #[must_use]
     pub const fn identity(&self) -> &OriginalIdentity {
@@ -232,7 +217,6 @@ pub struct SharedRepositoryContext {
 
 impl SharedRepositoryContext {
     /// Creates a shared repository context for one direct child of `repository_root`.
-    #[cfg(unix)]
     pub fn new(repository_root: impl AsRef<Path>, original_child_name: &OsStr) -> Result<Self> {
         let repository_root = repository_root.as_ref();
         if !repository_root.is_absolute() {
@@ -247,12 +231,6 @@ impl SharedRepositoryContext {
             original_child_name: original_child_name.to_owned(),
             shared_uri,
         })
-    }
-
-    /// Creates a shared repository context for one direct child of `repository_root`.
-    #[cfg(not(unix))]
-    pub fn new(_repository_root: impl AsRef<Path>, _original_child_name: &OsStr) -> Result<Self> {
-        Err(ThumbnailError::UnsupportedPlatform)
     }
 
     /// Returns the shared repository root directory.

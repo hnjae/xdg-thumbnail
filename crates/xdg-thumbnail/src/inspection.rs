@@ -7,7 +7,6 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-#[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 
 use crate::{
@@ -18,6 +17,7 @@ use crate::{
 
 /// Original URI identity parsed from a cache entry.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
 pub enum OriginalUriIdentity {
     /// Absolute personal-cache URI identity.
     Personal(PersonalOriginalUri),
@@ -37,6 +37,7 @@ pub enum CacheEntryInspectionOutcome {
 
 /// Whether access time was preserved while inspecting an entry.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
 pub enum AccessTimePreservation {
     /// Inspection preserved access time.
     Preserved,
@@ -440,17 +441,9 @@ fn inspect_filename_uri_match(
 pub(crate) fn read_thumbnail_for_inspection(
     path: &Path,
 ) -> (std::io::Result<Vec<u8>>, AccessTimePreservation) {
-    #[cfg(unix)]
-    {
-        read_thumbnail_for_inspection_unix(path)
-    }
-    #[cfg(not(unix))]
-    {
-        (fs::read(path), AccessTimePreservation::Unsupported)
-    }
+    read_thumbnail_for_inspection_unix(path)
 }
 
-#[cfg(unix)]
 fn read_thumbnail_for_inspection_unix(
     path: &Path,
 ) -> (std::io::Result<Vec<u8>>, AccessTimePreservation) {
@@ -468,7 +461,6 @@ fn read_thumbnail_for_inspection_unix(
     read_thumbnail_and_restore_timestamps(path)
 }
 
-#[cfg(unix)]
 fn read_thumbnail_with_flags(path: &Path, flags: rustix::fs::OFlags) -> std::io::Result<Vec<u8>> {
     let fd =
         rustix::fs::open(path, flags, rustix::fs::Mode::empty()).map_err(std::io::Error::from)?;
@@ -478,7 +470,6 @@ fn read_thumbnail_with_flags(path: &Path, flags: rustix::fs::OFlags) -> std::io:
     Ok(bytes)
 }
 
-#[cfg(unix)]
 fn read_thumbnail_and_restore_timestamps(
     path: &Path,
 ) -> (std::io::Result<Vec<u8>>, AccessTimePreservation) {
@@ -511,7 +502,6 @@ fn read_thumbnail_and_restore_timestamps(
     (Ok(bytes), preservation)
 }
 
-#[cfg(unix)]
 fn timestamps_from_unix_metadata(metadata: &fs::Metadata) -> rustix::fs::Timestamps {
     rustix::fs::Timestamps {
         last_access: rustix::fs::Timespec {
@@ -564,7 +554,6 @@ fn is_standard_thumbnail_filename(name: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-#[cfg(unix)]
 fn remove_cache_entry_handle(handle: &CacheEntryHandle) -> Result<()> {
     let filename = handle
         .path
@@ -613,38 +602,5 @@ fn remove_cache_entry_handle(handle: &CacheEntryHandle) -> Result<()> {
             context: "remove cache entry",
             source: std::io::Error::from(source),
         }
-    })
-}
-
-#[cfg(not(unix))]
-fn remove_cache_entry_handle(handle: &CacheEntryHandle) -> Result<()> {
-    if handle.path.parent() != Some(handle.cache_dir.as_path()) {
-        return Err(ThumbnailError::UnsafeRemoval(
-            "entry is not a direct child of its cache directory",
-        ));
-    }
-    let cache_dir_metadata =
-        fs::symlink_metadata(&handle.cache_dir).map_err(|source| ThumbnailError::Io {
-            context: "inspect cache directory before removal",
-            source,
-        })?;
-    if cache_dir_metadata.file_type().is_symlink() || !cache_dir_metadata.is_dir() {
-        return Err(ThumbnailError::UnsafeRemoval(
-            "cache directory is not a real directory",
-        ));
-    }
-    let metadata = fs::symlink_metadata(&handle.path).map_err(|source| ThumbnailError::Io {
-        context: "inspect cache entry before removal",
-        source,
-    })?;
-    if metadata.file_type().is_symlink() {
-        return Err(ThumbnailError::UnsafeRemoval("entry is a symlink"));
-    }
-    if !metadata.is_file() {
-        return Err(ThumbnailError::UnsafeRemoval("entry is not a regular file"));
-    }
-    fs::remove_file(&handle.path).map_err(|source| ThumbnailError::Io {
-        context: "remove cache entry",
-        source,
     })
 }
