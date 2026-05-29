@@ -97,12 +97,15 @@ impl PersonalOriginalUri {
         Self::from_absolute_path_bytes(&path_bytes)
     }
 
-    /// Accepts a caller-selected non-local absolute thumbnail URI identity and preserves it exactly.
+    /// Accepts caller-selected non-local absolute thumbnail URI identity text and preserves it exactly.
+    ///
+    /// This validates that the text can be used as a thumbnail URI identity. It does not promise
+    /// full RFC URI parsing or scheme-specific normalization.
     ///
     /// # Errors
     ///
-    /// Returns an error when the URI is relative, not ASCII percent-encoded text, syntactically
-    /// invalid as an absolute URI identity, or uses the local `file:` scheme.
+    /// Returns an error when the URI is relative, not ASCII percent-encoded identity text, invalid
+    /// as absolute thumbnail URI identity text, or uses the local `file:` scheme.
     pub fn from_caller_selected_absolute_uri(uri: &str) -> Result<Self> {
         let scheme = validate_absolute_uri_identity(uri)?;
         if scheme.eq_ignore_ascii_case("file") {

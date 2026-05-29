@@ -8,9 +8,10 @@ use std::path::Path;
 
 use xdg_thumbnail::{
     CacheEntryProblem, OriginalIdentity, ParsedThumbnailPng, PersonalOriginalUri,
-    PersonalValidationOutcome, ReadableOriginalIdentity, SharedRepositoryContext,
-    SharedValidationOutcome, ThumbnailError, ThumbnailPngBitDepth, ThumbnailPngColorType,
-    ThumbnailSize, UnixMTimeSeconds, validate_personal_thumbnail, validate_shared_thumbnail,
+    PersonalValidationOutcome, ReadableOriginalIdentity, SharedOriginalMetadata,
+    SharedRepositoryContext, SharedValidationOutcome, ThumbnailError, ThumbnailPngBitDepth,
+    ThumbnailPngColorType, ThumbnailSize, UnixMTimeSeconds, validate_personal_thumbnail,
+    validate_shared_thumbnail,
 };
 
 #[test]
@@ -153,8 +154,7 @@ fn shared_validation_allows_incomplete_freshness_metadata_explicitly() {
         validate_shared_thumbnail(
             &incomplete,
             &context,
-            Some(UnixMTimeSeconds::new(42)),
-            Some(12),
+            shared_original_metadata(),
             ThumbnailSize::Normal
         ),
         SharedValidationOutcome::MetadataIncomplete
@@ -166,8 +166,7 @@ fn shared_validation_allows_incomplete_freshness_metadata_explicitly() {
         validate_shared_thumbnail(
             &png_with_metadata(2, 1, png::ColorType::Rgba, mismatched),
             &context,
-            Some(UnixMTimeSeconds::new(42)),
-            Some(12),
+            shared_original_metadata(),
             ThumbnailSize::Normal,
         ),
         CacheEntryProblem::StaleMetadata,
@@ -179,8 +178,7 @@ fn shared_validation_allows_incomplete_freshness_metadata_explicitly() {
         validate_shared_thumbnail(
             &png_with_metadata(2, 1, png::ColorType::Rgba, invalid_uri),
             &context,
-            Some(UnixMTimeSeconds::new(42)),
-            Some(12),
+            shared_original_metadata(),
             ThumbnailSize::Normal,
         ),
         CacheEntryProblem::InvalidMetadataSyntax,
@@ -193,12 +191,15 @@ fn shared_validation_allows_incomplete_freshness_metadata_explicitly() {
         validate_shared_thumbnail(
             &png_with_metadata(2, 1, png::ColorType::Rgba, negative_mtime),
             &context,
-            Some(UnixMTimeSeconds::new(42)),
-            Some(12),
+            shared_original_metadata(),
             ThumbnailSize::Normal,
         ),
         CacheEntryProblem::InvalidMetadataSyntax,
     );
+}
+
+fn shared_original_metadata() -> SharedOriginalMetadata {
+    SharedOriginalMetadata::new(Some(UnixMTimeSeconds::new(42)), Some(12))
 }
 
 fn original_identity() -> OriginalIdentity {

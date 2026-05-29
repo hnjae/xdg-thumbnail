@@ -13,10 +13,10 @@ use xdg_thumbnail::{
     PersonalThumbnailInspectionRequest, PersonalThumbnailInstallRequest, PersonalThumbnailLookup,
     PersonalThumbnailLookupRequest, PersonalThumbnailRawInstallRequest, RawThumbnailImage,
     RawThumbnailPixelFormat, ReadableOriginalIdentity, SharedCacheEntryInspection,
-    SharedCacheEntryOutcome, SharedRepositoryContext, SharedThumbnailInspectionRequest,
-    SharedThumbnailLookup, SharedThumbnailLookupRequest, SharedThumbnailMetadataPolicy,
-    ThumbnailPathLookupEntry, ThumbnailPngBytesLookupEntry, ThumbnailPngColorType,
-    ThumbnailRgba8LookupEntry, ThumbnailSize, UnixMTimeSeconds,
+    SharedCacheEntryOutcome, SharedOriginalFacts, SharedOriginalMetadata, SharedRepositoryContext,
+    SharedThumbnailInspectionRequest, SharedThumbnailLookup, SharedThumbnailLookupRequest,
+    SharedThumbnailMetadataPolicy, ThumbnailPathLookupEntry, ThumbnailPngBytesLookupEntry,
+    ThumbnailPngColorType, ThumbnailRgba8LookupEntry, ThumbnailSize, UnixMTimeSeconds,
 };
 
 #[test]
@@ -31,6 +31,8 @@ fn owned_request_and_result_types_are_send_sync_static() {
     assert_send_sync_static::<SharedThumbnailLookupRequest>();
     assert_send_sync_static::<SharedThumbnailInspectionRequest>();
     assert_send_sync_static::<SharedThumbnailMetadataPolicy>();
+    assert_send_sync_static::<SharedOriginalFacts>();
+    assert_send_sync_static::<SharedOriginalMetadata>();
     assert_send_sync_static::<NonstandardEntryPolicy>();
     assert_send_sync_static::<ThumbnailPathLookupEntry>();
     assert_send_sync_static::<ThumbnailPngBytesLookupEntry>();
@@ -149,11 +151,13 @@ fn personal_install_request_matches_borrowed_install_and_normalizes() {
         std::fs::read(request_install.path()).unwrap(),
         request_install.png_bytes()
     );
-    let (installed_path, installed_bytes) = request_install.clone().into_parts();
-    assert_eq!(installed_path, request_install.path());
-    assert_eq!(installed_bytes, request_install.png_bytes());
+    let expected_path = request_install.path().to_owned();
+    let expected_bytes = request_install.png_bytes().to_vec();
+    let (installed_path, installed_bytes) = request_install.into_parts();
+    assert_eq!(installed_path, expected_path);
+    assert_eq!(installed_bytes, expected_bytes);
 
-    let parsed = ParsedThumbnailPng::parse(request_install.png_bytes()).unwrap();
+    let parsed = ParsedThumbnailPng::parse(&installed_bytes).unwrap();
     assert_eq!(parsed.width(), 128);
     assert_eq!(parsed.height(), 64);
     assert_eq!(parsed.color_type(), ThumbnailPngColorType::Rgba);
@@ -339,23 +343,26 @@ fn shared_lookup_and_inspection_requests_match_borrowed_api() {
     let context =
         SharedRepositoryContext::new(temp.path(), OsStr::from_bytes(b"picture.png")).unwrap();
     let path = context.thumbnail_path(ThumbnailSize::Normal);
-    let lookup_request = SharedThumbnailLookupRequest::new(
-        context.clone(),
-        ThumbnailSize::Normal,
+    let original_metadata = SharedOriginalMetadata::new(Some(UnixMTimeSeconds::new(42)), Some(12));
+    let require_complete = SharedOriginalFacts::from_metadata(
         SharedThumbnailMetadataPolicy::RequireComplete,
-        Some(UnixMTimeSeconds::new(42)),
-        Some(12),
+        original_metadata,
     );
+    assert_eq!(
+        require_complete.metadata_policy(),
+        SharedThumbnailMetadataPolicy::RequireComplete
+    );
+    assert_eq!(require_complete.mtime(), Some(UnixMTimeSeconds::new(42)));
+    assert_eq!(require_complete.original_byte_size(), Some(12));
+    assert_eq!(require_complete.metadata(), original_metadata);
+
+    let lookup_request =
+        SharedThumbnailLookupRequest::new(context.clone(), ThumbnailSize::Normal, require_complete);
 
     assert_eq!(
         lookup_request.clone().lookup_path().unwrap(),
         context
-            .lookup_thumbnail_path(
-                ThumbnailSize::Normal,
-                SharedThumbnailMetadataPolicy::RequireComplete,
-                Some(UnixMTimeSeconds::new(42)),
-                Some(12),
-            )
+            .lookup_thumbnail_path(ThumbnailSize::Normal, require_complete)
             .unwrap()
     );
     assert_eq!(
@@ -367,48 +374,27 @@ fn shared_lookup_and_inspection_requests_match_borrowed_api() {
     let shared_bytes = shared_png(shared_metadata("./picture.png", Some("42"), Some("12")));
     std::fs::write(&path, &shared_bytes).unwrap();
 
-    let lookup_request = SharedThumbnailLookupRequest::new(
-        context.clone(),
-        ThumbnailSize::Normal,
-        SharedThumbnailMetadataPolicy::RequireComplete,
-        Some(UnixMTimeSeconds::new(42)),
-        Some(12),
-    );
+    let lookup_request =
+        SharedThumbnailLookupRequest::new(context.clone(), ThumbnailSize::Normal, require_complete);
     assert_eq!(
         run_blocking_style(move || lookup_request.lookup_png_bytes()).unwrap(),
         context
-            .lookup_thumbnail_png_bytes(
-                ThumbnailSize::Normal,
-                SharedThumbnailMetadataPolicy::RequireComplete,
-                Some(UnixMTimeSeconds::new(42)),
-                Some(12),
-            )
+            .lookup_thumbnail_png_bytes(ThumbnailSize::Normal, require_complete)
             .unwrap()
     );
-    let lookup_request = SharedThumbnailLookupRequest::new(
-        context.clone(),
-        ThumbnailSize::Normal,
-        SharedThumbnailMetadataPolicy::RequireComplete,
-        Some(UnixMTimeSeconds::new(42)),
-        Some(12),
-    );
+    let lookup_request =
+        SharedThumbnailLookupRequest::new(context.clone(), ThumbnailSize::Normal, require_complete);
     assert_eq!(
         run_blocking_style(move || lookup_request.lookup_rgba8()).unwrap(),
         context
-            .lookup_thumbnail_rgba8(
-                ThumbnailSize::Normal,
-                SharedThumbnailMetadataPolicy::RequireComplete,
-                Some(UnixMTimeSeconds::new(42)),
-                Some(12),
-            )
+            .lookup_thumbnail_rgba8(ThumbnailSize::Normal, require_complete)
             .unwrap()
     );
 
     let inspection_request = SharedThumbnailInspectionRequest::new(
         context,
         vec![ThumbnailSize::Normal],
-        Some(UnixMTimeSeconds::new(42)),
-        Some(12),
+        original_metadata,
     );
     let inspections = inspection_request.inspect().unwrap();
     assert_eq!(inspections.len(), 1);

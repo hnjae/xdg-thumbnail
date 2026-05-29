@@ -96,8 +96,8 @@ match cache.lookup_thumbnail_png_bytes(&identity, ThumbnailSize::Normal)? {
 let repository_root = path.parent().expect("absolute original path has a parent");
 let original_child_name = path.file_name().expect("original path has a filename");
 let shared = SharedRepositoryContext::new(repository_root, original_child_name)?;
-let shared_policy = SharedThumbnailMetadataPolicy::RequireComplete;
-match shared.lookup_thumbnail_png_bytes(ThumbnailSize::Normal, shared_policy, Some(identity.identity().mtime()), identity.identity().original_byte_size())? {
+let shared_original = SharedOriginalFacts::new(SharedThumbnailMetadataPolicy::RequireComplete, Some(identity.identity().mtime()), identity.identity().original_byte_size());
+match shared.lookup_thumbnail_png_bytes(ThumbnailSize::Normal, shared_original)? {
     SharedThumbnailLookup::FullyVerified(thumbnail) => return Ok(Some(thumbnail)),
     SharedThumbnailLookup::MetadataIncomplete(_) => {}
     SharedThumbnailLookup::Missing | SharedThumbnailLookup::Invalid(_) => {}

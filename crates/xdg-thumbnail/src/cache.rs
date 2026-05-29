@@ -433,11 +433,9 @@ impl SharedRepositoryContext {
     pub fn lookup_thumbnail_path(
         &self,
         size: ThumbnailSize,
-        metadata_policy: SharedThumbnailMetadataPolicy,
-        mtime: Option<UnixMTimeSeconds>,
-        original_byte_size: Option<u64>,
+        original: SharedOriginalFacts,
     ) -> Result<SharedThumbnailLookup<ThumbnailPathLookupEntry>> {
-        match self.lookup_thumbnail_entry(size, metadata_policy, mtime, original_byte_size)? {
+        match self.lookup_thumbnail_entry(size, original)? {
             SharedThumbnailLookup::FullyVerified(entry) => Ok(
                 SharedThumbnailLookup::FullyVerified(ThumbnailPathLookupEntry {
                     path: entry.path,
@@ -469,11 +467,9 @@ impl SharedRepositoryContext {
     pub fn lookup_thumbnail_png_bytes(
         &self,
         size: ThumbnailSize,
-        metadata_policy: SharedThumbnailMetadataPolicy,
-        mtime: Option<UnixMTimeSeconds>,
-        original_byte_size: Option<u64>,
+        original: SharedOriginalFacts,
     ) -> Result<SharedThumbnailLookup<ThumbnailPngBytesLookupEntry>> {
-        match self.lookup_thumbnail_entry(size, metadata_policy, mtime, original_byte_size)? {
+        match self.lookup_thumbnail_entry(size, original)? {
             SharedThumbnailLookup::FullyVerified(entry) => Ok(
                 SharedThumbnailLookup::FullyVerified(ThumbnailPngBytesLookupEntry {
                     path: entry.path,
@@ -510,11 +506,9 @@ impl SharedRepositoryContext {
     pub fn lookup_thumbnail_rgba8(
         &self,
         size: ThumbnailSize,
-        metadata_policy: SharedThumbnailMetadataPolicy,
-        mtime: Option<UnixMTimeSeconds>,
-        original_byte_size: Option<u64>,
+        original: SharedOriginalFacts,
     ) -> Result<SharedThumbnailLookup<ThumbnailRgba8LookupEntry>> {
-        match self.lookup_thumbnail_entry(size, metadata_policy, mtime, original_byte_size)? {
+        match self.lookup_thumbnail_entry(size, original)? {
             SharedThumbnailLookup::FullyVerified(entry) => {
                 Ok(SharedThumbnailLookup::FullyVerified(
                     rgba8_lookup_entry_from_parts(entry.path, &entry.bytes, entry.metadata)?,
@@ -544,12 +538,11 @@ impl SharedRepositoryContext {
     pub fn inspect_thumbnails(
         &self,
         sizes: &[ThumbnailSize],
-        mtime: Option<UnixMTimeSeconds>,
-        original_byte_size: Option<u64>,
+        original: SharedOriginalMetadata,
     ) -> Result<Vec<SharedCacheEntryInspection>> {
         let mut inspections = Vec::new();
         for &size in sizes {
-            if let Some(inspection) = self.inspect_thumbnail(size, mtime, original_byte_size)? {
+            if let Some(inspection) = self.inspect_thumbnail(size, original)? {
                 inspections.push(inspection);
             }
         }
@@ -559,9 +552,7 @@ impl SharedRepositoryContext {
     fn lookup_thumbnail_entry(
         &self,
         size: ThumbnailSize,
-        metadata_policy: SharedThumbnailMetadataPolicy,
-        mtime: Option<UnixMTimeSeconds>,
-        original_byte_size: Option<u64>,
+        original: SharedOriginalFacts,
     ) -> Result<SharedThumbnailLookup<ValidatedSharedEntry>> {
         let path = self.thumbnail_path(size);
         let bytes = match read_cache_entry_no_follow(&path, "read shared thumbnail cache entry")? {
@@ -574,7 +565,7 @@ impl SharedRepositoryContext {
             }
         };
 
-        match validate_shared_thumbnail(&bytes, self, mtime, original_byte_size, size) {
+        match validate_shared_thumbnail(&bytes, self, original.metadata(), size) {
             SharedValidationOutcome::FullyVerified => {
                 let parsed = ParsedThumbnailPng::parse(&bytes)?;
                 Ok(SharedThumbnailLookup::FullyVerified(ValidatedSharedEntry {
@@ -584,7 +575,7 @@ impl SharedRepositoryContext {
                 }))
             }
             SharedValidationOutcome::MetadataIncomplete => {
-                if metadata_policy == SharedThumbnailMetadataPolicy::RequireComplete {
+                if original.metadata_policy() == SharedThumbnailMetadataPolicy::RequireComplete {
                     Ok(SharedThumbnailLookup::Invalid(vec![
                         CacheEntryProblem::MissingRequiredMetadata,
                     ]))
@@ -611,8 +602,7 @@ impl SharedRepositoryContext {
     fn inspect_thumbnail(
         &self,
         size: ThumbnailSize,
-        mtime: Option<UnixMTimeSeconds>,
-        original_byte_size: Option<u64>,
+        original: SharedOriginalMetadata,
     ) -> Result<Option<SharedCacheEntryInspection>> {
         let path = self.thumbnail_path(size);
         let metadata = match fs::symlink_metadata(&path) {
@@ -665,13 +655,8 @@ impl SharedRepositoryContext {
         };
 
         let parsed = ParsedThumbnailPng::parse(&bytes).ok();
-        let outcome = shared_cache_entry_outcome(validate_shared_thumbnail(
-            &bytes,
-            self,
-            mtime,
-            original_byte_size,
-            size,
-        ));
+        let outcome =
+            shared_cache_entry_outcome(validate_shared_thumbnail(&bytes, self, original, size));
         Ok(Some(SharedCacheEntryInspection {
             outcome,
             shared_uri: self.shared_uri().clone(),
@@ -697,7 +682,7 @@ pub struct PersonalThumbnailLookupRequest {
 impl PersonalThumbnailLookupRequest {
     /// Creates an owned personal-cache lookup request.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         root: PersonalCacheRoot,
         original: ReadableOriginalIdentity,
         size: ThumbnailSize,
@@ -952,7 +937,7 @@ pub struct FailureEntryWriteRequest {
 impl FailureEntryWriteRequest {
     /// Creates an owned failure-entry write request.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         root: PersonalCacheRoot,
         namespace: FailureNamespace,
         original: ReadableOriginalIdentity,
@@ -1019,7 +1004,7 @@ pub struct PersonalThumbnailInspectionRequest {
 impl PersonalThumbnailInspectionRequest {
     /// Creates an owned personal-cache inspection request.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         root: PersonalCacheRoot,
         sizes: Vec<ThumbnailSize>,
         nonstandard_entry_policy: NonstandardEntryPolicy,
@@ -1066,27 +1051,21 @@ impl PersonalThumbnailInspectionRequest {
 pub struct SharedThumbnailLookupRequest {
     context: SharedRepositoryContext,
     size: ThumbnailSize,
-    metadata_policy: SharedThumbnailMetadataPolicy,
-    mtime: Option<UnixMTimeSeconds>,
-    original_byte_size: Option<u64>,
+    original: SharedOriginalFacts,
 }
 
 impl SharedThumbnailLookupRequest {
     /// Creates an owned shared-repository lookup request.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         context: SharedRepositoryContext,
         size: ThumbnailSize,
-        metadata_policy: SharedThumbnailMetadataPolicy,
-        mtime: Option<UnixMTimeSeconds>,
-        original_byte_size: Option<u64>,
+        original: SharedOriginalFacts,
     ) -> Self {
         Self {
             context,
             size,
-            metadata_policy,
-            mtime,
-            original_byte_size,
+            original,
         }
     }
 
@@ -1099,11 +1078,9 @@ impl SharedThumbnailLookupRequest {
         let Self {
             context,
             size,
-            metadata_policy,
-            mtime,
-            original_byte_size,
+            original,
         } = self;
-        context.lookup_thumbnail_path(size, metadata_policy, mtime, original_byte_size)
+        context.lookup_thumbnail_path(size, original)
     }
 
     /// Returns exact validated shared-repository PNG bytes for the owned request.
@@ -1115,11 +1092,9 @@ impl SharedThumbnailLookupRequest {
         let Self {
             context,
             size,
-            metadata_policy,
-            mtime,
-            original_byte_size,
+            original,
         } = self;
-        context.lookup_thumbnail_png_bytes(size, metadata_policy, mtime, original_byte_size)
+        context.lookup_thumbnail_png_bytes(size, original)
     }
 
     /// Returns decoded tightly packed RGBA8 pixels for the owned request.
@@ -1131,31 +1106,15 @@ impl SharedThumbnailLookupRequest {
         let Self {
             context,
             size,
-            metadata_policy,
-            mtime,
-            original_byte_size,
+            original,
         } = self;
-        context.lookup_thumbnail_rgba8(size, metadata_policy, mtime, original_byte_size)
+        context.lookup_thumbnail_rgba8(size, original)
     }
 
     /// Splits this request into its owned parts.
     #[must_use]
-    pub fn into_parts(
-        self,
-    ) -> (
-        SharedRepositoryContext,
-        ThumbnailSize,
-        SharedThumbnailMetadataPolicy,
-        Option<UnixMTimeSeconds>,
-        Option<u64>,
-    ) {
-        (
-            self.context,
-            self.size,
-            self.metadata_policy,
-            self.mtime,
-            self.original_byte_size,
-        )
+    pub fn into_parts(self) -> (SharedRepositoryContext, ThumbnailSize, SharedOriginalFacts) {
+        (self.context, self.size, self.original)
     }
 }
 
@@ -1167,24 +1126,21 @@ impl SharedThumbnailLookupRequest {
 pub struct SharedThumbnailInspectionRequest {
     context: SharedRepositoryContext,
     sizes: Vec<ThumbnailSize>,
-    mtime: Option<UnixMTimeSeconds>,
-    original_byte_size: Option<u64>,
+    original: SharedOriginalMetadata,
 }
 
 impl SharedThumbnailInspectionRequest {
     /// Creates an owned shared-repository inspection request.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         context: SharedRepositoryContext,
         sizes: Vec<ThumbnailSize>,
-        mtime: Option<UnixMTimeSeconds>,
-        original_byte_size: Option<u64>,
+        original: SharedOriginalMetadata,
     ) -> Self {
         Self {
             context,
             sizes,
-            mtime,
-            original_byte_size,
+            original,
         }
     }
 
@@ -1197,10 +1153,9 @@ impl SharedThumbnailInspectionRequest {
         let Self {
             context,
             sizes,
-            mtime,
-            original_byte_size,
+            original,
         } = self;
-        context.inspect_thumbnails(&sizes, mtime, original_byte_size)
+        context.inspect_thumbnails(&sizes, original)
     }
 
     /// Splits this request into its owned parts.
@@ -1210,15 +1165,9 @@ impl SharedThumbnailInspectionRequest {
     ) -> (
         SharedRepositoryContext,
         Vec<ThumbnailSize>,
-        Option<UnixMTimeSeconds>,
-        Option<u64>,
+        SharedOriginalMetadata,
     ) {
-        (
-            self.context,
-            self.sizes,
-            self.mtime,
-            self.original_byte_size,
-        )
+        (self.context, self.sizes, self.original)
     }
 }
 
@@ -1358,6 +1307,97 @@ pub enum SharedThumbnailMetadataPolicy {
     AllowIncomplete,
 }
 
+/// Policy-neutral original freshness facts for shared-repository validation and inspection.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct SharedOriginalMetadata {
+    mtime: Option<UnixMTimeSeconds>,
+    original_byte_size: Option<u64>,
+}
+
+impl SharedOriginalMetadata {
+    /// Creates shared original metadata facts from caller-supplied values.
+    #[must_use]
+    pub const fn new(mtime: Option<UnixMTimeSeconds>, original_byte_size: Option<u64>) -> Self {
+        Self {
+            mtime,
+            original_byte_size,
+        }
+    }
+
+    /// Returns the original modification time when known.
+    #[must_use]
+    pub const fn mtime(&self) -> Option<UnixMTimeSeconds> {
+        self.mtime
+    }
+
+    /// Returns the original byte size when known.
+    #[must_use]
+    pub const fn original_byte_size(&self) -> Option<u64> {
+        self.original_byte_size
+    }
+}
+
+/// Shared-repository lookup facts, including the metadata acceptance policy.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct SharedOriginalFacts {
+    metadata_policy: SharedThumbnailMetadataPolicy,
+    mtime: Option<UnixMTimeSeconds>,
+    original_byte_size: Option<u64>,
+}
+
+impl SharedOriginalFacts {
+    /// Creates shared lookup facts from caller-supplied values.
+    #[must_use]
+    pub const fn new(
+        metadata_policy: SharedThumbnailMetadataPolicy,
+        mtime: Option<UnixMTimeSeconds>,
+        original_byte_size: Option<u64>,
+    ) -> Self {
+        Self {
+            metadata_policy,
+            mtime,
+            original_byte_size,
+        }
+    }
+
+    /// Creates shared lookup facts from a metadata policy and policy-neutral metadata facts.
+    #[must_use]
+    pub const fn from_metadata(
+        metadata_policy: SharedThumbnailMetadataPolicy,
+        metadata: SharedOriginalMetadata,
+    ) -> Self {
+        Self {
+            metadata_policy,
+            mtime: metadata.mtime(),
+            original_byte_size: metadata.original_byte_size(),
+        }
+    }
+
+    /// Returns the shared lookup metadata acceptance policy.
+    #[must_use]
+    pub const fn metadata_policy(&self) -> SharedThumbnailMetadataPolicy {
+        self.metadata_policy
+    }
+
+    /// Returns the original modification time when known.
+    #[must_use]
+    pub const fn mtime(&self) -> Option<UnixMTimeSeconds> {
+        self.mtime
+    }
+
+    /// Returns the original byte size when known.
+    #[must_use]
+    pub const fn original_byte_size(&self) -> Option<u64> {
+        self.original_byte_size
+    }
+
+    /// Returns policy-neutral shared original metadata facts.
+    #[must_use]
+    pub const fn metadata(&self) -> SharedOriginalMetadata {
+        SharedOriginalMetadata::new(self.mtime, self.original_byte_size)
+    }
+}
+
 /// Validation state for a shared cache entry inspection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -1449,7 +1489,7 @@ impl ThumbnailPathLookupEntry {
 }
 
 /// Exact validated PNG bytes and metadata facts.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ThumbnailPngBytesLookupEntry {
     path: PathBuf,
     bytes: Vec<u8>,
@@ -1486,7 +1526,7 @@ impl ThumbnailPngBytesLookupEntry {
 ///
 /// Pixels are row-major `[red, green, blue, alpha]` bytes with straight alpha and
 /// `stride == width * 4`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ThumbnailRgba8LookupEntry {
     path: PathBuf,
     width: u32,
@@ -1574,7 +1614,7 @@ impl InstalledThumbnailPath {
 /// The returned bytes are the final PNG bytes published to the cache after metadata writing and
 /// normalization. Installation metadata is determined from the supplied original facts; callers
 /// that need to inspect the installed metadata can parse these bytes with [`ParsedThumbnailPng`].
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct InstalledThumbnailPngBytes {
     path: PathBuf,
     bytes: Vec<u8>,

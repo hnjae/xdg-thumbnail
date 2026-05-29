@@ -6,8 +6,9 @@ use std::io::Cursor;
 
 use crate::uri::validate_absolute_uri_identity;
 use crate::{
-    OriginalIdentity, ReadableOriginalIdentity, Result, SharedRelativeOriginalUri,
-    SharedRepositoryContext, ThumbnailError, ThumbnailSize, UnixMTimeSeconds,
+    OriginalIdentity, ReadableOriginalIdentity, Result, SharedOriginalMetadata,
+    SharedRelativeOriginalUri, SharedRepositoryContext, ThumbnailError, ThumbnailSize,
+    UnixMTimeSeconds,
 };
 
 const MAX_RENDERED_PIXELS: u64 = 16_777_216;
@@ -385,7 +386,7 @@ pub struct ParsedThumbnailPng {
 }
 
 impl ParsedThumbnailPng {
-    /// Parses PNG structure and Freedesktop text metadata.
+    /// Decodes enough PNG data to enforce resource limits and collect Freedesktop text metadata.
     ///
     /// # Errors
     ///
@@ -586,13 +587,13 @@ pub(crate) fn validate_personal_failure_entry_identity(
     }
 }
 
-/// Validates a shared-repository successful thumbnail PNG against explicit shared context.
+/// Validates a shared-repository successful thumbnail PNG against explicit shared context and
+/// policy-neutral original metadata facts.
 #[must_use]
 pub fn validate_shared_thumbnail(
     bytes: &[u8],
     context: &SharedRepositoryContext,
-    mtime: Option<UnixMTimeSeconds>,
-    original_byte_size: Option<u64>,
+    original: SharedOriginalMetadata,
     size: ThumbnailSize,
 ) -> SharedValidationOutcome {
     let parsed = match parse_thumbnail_for_validation(bytes) {
@@ -615,7 +616,7 @@ pub fn validate_shared_thumbnail(
         None => incomplete = true,
     }
 
-    match (metadata.thumb_mtime_result(), mtime) {
+    match (metadata.thumb_mtime_result(), original.mtime()) {
         (Ok(Some(stored)), Some(expected)) if stored == expected => {}
         (Ok(Some(_)), Some(_)) => push_problem(&mut problems, CacheEntryProblem::StaleMetadata),
         (Ok(Some(_)), None) => push_problem(&mut problems, CacheEntryProblem::UnverifiableOriginal),
@@ -623,7 +624,7 @@ pub fn validate_shared_thumbnail(
         (Err(_), _) => push_problem(&mut problems, CacheEntryProblem::InvalidMetadataSyntax),
     }
 
-    compare_optional_size(&mut problems, metadata, original_byte_size);
+    compare_optional_size(&mut problems, metadata, original.original_byte_size());
 
     if !problems.is_empty() {
         SharedValidationOutcome::Invalid(problems)

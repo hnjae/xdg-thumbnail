@@ -91,9 +91,10 @@ pub use cache::{
     FailureEntryWriteRequest, InstalledThumbnailPath, InstalledThumbnailPngBytes,
     PersonalCacheRoot, PersonalThumbnailInspectionRequest, PersonalThumbnailInstallRequest,
     PersonalThumbnailLookup, PersonalThumbnailLookupRequest, PersonalThumbnailRawInstallRequest,
-    SharedCacheEntryInspection, SharedCacheEntryOutcome, SharedThumbnailInspectionRequest,
-    SharedThumbnailLookup, SharedThumbnailLookupRequest, SharedThumbnailMetadataPolicy,
-    ThumbnailPathLookupEntry, ThumbnailPngBytesLookupEntry, ThumbnailRgba8LookupEntry,
+    SharedCacheEntryInspection, SharedCacheEntryOutcome, SharedOriginalFacts,
+    SharedOriginalMetadata, SharedThumbnailInspectionRequest, SharedThumbnailLookup,
+    SharedThumbnailLookupRequest, SharedThumbnailMetadataPolicy, ThumbnailPathLookupEntry,
+    ThumbnailPngBytesLookupEntry, ThumbnailRgba8LookupEntry,
 };
 #[cfg(unix)]
 pub use error::{Result, ThumbnailError};
