@@ -447,7 +447,7 @@ fn evaluate_local_file(
         *reason = Some("original-unverifiable");
         return;
     };
-    let original = match ReadableOriginalIdentity::from_local_path(&path, None::<String>) {
+    let original = match ReadableOriginalIdentity::from_local_path(&path) {
         Ok(original) => original,
         Err(read_error) if is_not_found_error(&read_error) => {
             *decision = Decision::Delete;

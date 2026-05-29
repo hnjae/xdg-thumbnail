@@ -18,7 +18,7 @@ fn installs_normalized_downscaled_personal_thumbnail_atomically() {
     let rendered = png_without_metadata(300, 150, png::ColorType::Rgb);
 
     let installed = root
-        .install_personal_thumbnail(&original, ThumbnailSize::Normal, &rendered)
+        .install_personal_thumbnail_payload(&original, ThumbnailSize::Normal, &rendered)
         .unwrap();
 
     let expected_path = root.personal_path(
@@ -57,6 +57,25 @@ fn installs_normalized_downscaled_personal_thumbnail_atomically() {
 }
 
 #[test]
+fn path_install_variant_returns_only_installed_path() {
+    let temp = TempDir::new().unwrap();
+    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = readable_original();
+    let rendered = png_without_metadata(2, 1, png::ColorType::Rgba);
+
+    let installed = root
+        .install_personal_thumbnail_path(&original, ThumbnailSize::Normal, &rendered)
+        .unwrap();
+
+    let expected_path = root.personal_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::Normal),
+    );
+    assert_eq!(installed.path(), expected_path.as_path());
+    assert!(expected_path.exists());
+}
+
+#[test]
 fn install_rejects_insecure_existing_cache_directories() {
     let temp = TempDir::new().unwrap();
     let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
@@ -65,7 +84,7 @@ fn install_rejects_insecure_existing_cache_directories() {
     std::fs::set_permissions(&target_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let error = root
-        .install_personal_thumbnail(
+        .install_personal_thumbnail_payload(
             &readable_original(),
             ThumbnailSize::Normal,
             &png_without_metadata(2, 1, png::ColorType::Rgba),
@@ -85,7 +104,7 @@ fn install_rejects_symlinked_cache_directories() {
     symlink(&outside, root.as_path().join("normal")).unwrap();
 
     let error = root
-        .install_personal_thumbnail(
+        .install_personal_thumbnail_payload(
             &readable_original(),
             ThumbnailSize::Normal,
             &png_without_metadata(2, 1, png::ColorType::Rgba),
@@ -98,11 +117,11 @@ fn install_rejects_symlinked_cache_directories() {
 
 fn readable_original() -> ReadableOriginalIdentity {
     ReadableOriginalIdentity::new(
-        OriginalIdentity::new(
+        OriginalIdentity::with_mime_type(
             PersonalThumbnailUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             UnixMTimeSeconds::new(42),
             Some(12),
-            Some("image/png"),
+            "image/png",
         )
         .unwrap(),
     )

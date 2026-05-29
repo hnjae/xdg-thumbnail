@@ -365,7 +365,7 @@ fn inspect_required_metadata(
     metadata: &ThumbnailMetadata,
 ) -> Option<ThumbnailUriIdentity> {
     let original_uri = match metadata.thumb_uri() {
-        Some(uri) => match PersonalThumbnailUri::from_absolute_uri(uri) {
+        Some(uri) => match PersonalThumbnailUri::from_validated_absolute_uri(uri) {
             Ok(uri) => Some(ThumbnailUriIdentity::Personal(uri)),
             Err(_) => {
                 push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax);
@@ -407,7 +407,7 @@ fn inspect_filename_uri_match(
     }
 }
 
-fn read_thumbnail_for_inspection(
+pub(crate) fn read_thumbnail_for_inspection(
     path: &Path,
 ) -> (std::io::Result<Vec<u8>>, AccessTimePreservation) {
     #[cfg(unix)]
@@ -495,7 +495,10 @@ fn timestamps_from_unix_metadata(metadata: &fs::Metadata) -> rustix::fs::Timesta
     }
 }
 
-fn thumbnail_timestamps(path: &Path, preservation: AccessTimePreservation) -> ThumbnailTimestamps {
+pub(crate) fn thumbnail_timestamps(
+    path: &Path,
+    preservation: AccessTimePreservation,
+) -> ThumbnailTimestamps {
     let (accessed_at, modified_at) = fs::symlink_metadata(path)
         .map_or((None, None), |metadata| timestamps_from_metadata(&metadata));
     ThumbnailTimestamps {
@@ -505,7 +508,7 @@ fn thumbnail_timestamps(path: &Path, preservation: AccessTimePreservation) -> Th
     }
 }
 
-fn thumbnail_timestamps_from_metadata(
+pub(crate) fn thumbnail_timestamps_from_metadata(
     metadata: &fs::Metadata,
     preservation: AccessTimePreservation,
 ) -> ThumbnailTimestamps {
@@ -614,21 +617,4 @@ fn remove_cache_entry_handle(handle: &CacheEntryHandle) -> Result<()> {
         context: "remove cache entry",
         source,
     })
-}
-
-/// Validation state for a thumbnail cache entry.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum CacheEntryState {
-    /// The thumbnail metadata still matches the original.
-    Valid,
-    /// The original local file no longer exists.
-    OriginalMissing,
-    /// The original exists but metadata no longer matches.
-    Outdated,
-    /// The original could not be read well enough to validate the entry.
-    UnreadableOriginal,
-    /// The original cannot be verified through the available validation context.
-    UnverifiableOriginal,
-    /// The thumbnail file or metadata is malformed.
-    Malformed,
 }

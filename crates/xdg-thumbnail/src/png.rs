@@ -4,10 +4,10 @@
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
+use crate::uri::validate_absolute_uri_identity;
 use crate::{
-    OriginalIdentity, PersonalThumbnailUri, ReadableOriginalIdentity, Result,
-    SharedRelativeThumbnailUri, SharedRepositoryContext, ThumbnailError, ThumbnailSize,
-    UnixMTimeSeconds,
+    OriginalIdentity, ReadableOriginalIdentity, Result, SharedRelativeThumbnailUri,
+    SharedRepositoryContext, ThumbnailError, ThumbnailSize, UnixMTimeSeconds,
 };
 
 const MAX_RENDERED_PIXELS: u64 = 16_777_216;
@@ -340,7 +340,7 @@ fn compare_personal_metadata(
 ) {
     match metadata.thumb_uri() {
         Some(uri) if uri == original.uri().as_str() => {}
-        Some(uri) if PersonalThumbnailUri::from_absolute_uri(uri).is_err() => {
+        Some(uri) if validate_absolute_uri_identity(uri).is_err() => {
             push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax);
         }
         Some(_) => push_problem(problems, CacheEntryProblem::StaleMetadata),

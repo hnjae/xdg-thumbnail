@@ -15,8 +15,12 @@ fn writes_deterministic_failure_namespace_entries() {
     let namespace = FailureNamespace::new("xdg-thumbnail-0.1.0").unwrap();
     let original = readable_original();
 
-    let first = root.write_failure_entry(&namespace, &original).unwrap();
-    let second = root.write_failure_entry(&namespace, &original).unwrap();
+    let first = root
+        .write_failure_entry_payload(&namespace, &original)
+        .unwrap();
+    let second = root
+        .write_failure_entry_payload(&namespace, &original)
+        .unwrap();
 
     let expected_path = root.personal_path(
         original.identity().uri(),
@@ -44,6 +48,25 @@ fn writes_deterministic_failure_namespace_entries() {
 }
 
 #[test]
+fn failure_path_variant_returns_only_installed_path() {
+    let temp = TempDir::new().unwrap();
+    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let namespace = FailureNamespace::new("xdg-thumbnail-0.1.0").unwrap();
+    let original = readable_original();
+
+    let installed = root
+        .write_failure_entry_path(&namespace, &original)
+        .unwrap();
+    let expected_path = root.personal_path(
+        original.identity().uri(),
+        &CacheNamespace::Failure(namespace),
+    );
+
+    assert_eq!(installed.path(), expected_path.as_path());
+    assert!(expected_path.exists());
+}
+
+#[test]
 fn validates_failure_entry_metadata_without_successful_thumbnail_size_limits() {
     let original = readable_original();
     let bytes = failure_png_with_metadata(2048, 1, original.identity());
@@ -59,11 +82,11 @@ fn reports_stale_failure_entry_metadata() {
     let original = readable_original();
     let bytes = failure_png_with_metadata(1, 1, original.identity());
     let stale_original = ReadableOriginalIdentity::new(
-        OriginalIdentity::new(
+        OriginalIdentity::with_mime_type(
             original.identity().uri().clone(),
             UnixMTimeSeconds::new(43),
             Some(12),
-            Some("image/png"),
+            "image/png",
         )
         .unwrap(),
     );
@@ -76,11 +99,11 @@ fn reports_stale_failure_entry_metadata() {
 
 fn readable_original() -> ReadableOriginalIdentity {
     ReadableOriginalIdentity::new(
-        OriginalIdentity::new(
+        OriginalIdentity::with_mime_type(
             PersonalThumbnailUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             UnixMTimeSeconds::new(42),
             Some(12),
-            Some("image/png"),
+            "image/png",
         )
         .unwrap(),
     )

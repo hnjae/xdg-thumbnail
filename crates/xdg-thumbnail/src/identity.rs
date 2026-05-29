@@ -61,22 +61,31 @@ pub struct OriginalIdentity {
 }
 
 impl OriginalIdentity {
-    /// Creates an original identity from caller-confirmed facts.
-    pub fn new(
+    /// Creates an original identity from caller-confirmed facts without a MIME type.
+    #[must_use]
+    pub fn new(uri: PersonalThumbnailUri, mtime: UnixMTimeSeconds, size: Option<u64>) -> Self {
+        Self {
+            uri,
+            mtime,
+            size,
+            mime_type: None,
+        }
+    }
+
+    /// Creates an original identity from caller-confirmed facts with a MIME type.
+    pub fn with_mime_type(
         uri: PersonalThumbnailUri,
         mtime: UnixMTimeSeconds,
         size: Option<u64>,
-        mime_type: Option<impl Into<String>>,
+        mime_type: impl Into<String>,
     ) -> Result<Self> {
-        let mime_type = mime_type.map(Into::into);
-        if let Some(mime_type) = mime_type.as_deref() {
-            validate_mime_type(mime_type)?;
-        }
+        let mime_type = mime_type.into();
+        validate_mime_type(&mime_type)?;
         Ok(Self {
             uri,
             mtime,
             size,
-            mime_type,
+            mime_type: Some(mime_type),
         })
     }
 
@@ -120,11 +129,21 @@ impl ReadableOriginalIdentity {
 
     /// Opens a local original for reading and derives its identity facts.
     #[cfg(unix)]
-    pub fn from_local_path(
+    pub fn from_local_path(path: impl AsRef<Path>) -> Result<Self> {
+        Self::from_local_path_inner(path.as_ref(), None)
+    }
+
+    /// Opens a local original for reading and derives its identity facts with a MIME type.
+    #[cfg(unix)]
+    pub fn from_local_path_with_mime_type(
         path: impl AsRef<Path>,
-        mime_type: Option<impl Into<String>>,
+        mime_type: impl Into<String>,
     ) -> Result<Self> {
-        let path = path.as_ref();
+        Self::from_local_path_inner(path.as_ref(), Some(mime_type.into()))
+    }
+
+    #[cfg(unix)]
+    fn from_local_path_inner(path: &Path, mime_type: Option<String>) -> Result<Self> {
         let file = File::open(path).map_err(|source| ThumbnailError::Io {
             context: "open original for reading",
             source,
@@ -140,15 +159,25 @@ impl ReadableOriginalIdentity {
                 source,
             }
         })?)?;
-        let identity = OriginalIdentity::new(uri, mtime, Some(metadata.len()), mime_type)?;
+        let identity = if let Some(mime_type) = mime_type {
+            OriginalIdentity::with_mime_type(uri, mtime, Some(metadata.len()), mime_type)?
+        } else {
+            OriginalIdentity::new(uri, mtime, Some(metadata.len()))
+        };
         Ok(Self { identity })
     }
 
     /// Opens a local original for reading and derives its identity facts.
     #[cfg(not(unix))]
-    pub fn from_local_path(
+    pub fn from_local_path(_path: impl AsRef<Path>) -> Result<Self> {
+        Err(ThumbnailError::UnsupportedPlatform)
+    }
+
+    /// Opens a local original for reading and derives its identity facts with a MIME type.
+    #[cfg(not(unix))]
+    pub fn from_local_path_with_mime_type(
         _path: impl AsRef<Path>,
-        _mime_type: Option<impl Into<String>>,
+        _mime_type: impl Into<String>,
     ) -> Result<Self> {
         Err(ThumbnailError::UnsupportedPlatform)
     }

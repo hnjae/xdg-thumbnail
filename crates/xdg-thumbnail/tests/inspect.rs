@@ -17,7 +17,7 @@ fn inspection_iterates_standard_entries_and_reports_facts() {
     let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let installed = root
-        .install_personal_thumbnail(
+        .install_personal_thumbnail_payload(
             &original,
             ThumbnailSize::Normal,
             &png_without_metadata(2, 1),
@@ -120,7 +120,8 @@ fn failure_iteration_is_limited_to_one_real_namespace_level() {
     let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let namespace = FailureNamespace::new("app-1").unwrap();
-    root.write_failure_entry(&namespace, &original).unwrap();
+    root.write_failure_entry_payload(&namespace, &original)
+        .unwrap();
 
     let nested = root.as_path().join("fail/app-1/nested");
     std::fs::create_dir_all(&nested).unwrap();
@@ -169,7 +170,7 @@ fn cache_entry_handles_remove_files_without_following_symlinks() {
     let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let installed = root
-        .install_personal_thumbnail(
+        .install_personal_thumbnail_payload(
             &original,
             ThumbnailSize::Normal,
             &png_without_metadata(2, 1),
@@ -201,11 +202,11 @@ fn cache_entry_handles_remove_files_without_following_symlinks() {
 
 fn readable_original() -> ReadableOriginalIdentity {
     ReadableOriginalIdentity::new(
-        OriginalIdentity::new(
+        OriginalIdentity::with_mime_type(
             PersonalThumbnailUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             xdg_thumbnail::UnixMTimeSeconds::new(42),
             Some(12),
-            Some("image/png"),
+            "image/png",
         )
         .unwrap(),
     )

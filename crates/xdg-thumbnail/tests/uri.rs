@@ -80,18 +80,39 @@ fn textual_local_file_uri_normalizes_localhost_only() {
 
 #[test]
 fn caller_provided_absolute_uri_is_validated_and_preserved() {
-    let uri = PersonalThumbnailUri::from_absolute_uri("smb://server/share/My%20Photo.png").unwrap();
+    let uri = PersonalThumbnailUri::from_caller_selected_absolute_uri(
+        "smb://server/share/My%20Photo.png",
+    )
+    .unwrap();
 
     assert_eq!(uri.as_str(), "smb://server/share/My%20Photo.png");
     assert_eq!(uri.md5_stem(), "9225e92d750e899fbcc3b764c3085162");
 
-    assert!(PersonalThumbnailUri::from_absolute_uri("relative/path.png").is_err());
-    assert!(PersonalThumbnailUri::from_absolute_uri("http://example.test/My Photo.png").is_err());
     assert!(
-        PersonalThumbnailUri::from_absolute_uri("http://example.test/snowman-\u{2603}.png")
+        PersonalThumbnailUri::from_caller_selected_absolute_uri("file:///home/alice/photo.png")
             .is_err()
     );
-    assert!(PersonalThumbnailUri::from_absolute_uri("http://example.test/a\nb.png").is_err());
+    assert!(
+        PersonalThumbnailUri::from_caller_selected_absolute_uri(
+            "file://localhost/home/alice/photo.png"
+        )
+        .is_err()
+    );
+    assert!(PersonalThumbnailUri::from_caller_selected_absolute_uri("relative/path.png").is_err());
+    assert!(
+        PersonalThumbnailUri::from_caller_selected_absolute_uri("http://example.test/My Photo.png")
+            .is_err()
+    );
+    assert!(
+        PersonalThumbnailUri::from_caller_selected_absolute_uri(
+            "http://example.test/snowman-\u{2603}.png"
+        )
+        .is_err()
+    );
+    assert!(
+        PersonalThumbnailUri::from_caller_selected_absolute_uri("http://example.test/a\nb.png")
+            .is_err()
+    );
 }
 
 #[test]

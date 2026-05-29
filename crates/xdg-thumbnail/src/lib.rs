@@ -12,7 +12,8 @@ mod png;
 mod uri;
 
 pub use cache::{
-    CacheRoot, InstalledThumbnail, ThumbnailLookup, ValidatedThumbnailPath,
+    CacheRoot, InstalledThumbnailPath, InstalledThumbnailPayload, SharedCacheEntryInspection,
+    SharedCacheEntryOutcome, SharedThumbnailLookup, ThumbnailLookup, ValidatedThumbnailPath,
     ValidatedThumbnailPayload,
 };
 pub use error::{Result, ThumbnailError};
@@ -20,8 +21,8 @@ pub use identity::{
     OriginalIdentity, ReadableOriginalIdentity, SharedRepositoryContext, UnixMTimeSeconds,
 };
 pub use inspection::{
-    AccessTimePreservation, CacheEntryHandle, CacheEntryInspection, CacheEntryState,
-    ThumbnailTimestamps, ThumbnailUriIdentity,
+    AccessTimePreservation, CacheEntryHandle, CacheEntryInspection, ThumbnailTimestamps,
+    ThumbnailUriIdentity,
 };
 pub use namespace::{CacheNamespace, FailureNamespace, ThumbnailSize};
 pub use png::{

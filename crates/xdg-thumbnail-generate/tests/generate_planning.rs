@@ -411,11 +411,12 @@ impl Fixture {
             PersonalThumbnailUri::from_absolute_path_bytes(input.as_os_str().as_encoded_bytes())
                 .unwrap();
         let original = ReadableOriginalIdentity::new(
-            OriginalIdentity::new(uri, mtime, Some(metadata.len()), Some("image/png")).unwrap(),
+            OriginalIdentity::with_mime_type(uri, mtime, Some(metadata.len()), "image/png")
+                .unwrap(),
         );
         CacheRoot::new(self.cache_home.path().join("thumbnails"))
             .unwrap()
-            .install_personal_thumbnail(&original, ThumbnailSize::Normal, &rendered_png())
+            .install_personal_thumbnail_payload(&original, ThumbnailSize::Normal, &rendered_png())
             .unwrap();
     }
 }

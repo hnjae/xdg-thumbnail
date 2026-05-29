@@ -82,11 +82,11 @@ fn validated_payload_lookup_returns_exact_validated_png_bytes() {
 
 fn original_identity(mtime: i64) -> ReadableOriginalIdentity {
     ReadableOriginalIdentity::new(
-        OriginalIdentity::new(
+        OriginalIdentity::with_mime_type(
             PersonalThumbnailUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             UnixMTimeSeconds::new(mtime),
             Some(12),
-            Some("image/png"),
+            "image/png",
         )
         .unwrap(),
     )

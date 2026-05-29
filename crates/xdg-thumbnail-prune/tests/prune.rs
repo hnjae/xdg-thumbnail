@@ -323,16 +323,16 @@ impl Fixture {
     fn install_for_missing_original(&self) -> std::path::PathBuf {
         let root = CacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
         let original = ReadableOriginalIdentity::new(
-            OriginalIdentity::new(
+            OriginalIdentity::with_mime_type(
                 PersonalThumbnailUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-missing.png")
                     .unwrap(),
                 UnixMTimeSeconds::new(42),
                 Some(12),
-                Some("image/png"),
+                "image/png",
             )
             .unwrap(),
         );
-        root.install_personal_thumbnail(&original, ThumbnailSize::Normal, &rendered_png())
+        root.install_personal_thumbnail_payload(&original, ThumbnailSize::Normal, &rendered_png())
             .unwrap();
         root.personal_path(
             original.identity().uri(),
@@ -342,12 +342,12 @@ impl Fixture {
 
     fn install_nonconforming_for_missing_original(&self) -> std::path::PathBuf {
         let root = CacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
-        let original = OriginalIdentity::new(
+        let original = OriginalIdentity::with_mime_type(
             PersonalThumbnailUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-huge-missing.png")
                 .unwrap(),
             UnixMTimeSeconds::new(42),
             Some(12),
-            Some("image/png"),
+            "image/png",
         )
         .unwrap();
         let path = root.personal_path(original.uri(), &CacheNamespace::Size(ThumbnailSize::Normal));
@@ -365,11 +365,12 @@ impl Fixture {
         .unwrap();
         let root = CacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
         let original = ReadableOriginalIdentity::new(
-            OriginalIdentity::new(uri, UnixMTimeSeconds::new(1), Some(1), Some("image/png"))
+            OriginalIdentity::with_mime_type(uri, UnixMTimeSeconds::new(1), Some(1), "image/png")
                 .unwrap(),
         );
         let namespace = FailureNamespace::new("app-1").unwrap();
-        root.write_failure_entry(&namespace, &original).unwrap();
+        root.write_failure_entry_payload(&namespace, &original)
+            .unwrap();
         root.personal_path(
             original.identity().uri(),
             &CacheNamespace::Failure(namespace),
@@ -379,17 +380,17 @@ impl Fixture {
     fn install_uri_filename_mismatch(&self) -> std::path::PathBuf {
         let root = CacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
         let original = ReadableOriginalIdentity::new(
-            OriginalIdentity::new(
+            OriginalIdentity::with_mime_type(
                 PersonalThumbnailUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-photo.png")
                     .unwrap(),
                 UnixMTimeSeconds::new(42),
                 Some(12),
-                Some("image/png"),
+                "image/png",
             )
             .unwrap(),
         );
         let installed = root
-            .install_personal_thumbnail(&original, ThumbnailSize::Normal, &rendered_png())
+            .install_personal_thumbnail_payload(&original, ThumbnailSize::Normal, &rendered_png())
             .unwrap();
         let wrong_uri =
             PersonalThumbnailUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-other.png")
@@ -408,11 +409,11 @@ impl Fixture {
         )
         .unwrap();
         let original = ReadableOriginalIdentity::new(
-            OriginalIdentity::new(uri, UnixMTimeSeconds::new(1), Some(1), Some("image/png"))
+            OriginalIdentity::with_mime_type(uri, UnixMTimeSeconds::new(1), Some(1), "image/png")
                 .unwrap(),
         );
         let root = CacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
-        root.install_personal_thumbnail(&original, ThumbnailSize::Normal, &rendered_png())
+        root.install_personal_thumbnail_payload(&original, ThumbnailSize::Normal, &rendered_png())
             .unwrap();
         root.personal_path(
             original.identity().uri(),
@@ -430,10 +431,11 @@ impl Fixture {
         .unwrap();
         let mtime = UnixMTimeSeconds::from_system_time(metadata.modified().unwrap()).unwrap();
         let original = ReadableOriginalIdentity::new(
-            OriginalIdentity::new(uri, mtime, Some(metadata.len()), Some("image/png")).unwrap(),
+            OriginalIdentity::with_mime_type(uri, mtime, Some(metadata.len()), "image/png")
+                .unwrap(),
         );
         let root = CacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
-        root.install_personal_thumbnail(&original, ThumbnailSize::Normal, &rendered_png())
+        root.install_personal_thumbnail_payload(&original, ThumbnailSize::Normal, &rendered_png())
             .unwrap();
         root.personal_path(
             original.identity().uri(),

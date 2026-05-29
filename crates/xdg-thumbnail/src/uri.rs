@@ -72,15 +72,22 @@ impl PersonalThumbnailUri {
         Self::from_absolute_path_bytes(&path_bytes)
     }
 
-    /// Accepts a caller-selected absolute thumbnail URI identity and preserves it exactly.
-    pub fn from_absolute_uri(uri: &str) -> Result<Self> {
-        validate_ascii_uri_identity(uri)?;
-        let scheme_end = uri
-            .find(':')
-            .ok_or_else(|| ThumbnailError::invalid_uri("URI must be absolute"))?;
-        validate_scheme(&uri[..scheme_end])?;
-        validate_percent_escapes(uri.as_bytes())?;
+    /// Accepts a caller-selected non-local absolute thumbnail URI identity and preserves it exactly.
+    pub fn from_caller_selected_absolute_uri(uri: &str) -> Result<Self> {
+        let scheme = validate_absolute_uri_identity(uri)?;
+        if scheme.eq_ignore_ascii_case("file") {
+            return Err(ThumbnailError::invalid_uri(
+                "caller-selected URI identity must not use the file scheme",
+            ));
+        }
 
+        Ok(Self {
+            value: uri.to_owned(),
+        })
+    }
+
+    pub(crate) fn from_validated_absolute_uri(uri: &str) -> Result<Self> {
+        validate_absolute_uri_identity(uri)?;
         Ok(Self {
             value: uri.to_owned(),
         })
@@ -175,6 +182,17 @@ impl fmt::Display for SharedRelativeThumbnailUri {
 
 fn md5_stem(input: &[u8]) -> String {
     format!("{:x}", md5::compute(input))
+}
+
+pub(crate) fn validate_absolute_uri_identity(uri: &str) -> Result<&str> {
+    validate_ascii_uri_identity(uri)?;
+    let scheme_end = uri
+        .find(':')
+        .ok_or_else(|| ThumbnailError::invalid_uri("URI must be absolute"))?;
+    let scheme = &uri[..scheme_end];
+    validate_scheme(scheme)?;
+    validate_percent_escapes(uri.as_bytes())?;
+    Ok(scheme)
 }
 
 fn validate_raw_shared_child_name(name: &[u8]) -> Result<()> {

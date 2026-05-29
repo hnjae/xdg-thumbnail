@@ -152,11 +152,11 @@ fn shared_validation_allows_incomplete_freshness_metadata_explicitly() {
 }
 
 fn original_identity() -> OriginalIdentity {
-    OriginalIdentity::new(
+    OriginalIdentity::with_mime_type(
         PersonalThumbnailUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
         UnixMTimeSeconds::new(42),
         Some(12),
-        Some("image/png"),
+        "image/png",
     )
     .unwrap()
 }

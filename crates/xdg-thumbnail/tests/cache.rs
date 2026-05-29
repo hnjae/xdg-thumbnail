@@ -81,7 +81,8 @@ fn failure_namespaces_are_direct_ascii_directory_names() {
 fn original_identity_preserves_required_freshness_facts() {
     let uri = PersonalThumbnailUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap();
     let mtime = UnixMTimeSeconds::new(42);
-    let identity = OriginalIdentity::new(uri.clone(), mtime, Some(12), Some("image/png")).unwrap();
+    let identity =
+        OriginalIdentity::with_mime_type(uri.clone(), mtime, Some(12), "image/png").unwrap();
     let readable = ReadableOriginalIdentity::new(identity.clone());
 
     assert_eq!(identity.uri(), &uri);
@@ -89,6 +90,15 @@ fn original_identity_preserves_required_freshness_facts() {
     assert_eq!(identity.size(), Some(12));
     assert_eq!(identity.mime_type(), Some("image/png"));
     assert_eq!(readable.identity().uri(), &uri);
+}
+
+#[test]
+fn original_identity_without_mime_type_needs_no_type_hint() {
+    let uri = PersonalThumbnailUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap();
+    let identity = OriginalIdentity::new(uri.clone(), UnixMTimeSeconds::new(42), Some(12));
+
+    assert_eq!(identity.uri(), &uri);
+    assert_eq!(identity.mime_type(), None);
 }
 
 #[test]

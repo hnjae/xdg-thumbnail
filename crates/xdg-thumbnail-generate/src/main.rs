@@ -253,7 +253,7 @@ fn plan_one(
         return record;
     }
 
-    let original = match readable_original_for_path(path, None::<String>) {
+    let original = match readable_original_for_path(path, None) {
         Ok(original) => original,
         Err(error) => {
             let reason = original_error_reason(&error);
@@ -275,7 +275,7 @@ fn plan_one(
     let mime_type = detect_mime_type(context.mime_db, path);
     record.mime_type.clone_from(&mime_type);
     let original = if let Some(mime_type) = mime_type.as_deref() {
-        match readable_original_for_path(path, Some(mime_type.to_owned())) {
+        match readable_original_for_path(path, Some(mime_type)) {
             Ok(original) => original,
             Err(_) => original,
         }
@@ -585,15 +585,19 @@ fn is_recursive_input(root: &CacheRoot, path: &Path) -> bool {
 #[cfg(unix)]
 fn readable_original_for_path(
     path: &Path,
-    mime_type: Option<impl Into<String>>,
+    mime_type: Option<&str>,
 ) -> xdg_thumbnail::Result<ReadableOriginalIdentity> {
-    ReadableOriginalIdentity::from_local_path(path, mime_type)
+    if let Some(mime_type) = mime_type {
+        ReadableOriginalIdentity::from_local_path_with_mime_type(path, mime_type)
+    } else {
+        ReadableOriginalIdentity::from_local_path(path)
+    }
 }
 
 #[cfg(not(unix))]
 fn readable_original_for_path(
     _path: &Path,
-    _mime_type: Option<impl Into<String>>,
+    _mime_type: Option<&str>,
 ) -> xdg_thumbnail::Result<ReadableOriginalIdentity> {
     Err(xdg_thumbnail::ThumbnailError::UnsupportedPlatform)
 }
@@ -1003,7 +1007,7 @@ fn execute_thumbnailer(
             sandbox_applied,
         ));
     }
-    root.install_personal_thumbnail(original, size, &rendered)
+    root.install_personal_thumbnail_path(original, size, &rendered)
         .map(|_| ())
         .map_err(|error| {
             ExecutionError::with_sandbox(
