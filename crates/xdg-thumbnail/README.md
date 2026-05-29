@@ -4,6 +4,8 @@ Freedesktop thumbnail cache primitives for Rust applications.
 
 The crate provides typed APIs for resolving the personal thumbnail cache, constructing canonical original URI identities, validating existing cache entries, reading validated thumbnail PNG bytes, and atomically installing caller-rendered thumbnails. It does not decode original source formats, choose thumbnailers, or apply cleanup policy.
 
+This crate supports Unix-like XDG desktop environments only. Non-Unix targets fail during crate compilation because thumbnail identity, cache permissions, and local path URI construction depend on Unix path bytes and metadata semantics.
+
 ## Example
 
 ```rust

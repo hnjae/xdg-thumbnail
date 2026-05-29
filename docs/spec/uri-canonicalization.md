@@ -2,7 +2,7 @@
 
 Thumbnail path calculation and `Thumb::URI` metadata must use the same canonical thumbnail URI bytes. The implementation must not hash display paths, shell-expanded paths, lossy path conversions, IRIs, or a different URI string than the one stored in standard metadata.
 
-Initial platform support targets Unix-like XDG desktop environments. Local filesystem URI construction depends on Unix path identity and path bytes; unsupported platforms must fail explicitly instead of approximating URI or path behavior that could produce incompatible thumbnail filenames.
+Initial platform support targets Unix-like XDG desktop environments. Local filesystem URI construction depends on Unix path identity and path bytes; non-Unix targets must fail during crate compilation with a clear unsupported-target diagnostic instead of approximating URI or path behavior that could produce incompatible thumbnail filenames.
 
 External URI or IRI parsers may be used only for syntax validation or lossless helper views; parser reserialization must not become the thumbnail URI identity unless the relevant constructor explicitly defines that normalization. The library owns the thumbnail URI identity string used for hashing, `Thumb::URI`, and metadata comparison after it constructs or accepts that identity.
 

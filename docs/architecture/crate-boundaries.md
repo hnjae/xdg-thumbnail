@@ -2,7 +2,7 @@
 
 The target repository shape is a Cargo workspace with one reusable library crate and separate CLI crates for pruning and generation. The current skeleton may omit planned crates until their implementation work starts; the target layout below documents intended ownership boundaries rather than a guarantee that every crate exists in the initial skeleton.
 
-Initial implementation scope is Unix-like XDG desktop environments. Platform-specific APIs should make Unix path bytes, permissions, file metadata, and XDG cache behavior explicit, and unsupported platforms should fail with clear errors rather than silently approximating incompatible cache identities.
+Initial implementation scope is Unix-like XDG desktop environments. Platform-specific APIs should make Unix path bytes, permissions, file metadata, and XDG cache behavior explicit. The reusable crate is Unix-like only: non-Unix targets must fail during crate compilation with a clear unsupported-target diagnostic rather than exposing runtime approximations of incompatible cache identities.
 
 ```text
 xdg-thumbnail/
@@ -124,6 +124,7 @@ Landlock may be considered later as an additional hardening layer or fallback fo
 The library should expose policy-neutral types that CLI crates can combine into user-facing behavior.
 
 ```rust
+#[non_exhaustive]
 pub enum ThumbnailSize {
     Normal,
     Large,
@@ -131,6 +132,7 @@ pub enum ThumbnailSize {
     XxLarge,
 }
 
+#[non_exhaustive]
 pub enum CacheNamespace {
     Size(ThumbnailSize),
     Failure(FailureNamespace),
@@ -155,7 +157,7 @@ pub struct UnixMTimeSeconds {
 pub struct OriginalIdentity {
     uri: PersonalOriginalUri,
     mtime: UnixMTimeSeconds,
-    size: Option<u64>,
+    original_byte_size: Option<u64>,
     mime_type: Option<String>,
 }
 
@@ -173,6 +175,7 @@ pub struct SharedRepositoryContext {
     shared_uri: SharedRelativeOriginalUri,
 }
 
+#[non_exhaustive]
 pub enum OriginalUriIdentity {
     Personal(PersonalOriginalUri),
     Shared(SharedRelativeOriginalUri),
@@ -203,6 +206,7 @@ pub enum SharedValidationOutcome {
     Invalid(Vec<CacheEntryProblem>),
 }
 
+#[non_exhaustive]
 pub enum SharedThumbnailMetadataPolicy {
     RequireComplete,
     AllowIncomplete,
@@ -229,6 +233,7 @@ pub struct ThumbnailTimestamps {
     access_time_preserved_during_inspection: AccessTimePreservation,
 }
 
+#[non_exhaustive]
 pub enum AccessTimePreservation {
     Preserved,
     NotPreserved,
@@ -242,7 +247,7 @@ pub struct CacheEntryHandle {
 }
 ```
 
-`UnixMTimeSeconds` stores the whole Unix epoch seconds used in `Thumb::MTime`; constructors from filesystem metadata must define truncation, pre-epoch, and overflow handling before validation or writes depend on the value. `PersonalOriginalUri` and `SharedRelativeOriginalUri` remain separate types so an absolute personal-cache URI cannot accidentally be reused as a shared-repository lookup key. `FailureNamespace` values must be validated direct directory names before use. The initial accepted character set is ASCII letters, digits, `.`, `_`, `+`, and `-`; empty values, `.`, `..`, path separators, NUL, and control characters are rejected.
+`UnixMTimeSeconds` stores the whole Unix epoch seconds used in `Thumb::MTime`; constructors from filesystem metadata must define truncation, pre-epoch, and overflow handling before validation or writes depend on the value. `OriginalIdentity` stores the canonical personal URI plus freshness and write facts needed for validation and cache writes: modification time, optional original byte size, and optional MIME type. `PersonalOriginalUri` and `SharedRelativeOriginalUri` remain separate URI-only types so an absolute personal-cache URI cannot accidentally be reused as a shared-repository lookup key. `FailureNamespace` values must be validated direct directory names before use. The initial accepted character set is ASCII letters, digits, `.`, `_`, `+`, and `-`; empty values, `.`, `..`, path separators, NUL, and control characters are rejected.
 
 The exact names can change during implementation, but the direction should remain: the library describes cache entries and filesystem facts with enough precision to avoid accidental cleanup policy, while the prune CLI classifies entries, decides which cleanup policy to run, and requests destructive changes only through library-provided cache entry handles.
 
