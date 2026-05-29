@@ -83,10 +83,9 @@ Age-based cleanup policy belongs to the prune CLI, while the library reports tim
 A thumbnail consumer that only wants to reuse existing thumbnails should be able to use the library through a flow equivalent to:
 
 ```rust
-let uri = ThumbnailUri::from_file_path(path)?;
-let original = OriginalFile::open_readable(path)?;
-let identity = ReadableOriginalIdentity::from_readable_file(&uri, &original)?;
-let computed_path = cache.cache_entry_path(&uri, &CacheNamespace::Size(ThumbnailSize::Normal));
+let identity = ReadableOriginalIdentity::from_local_path(path)?;
+let personal_uri: &PersonalOriginalUri = identity.identity().uri();
+let computed_path = cache.cache_entry_path(personal_uri, &CacheNamespace::Size(ThumbnailSize::Normal));
 
 match cache.lookup_thumbnail_png_bytes(&identity, ThumbnailSize::Normal)? {
     PersonalThumbnailLookup::Valid(thumbnail) => return Ok(Some(thumbnail)),
@@ -94,9 +93,11 @@ match cache.lookup_thumbnail_png_bytes(&identity, ThumbnailSize::Normal)? {
     _ => {}
 }
 
-let shared = SharedRepositoryContext::for_direct_child(path)?;
+let repository_root = path.parent().expect("absolute original path has a parent");
+let original_child_name = path.file_name().expect("original path has a filename");
+let shared = SharedRepositoryContext::new(repository_root, original_child_name)?;
 let shared_policy = SharedThumbnailMetadataPolicy::RequireComplete;
-match shared.lookup_thumbnail_png_bytes(ThumbnailSize::Normal, shared_policy, Some(identity.mtime()), identity.original_byte_size())? {
+match shared.lookup_thumbnail_png_bytes(ThumbnailSize::Normal, shared_policy, Some(identity.identity().mtime()), identity.identity().original_byte_size())? {
     SharedThumbnailLookup::FullyVerified(thumbnail) => return Ok(Some(thumbnail)),
     SharedThumbnailLookup::MetadataIncomplete(_) => {}
     SharedThumbnailLookup::Missing | SharedThumbnailLookup::Invalid(_) => {}
