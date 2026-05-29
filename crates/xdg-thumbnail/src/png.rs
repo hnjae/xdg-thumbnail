@@ -13,6 +13,129 @@ use crate::{
 const MAX_RENDERED_PIXELS: u64 = 16_777_216;
 const MAX_RENDERED_DECODE_BYTES: usize = 256 * 1024 * 1024;
 
+/// Explicit raw pixel format accepted by raw thumbnail install APIs.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum RawThumbnailPixelFormat {
+    /// Three 8-bit channels per pixel in red, green, blue order.
+    Rgb8,
+    /// Four 8-bit channels per pixel in red, green, blue, alpha order.
+    Rgba8,
+}
+
+impl RawThumbnailPixelFormat {
+    const fn channels(self) -> usize {
+        match self {
+            Self::Rgb8 => 3,
+            Self::Rgba8 => 4,
+        }
+    }
+}
+
+/// Borrowed raw rendered thumbnail pixels.
+///
+/// This type validates the caller-supplied dimensions, stride, format, and buffer length. Raw
+/// thumbnail install APIs do not infer pixel format from byte length.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RawThumbnailImage<'a> {
+    width: u32,
+    height: u32,
+    stride: usize,
+    format: RawThumbnailPixelFormat,
+    pixels: &'a [u8],
+}
+
+impl<'a> RawThumbnailImage<'a> {
+    /// Creates a validated borrowed raw thumbnail image.
+    pub fn new(
+        width: u32,
+        height: u32,
+        stride: usize,
+        format: RawThumbnailPixelFormat,
+        pixels: &'a [u8],
+    ) -> Result<Self> {
+        validate_raw_thumbnail_image(width, height, stride, format, pixels)?;
+        Ok(Self {
+            width,
+            height,
+            stride,
+            format,
+            pixels,
+        })
+    }
+
+    /// Returns the image width in pixels.
+    #[must_use]
+    pub const fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// Returns the image height in pixels.
+    #[must_use]
+    pub const fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// Returns the row stride in bytes.
+    #[must_use]
+    pub const fn stride(&self) -> usize {
+        self.stride
+    }
+
+    /// Returns the explicit pixel format.
+    #[must_use]
+    pub const fn format(&self) -> RawThumbnailPixelFormat {
+        self.format
+    }
+
+    /// Returns the validated pixel buffer.
+    #[must_use]
+    pub const fn pixels(&self) -> &'a [u8] {
+        self.pixels
+    }
+}
+
+/// Owned raw rendered thumbnail pixels.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnedRawThumbnailImage {
+    width: u32,
+    height: u32,
+    stride: usize,
+    format: RawThumbnailPixelFormat,
+    pixels: Vec<u8>,
+}
+
+impl OwnedRawThumbnailImage {
+    /// Creates a validated owned raw thumbnail image.
+    pub fn new(
+        width: u32,
+        height: u32,
+        stride: usize,
+        format: RawThumbnailPixelFormat,
+        pixels: Vec<u8>,
+    ) -> Result<Self> {
+        validate_raw_thumbnail_image(width, height, stride, format, &pixels)?;
+        Ok(Self {
+            width,
+            height,
+            stride,
+            format,
+            pixels,
+        })
+    }
+
+    /// Borrows this owned image for raw install APIs.
+    #[must_use]
+    pub fn as_borrowed(&self) -> RawThumbnailImage<'_> {
+        RawThumbnailImage {
+            width: self.width,
+            height: self.height,
+            stride: self.stride,
+            format: self.format,
+            pixels: &self.pixels,
+        }
+    }
+}
+
 /// Policy-neutral problem found while validating or inspecting a cache entry.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CacheEntryProblem {
@@ -406,6 +529,23 @@ pub(crate) fn normalized_personal_thumbnail_png(
     size: ThumbnailSize,
 ) -> Result<Vec<u8>> {
     let image = decode_rendered_png_to_rgba8(rendered_png)?;
+    normalized_personal_thumbnail_rgba_png(image, original, size)
+}
+
+pub(crate) fn normalized_personal_thumbnail_raw_png(
+    image: RawThumbnailImage<'_>,
+    original: &OriginalIdentity,
+    size: ThumbnailSize,
+) -> Result<Vec<u8>> {
+    let image = raw_thumbnail_to_rgba8(image)?;
+    normalized_personal_thumbnail_rgba_png(image, original, size)
+}
+
+fn normalized_personal_thumbnail_rgba_png(
+    image: RgbaImage,
+    original: &OriginalIdentity,
+    size: ThumbnailSize,
+) -> Result<Vec<u8>> {
     let image = downscale_to_namespace(image, size)?;
     let metadata = thumbnail_metadata_pairs(original);
     let png = encode_rgba_png(image.width, image.height, &image.pixels, &metadata)?;
@@ -460,6 +600,75 @@ fn ensure_rendered_resource_limits(
         ));
     }
     Ok(())
+}
+
+fn validate_raw_thumbnail_image(
+    width: u32,
+    height: u32,
+    stride: usize,
+    format: RawThumbnailPixelFormat,
+    pixels: &[u8],
+) -> Result<()> {
+    if width == 0 || height == 0 {
+        return Err(ThumbnailError::UnsupportedRenderedThumbnail(
+            "raw thumbnail dimensions must be non-zero",
+        ));
+    }
+
+    let row_bytes = raw_row_bytes(width, format)?;
+    let decoded_len = rgba_buffer_len(width, height)?;
+    ensure_raw_resource_limits(width, height, decoded_len)?;
+
+    if stride < row_bytes {
+        return Err(ThumbnailError::UnsupportedRenderedThumbnail(
+            "raw thumbnail stride is too small",
+        ));
+    }
+
+    let required_len = raw_required_buffer_len(height, stride, row_bytes)?;
+    if pixels.len() < required_len {
+        return Err(ThumbnailError::UnsupportedRenderedThumbnail(
+            "raw thumbnail buffer is too short",
+        ));
+    }
+
+    Ok(())
+}
+
+fn ensure_raw_resource_limits(width: u32, height: u32, output_buffer_size: usize) -> Result<()> {
+    ensure_rendered_resource_limits(width, height, output_buffer_size).map_err(
+        |error| match error {
+            ThumbnailError::UnsupportedRenderedThumbnail(_) => {
+                ThumbnailError::UnsupportedRenderedThumbnail(
+                    "raw thumbnail resource limit exceeded",
+                )
+            }
+            error => error,
+        },
+    )
+}
+
+fn raw_row_bytes(width: u32, format: RawThumbnailPixelFormat) -> Result<usize> {
+    usize::try_from(width)
+        .map_err(|_| {
+            ThumbnailError::UnsupportedRenderedThumbnail("raw thumbnail width overflows usize")
+        })?
+        .checked_mul(format.channels())
+        .ok_or(ThumbnailError::UnsupportedRenderedThumbnail(
+            "raw thumbnail row length overflows usize",
+        ))
+}
+
+fn raw_required_buffer_len(height: u32, stride: usize, row_bytes: usize) -> Result<usize> {
+    let height = usize::try_from(height).map_err(|_| {
+        ThumbnailError::UnsupportedRenderedThumbnail("raw thumbnail height overflows usize")
+    })?;
+    stride
+        .checked_mul(height.saturating_sub(1))
+        .and_then(|bytes_before_last_row| bytes_before_last_row.checked_add(row_bytes))
+        .ok_or(ThumbnailError::UnsupportedRenderedThumbnail(
+            "raw thumbnail buffer length overflows usize",
+        ))
 }
 
 fn pixel_count_len(width: u32, height: u32) -> Result<usize> {
@@ -534,6 +743,28 @@ fn decode_rendered_png_to_rgba8(bytes: &[u8]) -> Result<RgbaImage> {
     Ok(RgbaImage {
         width: output.width,
         height: output.height,
+        pixels,
+    })
+}
+
+fn raw_thumbnail_to_rgba8(image: RawThumbnailImage<'_>) -> Result<RgbaImage> {
+    let row_bytes = raw_row_bytes(image.width, image.format)?;
+    let mut pixels = Vec::with_capacity(rgba_buffer_len(image.width, image.height)?);
+    for row_index in 0..image.height as usize {
+        let start = row_index * image.stride;
+        let row = &image.pixels[start..start + row_bytes];
+        match image.format {
+            RawThumbnailPixelFormat::Rgb8 => {
+                for pixel in row.chunks_exact(3) {
+                    pixels.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 255]);
+                }
+            }
+            RawThumbnailPixelFormat::Rgba8 => pixels.extend_from_slice(row),
+        }
+    }
+    Ok(RgbaImage {
+        width: image.width,
+        height: image.height,
         pixels,
     })
 }

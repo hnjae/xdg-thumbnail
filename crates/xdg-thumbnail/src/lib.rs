@@ -14,9 +14,10 @@ mod uri;
 pub use cache::{
     CacheRoot, FailureEntryWriteRequest, InstalledThumbnailPath, InstalledThumbnailPayload,
     PersonalThumbnailInspectionRequest, PersonalThumbnailInstallRequest,
-    PersonalThumbnailLookupRequest, SharedCacheEntryInspection, SharedCacheEntryOutcome,
-    SharedThumbnailInspectionRequest, SharedThumbnailLookup, SharedThumbnailLookupRequest,
-    ThumbnailLookup, ValidatedThumbnailPath, ValidatedThumbnailPayload,
+    PersonalThumbnailLookupRequest, PersonalThumbnailRawInstallRequest, SharedCacheEntryInspection,
+    SharedCacheEntryOutcome, SharedThumbnailInspectionRequest, SharedThumbnailLookup,
+    SharedThumbnailLookupRequest, ThumbnailLookup, ValidatedThumbnailPath,
+    ValidatedThumbnailPayload,
 };
 pub use error::{Result, ThumbnailError};
 pub use identity::{
@@ -28,12 +29,13 @@ pub use inspection::{
 };
 pub use namespace::{CacheNamespace, FailureNamespace, ThumbnailSize};
 pub use png::{
-    CacheEntryProblem, ParsedThumbnailPng, ThumbnailMetadata, ValidationOutcome,
-    validate_personal_failure_entry, validate_personal_thumbnail, validate_shared_thumbnail,
+    CacheEntryProblem, OwnedRawThumbnailImage, ParsedThumbnailPng, RawThumbnailImage,
+    RawThumbnailPixelFormat, ThumbnailMetadata, ValidationOutcome, validate_personal_failure_entry,
+    validate_personal_thumbnail, validate_shared_thumbnail,
 };
 pub use uri::{PersonalThumbnailUri, SharedRelativeThumbnailUri};
 
 pub(crate) use png::{
-    encode_rgba_png, normalized_personal_thumbnail_png, push_problem, thumbnail_metadata_pairs,
-    validate_mime_type,
+    encode_rgba_png, normalized_personal_thumbnail_png, normalized_personal_thumbnail_raw_png,
+    push_problem, thumbnail_metadata_pairs, validate_mime_type,
 };

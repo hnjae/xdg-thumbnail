@@ -18,9 +18,10 @@ use crate::inspection::{
 };
 use crate::{
     AccessTimePreservation, CacheEntryProblem, CacheNamespace, FailureNamespace,
-    ParsedThumbnailPng, ReadableOriginalIdentity, Result, SharedRelativeThumbnailUri,
-    SharedRepositoryContext, ThumbnailError, ThumbnailMetadata, ThumbnailSize, ThumbnailTimestamps,
-    UnixMTimeSeconds, ValidationOutcome, encode_rgba_png, normalized_personal_thumbnail_png,
+    OwnedRawThumbnailImage, ParsedThumbnailPng, RawThumbnailImage, ReadableOriginalIdentity,
+    Result, SharedRelativeThumbnailUri, SharedRepositoryContext, ThumbnailError, ThumbnailMetadata,
+    ThumbnailSize, ThumbnailTimestamps, UnixMTimeSeconds, ValidationOutcome, encode_rgba_png,
+    normalized_personal_thumbnail_png, normalized_personal_thumbnail_raw_png,
     thumbnail_metadata_pairs, validate_personal_thumbnail, validate_shared_thumbnail,
 };
 
@@ -174,6 +175,28 @@ impl CacheRoot {
         Ok(InstalledThumbnailPayload { path, bytes })
     }
 
+    /// Normalizes raw pixel data, atomically installs a personal-cache thumbnail, and returns its path.
+    pub fn install_personal_thumbnail_raw_path(
+        &self,
+        original: &ReadableOriginalIdentity,
+        size: ThumbnailSize,
+        image: RawThumbnailImage<'_>,
+    ) -> Result<InstalledThumbnailPath> {
+        let (path, _) = self.install_personal_thumbnail_raw_entry(original, size, image)?;
+        Ok(InstalledThumbnailPath { path })
+    }
+
+    /// Normalizes raw pixel data, atomically installs a personal-cache thumbnail, and returns final bytes.
+    pub fn install_personal_thumbnail_raw_payload(
+        &self,
+        original: &ReadableOriginalIdentity,
+        size: ThumbnailSize,
+        image: RawThumbnailImage<'_>,
+    ) -> Result<InstalledThumbnailPayload> {
+        let (path, bytes) = self.install_personal_thumbnail_raw_entry(original, size, image)?;
+        Ok(InstalledThumbnailPayload { path, bytes })
+    }
+
     fn install_personal_thumbnail_entry(
         &self,
         original: &ReadableOriginalIdentity,
@@ -183,6 +206,19 @@ impl CacheRoot {
         let namespace = CacheNamespace::Size(size);
         let path = self.personal_path(original.identity().uri(), &namespace);
         let bytes = normalized_personal_thumbnail_png(rendered_png, original.identity(), size)?;
+        self.write_personal_entry(&path, &namespace, &bytes)?;
+        Ok((path, bytes))
+    }
+
+    fn install_personal_thumbnail_raw_entry(
+        &self,
+        original: &ReadableOriginalIdentity,
+        size: ThumbnailSize,
+        image: RawThumbnailImage<'_>,
+    ) -> Result<(PathBuf, Vec<u8>)> {
+        let namespace = CacheNamespace::Size(size);
+        let path = self.personal_path(original.identity().uri(), &namespace);
+        let bytes = normalized_personal_thumbnail_raw_png(image, original.identity(), size)?;
         self.write_personal_entry(&path, &namespace, &bytes)?;
         Ok((path, bytes))
     }
@@ -617,6 +653,67 @@ impl PersonalThumbnailInstallRequest {
     #[must_use]
     pub fn into_parts(self) -> (CacheRoot, ReadableOriginalIdentity, ThumbnailSize, Vec<u8>) {
         (self.root, self.original, self.size, self.rendered_png)
+    }
+}
+
+/// Owned personal-cache raw install request for async or runtime-specific adapters.
+///
+/// Constructing this request does not perform filesystem I/O. Raw conversion, normalization, and
+/// installation happen only when [`Self::install_path`] or [`Self::install_payload`] is called.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PersonalThumbnailRawInstallRequest {
+    root: CacheRoot,
+    original: ReadableOriginalIdentity,
+    size: ThumbnailSize,
+    image: OwnedRawThumbnailImage,
+}
+
+impl PersonalThumbnailRawInstallRequest {
+    /// Creates an owned personal-cache raw install request.
+    #[must_use]
+    pub fn new(
+        root: CacheRoot,
+        original: ReadableOriginalIdentity,
+        size: ThumbnailSize,
+        image: OwnedRawThumbnailImage,
+    ) -> Self {
+        Self {
+            root,
+            original,
+            size,
+            image,
+        }
+    }
+
+    /// Normalizes raw pixel data, installs a personal-cache thumbnail, and returns its path.
+    pub fn install_path(&self) -> Result<InstalledThumbnailPath> {
+        self.root.install_personal_thumbnail_raw_path(
+            &self.original,
+            self.size,
+            self.image.as_borrowed(),
+        )
+    }
+
+    /// Normalizes raw pixel data, installs a personal-cache thumbnail, and returns final bytes.
+    pub fn install_payload(&self) -> Result<InstalledThumbnailPayload> {
+        self.root.install_personal_thumbnail_raw_payload(
+            &self.original,
+            self.size,
+            self.image.as_borrowed(),
+        )
+    }
+
+    /// Splits this request into its owned parts.
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        CacheRoot,
+        ReadableOriginalIdentity,
+        ThumbnailSize,
+        OwnedRawThumbnailImage,
+    ) {
+        (self.root, self.original, self.size, self.image)
     }
 }
 
