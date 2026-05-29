@@ -12,9 +12,11 @@ mod png;
 mod uri;
 
 pub use cache::{
-    CacheRoot, InstalledThumbnailPath, InstalledThumbnailPayload, SharedCacheEntryInspection,
-    SharedCacheEntryOutcome, SharedThumbnailLookup, ThumbnailLookup, ValidatedThumbnailPath,
-    ValidatedThumbnailPayload,
+    CacheRoot, FailureEntryWriteRequest, InstalledThumbnailPath, InstalledThumbnailPayload,
+    PersonalThumbnailInspectionRequest, PersonalThumbnailInstallRequest,
+    PersonalThumbnailLookupRequest, SharedCacheEntryInspection, SharedCacheEntryOutcome,
+    SharedThumbnailInspectionRequest, SharedThumbnailLookup, SharedThumbnailLookupRequest,
+    ThumbnailLookup, ValidatedThumbnailPath, ValidatedThumbnailPayload,
 };
 pub use error::{Result, ThumbnailError};
 pub use identity::{

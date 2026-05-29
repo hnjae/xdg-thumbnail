@@ -13,7 +13,8 @@ use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
 use crate::PersonalThumbnailUri;
 use crate::inspection::{
-    read_thumbnail_for_inspection, thumbnail_timestamps, thumbnail_timestamps_from_metadata,
+    CacheEntryInspection, read_thumbnail_for_inspection, thumbnail_timestamps,
+    thumbnail_timestamps_from_metadata,
 };
 use crate::{
     AccessTimePreservation, CacheEntryProblem, CacheNamespace, FailureNamespace,
@@ -516,6 +517,294 @@ impl SharedRepositoryContext {
             path,
             metadata: parsed.map(ParsedThumbnailPng::into_metadata),
         }))
+    }
+}
+
+/// Owned personal-cache lookup request for async or runtime-specific adapters.
+///
+/// Constructing this request does not perform filesystem I/O. Validation happens only when
+/// [`Self::validated_path`] or [`Self::validated_payload`] is called.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PersonalThumbnailLookupRequest {
+    root: CacheRoot,
+    original: ReadableOriginalIdentity,
+    size: ThumbnailSize,
+}
+
+impl PersonalThumbnailLookupRequest {
+    /// Creates an owned personal-cache lookup request.
+    #[must_use]
+    pub const fn new(
+        root: CacheRoot,
+        original: ReadableOriginalIdentity,
+        size: ThumbnailSize,
+    ) -> Self {
+        Self {
+            root,
+            original,
+            size,
+        }
+    }
+
+    /// Returns a validated personal-cache path for the owned request.
+    pub fn validated_path(&self) -> Result<ThumbnailLookup<ValidatedThumbnailPath>> {
+        self.root.validated_personal_path(&self.original, self.size)
+    }
+
+    /// Returns exact validated personal-cache PNG bytes for the owned request.
+    pub fn validated_payload(&self) -> Result<ThumbnailLookup<ValidatedThumbnailPayload>> {
+        self.root
+            .validated_personal_payload(&self.original, self.size)
+    }
+
+    /// Splits this request into its owned parts.
+    #[must_use]
+    pub fn into_parts(self) -> (CacheRoot, ReadableOriginalIdentity, ThumbnailSize) {
+        (self.root, self.original, self.size)
+    }
+}
+
+/// Owned personal-cache install request for async or runtime-specific adapters.
+///
+/// Constructing this request does not perform filesystem I/O. Normalization and installation happen
+/// only when [`Self::install_path`] or [`Self::install_payload`] is called.
+///
+/// ```ignore
+/// let request = PersonalThumbnailInstallRequest::new(root, original, size, rendered_png);
+///
+/// let installed = tokio::task::spawn_blocking(move || request.install_payload())
+///     .await
+///     .expect("blocking thumbnail task panicked")?;
+/// ```
+#[derive(Debug, Eq, PartialEq)]
+pub struct PersonalThumbnailInstallRequest {
+    root: CacheRoot,
+    original: ReadableOriginalIdentity,
+    size: ThumbnailSize,
+    rendered_png: Vec<u8>,
+}
+
+impl PersonalThumbnailInstallRequest {
+    /// Creates an owned personal-cache install request.
+    #[must_use]
+    pub fn new(
+        root: CacheRoot,
+        original: ReadableOriginalIdentity,
+        size: ThumbnailSize,
+        rendered_png: Vec<u8>,
+    ) -> Self {
+        Self {
+            root,
+            original,
+            size,
+            rendered_png,
+        }
+    }
+
+    /// Normalizes rendered PNG data, installs a personal-cache thumbnail, and returns its path.
+    pub fn install_path(&self) -> Result<InstalledThumbnailPath> {
+        self.root
+            .install_personal_thumbnail_path(&self.original, self.size, &self.rendered_png)
+    }
+
+    /// Normalizes rendered PNG data, installs a personal-cache thumbnail, and returns final bytes.
+    pub fn install_payload(&self) -> Result<InstalledThumbnailPayload> {
+        self.root
+            .install_personal_thumbnail_payload(&self.original, self.size, &self.rendered_png)
+    }
+
+    /// Splits this request into its owned parts.
+    #[must_use]
+    pub fn into_parts(self) -> (CacheRoot, ReadableOriginalIdentity, ThumbnailSize, Vec<u8>) {
+        (self.root, self.original, self.size, self.rendered_png)
+    }
+}
+
+/// Owned failure-entry write request for async or runtime-specific adapters.
+///
+/// Constructing this request does not perform filesystem I/O. The failure entry is written only
+/// when [`Self::write_path`] or [`Self::write_payload`] is called.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FailureEntryWriteRequest {
+    root: CacheRoot,
+    namespace: FailureNamespace,
+    original: ReadableOriginalIdentity,
+}
+
+impl FailureEntryWriteRequest {
+    /// Creates an owned failure-entry write request.
+    #[must_use]
+    pub const fn new(
+        root: CacheRoot,
+        namespace: FailureNamespace,
+        original: ReadableOriginalIdentity,
+    ) -> Self {
+        Self {
+            root,
+            namespace,
+            original,
+        }
+    }
+
+    /// Writes a deterministic 1x1 transparent failure entry and returns its path.
+    pub fn write_path(&self) -> Result<InstalledThumbnailPath> {
+        self.root
+            .write_failure_entry_path(&self.namespace, &self.original)
+    }
+
+    /// Writes a deterministic 1x1 transparent failure entry and returns final bytes.
+    pub fn write_payload(&self) -> Result<InstalledThumbnailPayload> {
+        self.root
+            .write_failure_entry_payload(&self.namespace, &self.original)
+    }
+
+    /// Splits this request into its owned parts.
+    #[must_use]
+    pub fn into_parts(self) -> (CacheRoot, FailureNamespace, ReadableOriginalIdentity) {
+        (self.root, self.namespace, self.original)
+    }
+}
+
+/// Owned personal-cache inspection request for async or runtime-specific adapters.
+///
+/// Constructing this request does not perform filesystem I/O. Inspection happens only when
+/// [`Self::inspect`] is called.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PersonalThumbnailInspectionRequest {
+    root: CacheRoot,
+    sizes: Vec<ThumbnailSize>,
+    include_nonstandard: bool,
+}
+
+impl PersonalThumbnailInspectionRequest {
+    /// Creates an owned personal-cache inspection request.
+    #[must_use]
+    pub const fn new(
+        root: CacheRoot,
+        sizes: Vec<ThumbnailSize>,
+        include_nonstandard: bool,
+    ) -> Self {
+        Self {
+            root,
+            sizes,
+            include_nonstandard,
+        }
+    }
+
+    /// Inspects standard successful thumbnail size directories.
+    pub fn inspect(&self) -> Result<Vec<CacheEntryInspection>> {
+        self.root
+            .inspect_thumbnails(&self.sizes, self.include_nonstandard)
+    }
+
+    /// Splits this request into its owned parts.
+    #[must_use]
+    pub fn into_parts(self) -> (CacheRoot, Vec<ThumbnailSize>, bool) {
+        (self.root, self.sizes, self.include_nonstandard)
+    }
+}
+
+/// Owned shared-repository lookup request for async or runtime-specific adapters.
+///
+/// Constructing this request does not perform filesystem I/O. Validation happens only when
+/// [`Self::validated_path`] or [`Self::validated_payload`] is called.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SharedThumbnailLookupRequest {
+    context: SharedRepositoryContext,
+    mtime: Option<UnixMTimeSeconds>,
+    original_size: Option<u64>,
+    size: ThumbnailSize,
+}
+
+impl SharedThumbnailLookupRequest {
+    /// Creates an owned shared-repository lookup request.
+    #[must_use]
+    pub const fn new(
+        context: SharedRepositoryContext,
+        mtime: Option<UnixMTimeSeconds>,
+        original_size: Option<u64>,
+        size: ThumbnailSize,
+    ) -> Self {
+        Self {
+            context,
+            mtime,
+            original_size,
+            size,
+        }
+    }
+
+    /// Returns a validated shared-repository path for the owned request.
+    pub fn validated_path(&self) -> Result<SharedThumbnailLookup<ValidatedThumbnailPath>> {
+        self.context
+            .validated_thumbnail_path(self.mtime, self.original_size, self.size)
+    }
+
+    /// Returns exact validated shared-repository PNG bytes for the owned request.
+    pub fn validated_payload(&self) -> Result<SharedThumbnailLookup<ValidatedThumbnailPayload>> {
+        self.context
+            .validated_thumbnail_payload(self.mtime, self.original_size, self.size)
+    }
+
+    /// Splits this request into its owned parts.
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        SharedRepositoryContext,
+        Option<UnixMTimeSeconds>,
+        Option<u64>,
+        ThumbnailSize,
+    ) {
+        (self.context, self.mtime, self.original_size, self.size)
+    }
+}
+
+/// Owned shared-repository inspection request for async or runtime-specific adapters.
+///
+/// Constructing this request does not perform filesystem I/O. Inspection happens only when
+/// [`Self::inspect`] is called.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SharedThumbnailInspectionRequest {
+    context: SharedRepositoryContext,
+    sizes: Vec<ThumbnailSize>,
+    mtime: Option<UnixMTimeSeconds>,
+    original_size: Option<u64>,
+}
+
+impl SharedThumbnailInspectionRequest {
+    /// Creates an owned shared-repository inspection request.
+    #[must_use]
+    pub const fn new(
+        context: SharedRepositoryContext,
+        sizes: Vec<ThumbnailSize>,
+        mtime: Option<UnixMTimeSeconds>,
+        original_size: Option<u64>,
+    ) -> Self {
+        Self {
+            context,
+            sizes,
+            mtime,
+            original_size,
+        }
+    }
+
+    /// Inspects existing shared-repository thumbnails without exposing removal handles.
+    pub fn inspect(&self) -> Result<Vec<SharedCacheEntryInspection>> {
+        self.context
+            .inspect_thumbnails(&self.sizes, self.mtime, self.original_size)
+    }
+
+    /// Splits this request into its owned parts.
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        SharedRepositoryContext,
+        Vec<ThumbnailSize>,
+        Option<UnixMTimeSeconds>,
+        Option<u64>,
+    ) {
+        (self.context, self.sizes, self.mtime, self.original_size)
     }
 }
 
