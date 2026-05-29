@@ -81,6 +81,9 @@
 
               nativeBuildInputs = [
                 pkgs.installShellFiles
+              ]
+              ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+                pkgs.makeWrapper
               ];
 
               postInstall = ''
@@ -103,6 +106,11 @@
 
                 installCliMetadata xdg-thumbnail-generate
                 installCliMetadata xdg-thumbnail-prune
+
+                ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
+                  wrapProgram "$out/bin/xdg-thumbnail-generate" \
+                    --prefix PATH : ${lib.makeBinPath [ pkgs.bubblewrap ]}
+                ''}
               '';
             }
           );
