@@ -19,7 +19,7 @@ fn installs_normalized_downscaled_personal_thumbnail_atomically() {
     let rendered = png_without_metadata(300, 150, png::ColorType::Rgb);
 
     let installed = root
-        .install_personal_thumbnail_bytes(&original, ThumbnailSize::Normal, &rendered)
+        .install_personal_thumbnail_png_bytes(&original, ThumbnailSize::Normal, &rendered)
         .unwrap();
 
     let expected_path = root.cache_entry_path(
@@ -27,9 +27,12 @@ fn installs_normalized_downscaled_personal_thumbnail_atomically() {
         &CacheNamespace::Size(ThumbnailSize::Normal),
     );
     assert_eq!(installed.path(), expected_path.as_path());
-    assert_eq!(std::fs::read(&expected_path).unwrap(), installed.bytes());
+    assert_eq!(
+        std::fs::read(&expected_path).unwrap(),
+        installed.png_bytes()
+    );
 
-    let parsed = ParsedThumbnailPng::parse(installed.bytes()).unwrap();
+    let parsed = ParsedThumbnailPng::parse(installed.png_bytes()).unwrap();
     assert_eq!(parsed.width(), 128);
     assert_eq!(parsed.height(), 64);
     assert_eq!(parsed.bit_depth(), ThumbnailPngBitDepth::Eight);
@@ -88,7 +91,7 @@ fn install_rejects_insecure_existing_cache_directories() {
     std::fs::set_permissions(&target_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let error = root
-        .install_personal_thumbnail_bytes(
+        .install_personal_thumbnail_png_bytes(
             &readable_original(),
             ThumbnailSize::Normal,
             &png_without_metadata(2, 1, png::ColorType::Rgba),
@@ -108,7 +111,7 @@ fn install_rejects_symlinked_cache_directories() {
     symlink(&outside, root.as_path().join("normal")).unwrap();
 
     let error = root
-        .install_personal_thumbnail_bytes(
+        .install_personal_thumbnail_png_bytes(
             &readable_original(),
             ThumbnailSize::Normal,
             &png_without_metadata(2, 1, png::ColorType::Rgba),
@@ -128,7 +131,7 @@ fn installs_rgb8_raw_thumbnail_with_opaque_alpha() {
     let image = RawThumbnailImage::new(2, 1, 6, RawThumbnailPixelFormat::Rgb8, &pixels).unwrap();
 
     let installed = root
-        .install_personal_thumbnail_raw_bytes(&original, ThumbnailSize::Normal, image)
+        .install_personal_thumbnail_raw_png_bytes(&original, ThumbnailSize::Normal, image)
         .unwrap();
 
     let expected_path = root.cache_entry_path(
@@ -136,12 +139,15 @@ fn installs_rgb8_raw_thumbnail_with_opaque_alpha() {
         &CacheNamespace::Size(ThumbnailSize::Normal),
     );
     assert_eq!(installed.path(), expected_path.as_path());
-    assert_eq!(std::fs::read(&expected_path).unwrap(), installed.bytes());
-    let (width, height, rgba) = decode_rgba(installed.bytes());
+    assert_eq!(
+        std::fs::read(&expected_path).unwrap(),
+        installed.png_bytes()
+    );
+    let (width, height, rgba) = decode_rgba(installed.png_bytes());
     assert_eq!((width, height), (2, 1));
     assert_eq!(rgba, [10, 20, 30, 255, 40, 50, 60, 255]);
     assert_eq!(
-        ParsedThumbnailPng::parse(installed.bytes())
+        ParsedThumbnailPng::parse(installed.png_bytes())
             .unwrap()
             .metadata()
             .thumb_uri(),
@@ -158,10 +164,10 @@ fn installs_rgba8_raw_thumbnail_preserving_alpha() {
     let image = RawThumbnailImage::new(2, 1, 8, RawThumbnailPixelFormat::Rgba8, &pixels).unwrap();
 
     let installed = root
-        .install_personal_thumbnail_raw_bytes(&original, ThumbnailSize::Normal, image)
+        .install_personal_thumbnail_raw_png_bytes(&original, ThumbnailSize::Normal, image)
         .unwrap();
 
-    let (width, height, rgba) = decode_rgba(installed.bytes());
+    let (width, height, rgba) = decode_rgba(installed.png_bytes());
     assert_eq!((width, height), (2, 1));
     assert_eq!(rgba, pixels);
 }
@@ -175,10 +181,10 @@ fn raw_thumbnail_stride_padding_is_skipped() {
     let image = RawThumbnailImage::new(2, 2, 8, RawThumbnailPixelFormat::Rgb8, &pixels).unwrap();
 
     let installed = root
-        .install_personal_thumbnail_raw_bytes(&original, ThumbnailSize::Normal, image)
+        .install_personal_thumbnail_raw_png_bytes(&original, ThumbnailSize::Normal, image)
         .unwrap();
 
-    let (width, height, rgba) = decode_rgba(installed.bytes());
+    let (width, height, rgba) = decode_rgba(installed.png_bytes());
     assert_eq!((width, height), (2, 2));
     assert_eq!(
         rgba,
@@ -205,10 +211,10 @@ fn raw_thumbnail_oversized_input_is_downscaled() {
     .unwrap();
 
     let installed = root
-        .install_personal_thumbnail_raw_bytes(&original, ThumbnailSize::Normal, image)
+        .install_personal_thumbnail_raw_png_bytes(&original, ThumbnailSize::Normal, image)
         .unwrap();
 
-    let parsed = ParsedThumbnailPng::parse(installed.bytes()).unwrap();
+    let parsed = ParsedThumbnailPng::parse(installed.png_bytes()).unwrap();
     assert_eq!(parsed.width(), 128);
     assert_eq!(parsed.height(), 64);
     assert_eq!(parsed.color_type(), ThumbnailPngColorType::Rgba);

@@ -16,9 +16,9 @@
 //!     let root = PersonalCacheRoot::resolve_from_env()?;
 //!     let original = ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
 //!
-//!     match root.lookup_thumbnail_bytes(&original, ThumbnailSize::Normal)? {
+//!     match root.lookup_thumbnail_png_bytes(&original, ThumbnailSize::Normal)? {
 //!         PersonalThumbnailLookup::Valid(entry) => {
-//!             let _png_bytes = entry.bytes();
+//!             let _png_bytes = entry.png_bytes();
 //!         }
 //!         PersonalThumbnailLookup::Missing | PersonalThumbnailLookup::Invalid(_) => {}
 //!         _ => {}
@@ -59,7 +59,7 @@
 //!         rendered_png,
 //!     );
 //!
-//!     let installed = spawn_blocking(move || request.install_bytes())?;
+//!     let installed = spawn_blocking(move || request.install_png_bytes())?;
 //!     let _path = installed.path();
 //!
 //!     Ok(())
@@ -88,12 +88,12 @@ mod uri;
 
 #[cfg(unix)]
 pub use cache::{
-    FailureEntryWriteRequest, InstalledThumbnailBytes, InstalledThumbnailPath, PersonalCacheRoot,
-    PersonalThumbnailInspectionRequest, PersonalThumbnailInstallRequest, PersonalThumbnailLookup,
-    PersonalThumbnailLookupRequest, PersonalThumbnailRawInstallRequest, SharedCacheEntryInspection,
-    SharedCacheEntryOutcome, SharedThumbnailInspectionRequest, SharedThumbnailLookup,
-    SharedThumbnailLookupRequest, SharedThumbnailMetadataPolicy, ThumbnailBytesLookupEntry,
-    ThumbnailPathLookupEntry,
+    FailureEntryWriteRequest, InstalledThumbnailPath, InstalledThumbnailPngBytes,
+    PersonalCacheRoot, PersonalThumbnailInspectionRequest, PersonalThumbnailInstallRequest,
+    PersonalThumbnailLookup, PersonalThumbnailLookupRequest, PersonalThumbnailRawInstallRequest,
+    SharedCacheEntryInspection, SharedCacheEntryOutcome, SharedThumbnailInspectionRequest,
+    SharedThumbnailLookup, SharedThumbnailLookupRequest, SharedThumbnailMetadataPolicy,
+    ThumbnailPathLookupEntry, ThumbnailPngBytesLookupEntry,
 };
 #[cfg(unix)]
 pub use error::{Result, ThumbnailError};

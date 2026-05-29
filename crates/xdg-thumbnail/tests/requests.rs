@@ -8,14 +8,14 @@ use std::os::unix::ffi::OsStrExt;
 use tempfile::TempDir;
 use xdg_thumbnail::{
     CacheEntryInspection, CacheNamespace, FailureEntryWriteRequest, FailureNamespace,
-    InstalledThumbnailBytes, InstalledThumbnailPath, NonstandardEntryPolicy, OriginalIdentity,
+    InstalledThumbnailPath, InstalledThumbnailPngBytes, NonstandardEntryPolicy, OriginalIdentity,
     OwnedRawThumbnailImage, ParsedThumbnailPng, PersonalCacheRoot, PersonalOriginalUri,
     PersonalThumbnailInspectionRequest, PersonalThumbnailInstallRequest, PersonalThumbnailLookup,
     PersonalThumbnailLookupRequest, PersonalThumbnailRawInstallRequest, RawThumbnailImage,
     RawThumbnailPixelFormat, ReadableOriginalIdentity, SharedCacheEntryInspection,
     SharedCacheEntryOutcome, SharedRepositoryContext, SharedThumbnailInspectionRequest,
     SharedThumbnailLookup, SharedThumbnailLookupRequest, SharedThumbnailMetadataPolicy,
-    ThumbnailBytesLookupEntry, ThumbnailPathLookupEntry, ThumbnailPngColorType, ThumbnailSize,
+    ThumbnailPathLookupEntry, ThumbnailPngBytesLookupEntry, ThumbnailPngColorType, ThumbnailSize,
     UnixMTimeSeconds,
 };
 
@@ -33,13 +33,13 @@ fn owned_request_and_result_types_are_send_sync_static() {
     assert_send_sync_static::<SharedThumbnailMetadataPolicy>();
     assert_send_sync_static::<NonstandardEntryPolicy>();
     assert_send_sync_static::<ThumbnailPathLookupEntry>();
-    assert_send_sync_static::<ThumbnailBytesLookupEntry>();
+    assert_send_sync_static::<ThumbnailPngBytesLookupEntry>();
     assert_send_sync_static::<InstalledThumbnailPath>();
-    assert_send_sync_static::<InstalledThumbnailBytes>();
+    assert_send_sync_static::<InstalledThumbnailPngBytes>();
     assert_send_sync_static::<CacheEntryInspection>();
     assert_send_sync_static::<SharedCacheEntryInspection>();
-    assert_send_sync_static::<PersonalThumbnailLookup<ThumbnailBytesLookupEntry>>();
-    assert_send_sync_static::<SharedThumbnailLookup<ThumbnailBytesLookupEntry>>();
+    assert_send_sync_static::<PersonalThumbnailLookup<ThumbnailPngBytesLookupEntry>>();
+    assert_send_sync_static::<SharedThumbnailLookup<ThumbnailPngBytesLookupEntry>>();
 }
 
 fn run_blocking_style<F, R>(operation: F) -> R
@@ -90,7 +90,7 @@ fn personal_lookup_request_matches_borrowed_lookup() {
         }
         other => panic!("expected valid personal path lookup, got {other:?}"),
     }
-    match request.lookup_bytes().unwrap() {
+    match request.lookup_png_bytes().unwrap() {
         PersonalThumbnailLookup::Valid(bytes) => {
             assert_eq!(bytes.path(), path.as_path());
             assert_eq!(
@@ -119,21 +119,21 @@ fn personal_install_request_matches_borrowed_install_and_normalizes() {
         rendered.clone(),
     );
 
-    let request_install = run_blocking_style(move || request.install_bytes()).unwrap();
+    let request_install = run_blocking_style(move || request.install_png_bytes()).unwrap();
     let borrowed_install = root
-        .install_personal_thumbnail_bytes(&original, ThumbnailSize::Normal, &rendered)
+        .install_personal_thumbnail_png_bytes(&original, ThumbnailSize::Normal, &rendered)
         .unwrap();
 
     assert_eq!(request_install, borrowed_install);
     assert_eq!(
         std::fs::read(request_install.path()).unwrap(),
-        request_install.bytes()
+        request_install.png_bytes()
     );
     let (installed_path, installed_bytes) = request_install.clone().into_parts();
     assert_eq!(installed_path, request_install.path());
-    assert_eq!(installed_bytes, request_install.bytes());
+    assert_eq!(installed_bytes, request_install.png_bytes());
 
-    let parsed = ParsedThumbnailPng::parse(request_install.bytes()).unwrap();
+    let parsed = ParsedThumbnailPng::parse(request_install.png_bytes()).unwrap();
     assert_eq!(parsed.width(), 128);
     assert_eq!(parsed.height(), 64);
     assert_eq!(parsed.color_type(), ThumbnailPngColorType::Rgba);
@@ -182,7 +182,7 @@ fn personal_raw_install_request_matches_borrowed_install_and_normalizes() {
         owned_image,
     );
 
-    let request_install = run_blocking_style(move || request.install_bytes()).unwrap();
+    let request_install = run_blocking_style(move || request.install_png_bytes()).unwrap();
     let borrowed_image = RawThumbnailImage::new(
         width,
         height,
@@ -192,13 +192,13 @@ fn personal_raw_install_request_matches_borrowed_install_and_normalizes() {
     )
     .unwrap();
     let borrowed_install = root
-        .install_personal_thumbnail_raw_bytes(&original, ThumbnailSize::Normal, borrowed_image)
+        .install_personal_thumbnail_raw_png_bytes(&original, ThumbnailSize::Normal, borrowed_image)
         .unwrap();
 
     assert_eq!(request_install, borrowed_install);
     assert_eq!(
         std::fs::read(request_install.path()).unwrap(),
-        request_install.bytes()
+        request_install.png_bytes()
     );
 
     let path_request = PersonalThumbnailRawInstallRequest::new(
@@ -218,7 +218,7 @@ fn personal_raw_install_request_matches_borrowed_install_and_normalizes() {
     assert_eq!(request_path.path(), request_install.path());
     assert_eq!(request_path.clone().into_path_buf(), request_install.path());
 
-    let parsed = ParsedThumbnailPng::parse(request_install.bytes()).unwrap();
+    let parsed = ParsedThumbnailPng::parse(request_install.png_bytes()).unwrap();
     assert_eq!(parsed.width(), 128);
     assert_eq!(parsed.height(), 64);
     assert_eq!(parsed.color_type(), ThumbnailPngColorType::Rgba);
@@ -241,7 +241,7 @@ fn personal_raw_install_request_matches_borrowed_install_and_normalizes() {
     assert_eq!(parts_original, original);
     assert_eq!(parts_size, ThumbnailSize::Large);
     let installed_from_parts = parts_root
-        .install_personal_thumbnail_raw_bytes(
+        .install_personal_thumbnail_raw_png_bytes(
             &parts_original,
             parts_size,
             parts_image.as_borrowed(),
@@ -258,9 +258,9 @@ fn failure_entry_write_request_matches_borrowed_write() {
     let original = readable_original();
     let request = FailureEntryWriteRequest::new(root.clone(), namespace.clone(), original.clone());
 
-    let request_bytes = request.clone().write_bytes().unwrap();
+    let request_bytes = request.clone().write_png_bytes().unwrap();
     let borrowed_bytes = root
-        .write_failure_entry_bytes(&namespace, &original)
+        .write_failure_entry_png_bytes(&namespace, &original)
         .unwrap();
     assert_eq!(request_bytes, borrowed_bytes);
 
@@ -275,7 +275,10 @@ fn failure_entry_write_request_matches_borrowed_write() {
         &CacheNamespace::Failure(namespace),
     );
     assert_eq!(request_bytes.path(), expected_path.as_path());
-    assert_eq!(std::fs::read(expected_path).unwrap(), request_bytes.bytes());
+    assert_eq!(
+        std::fs::read(expected_path).unwrap(),
+        request_bytes.png_bytes()
+    );
 }
 
 #[test]
@@ -284,7 +287,7 @@ fn personal_inspection_request_owns_size_vector() {
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let installed = root
-        .install_personal_thumbnail_bytes(
+        .install_personal_thumbnail_png_bytes(
             &original,
             ThumbnailSize::Normal,
             &png_without_metadata(2, 1, png::ColorType::Rgba),
@@ -348,9 +351,9 @@ fn shared_lookup_and_inspection_requests_match_borrowed_api() {
         Some(12),
     );
     assert_eq!(
-        run_blocking_style(move || lookup_request.lookup_bytes()).unwrap(),
+        run_blocking_style(move || lookup_request.lookup_png_bytes()).unwrap(),
         context
-            .lookup_thumbnail_bytes(
+            .lookup_thumbnail_png_bytes(
                 ThumbnailSize::Normal,
                 SharedThumbnailMetadataPolicy::RequireComplete,
                 Some(UnixMTimeSeconds::new(42)),

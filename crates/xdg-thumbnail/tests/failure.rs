@@ -16,10 +16,10 @@ fn writes_deterministic_failure_namespace_entries() {
     let original = readable_original();
 
     let first = root
-        .write_failure_entry_bytes(&namespace, &original)
+        .write_failure_entry_png_bytes(&namespace, &original)
         .unwrap();
     let second = root
-        .write_failure_entry_bytes(&namespace, &original)
+        .write_failure_entry_png_bytes(&namespace, &original)
         .unwrap();
 
     let expected_path = root.cache_entry_path(
@@ -27,10 +27,10 @@ fn writes_deterministic_failure_namespace_entries() {
         &CacheNamespace::Failure(namespace.clone()),
     );
     assert_eq!(first.path(), expected_path.as_path());
-    assert_eq!(first.bytes(), second.bytes());
-    assert_eq!(std::fs::read(&expected_path).unwrap(), first.bytes());
+    assert_eq!(first.png_bytes(), second.png_bytes());
+    assert_eq!(std::fs::read(&expected_path).unwrap(), first.png_bytes());
 
-    let parsed = ParsedThumbnailPng::parse(first.bytes()).unwrap();
+    let parsed = ParsedThumbnailPng::parse(first.png_bytes()).unwrap();
     assert_eq!(parsed.width(), 1);
     assert_eq!(parsed.height(), 1);
     assert_eq!(parsed.color_type(), ThumbnailPngColorType::Rgba);
@@ -45,7 +45,7 @@ fn writes_deterministic_failure_namespace_entries() {
     assert_eq!(parsed.metadata().thumb_size(), Some(12));
     assert_eq!(parsed.metadata().thumb_mimetype(), Some("image/png"));
     assert_eq!(
-        validate_personal_failure_entry(first.bytes(), &original),
+        validate_personal_failure_entry(first.png_bytes(), &original),
         PersonalValidationOutcome::FullyVerified
     );
 }
