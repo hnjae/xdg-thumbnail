@@ -47,9 +47,9 @@ fn main() -> xdg_thumbnail::Result<()> {
     let root = PersonalCacheRoot::resolve_from_env()?;
     let original = ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
 
-    match root.lookup_thumbnail_bytes(&original, ThumbnailSize::Normal)? {
+    match root.lookup_thumbnail_png_bytes(&original, ThumbnailSize::Normal)? {
         PersonalThumbnailLookup::Valid(entry) => {
-            let _png_bytes = entry.bytes();
+            let _png_bytes = entry.png_bytes();
         }
         PersonalThumbnailLookup::Missing | PersonalThumbnailLookup::Invalid(_) => {}
         _ => {}
@@ -68,14 +68,14 @@ fn main() -> xdg_thumbnail::Result<()> {
     let root = PersonalCacheRoot::resolve_from_env()?;
     let original = ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
     let rendered_png = render_thumbnail_png();
-    let installed = root.install_personal_thumbnail_bytes(
+    let installed = root.install_personal_thumbnail_png_bytes(
         &original,
         ThumbnailSize::Normal,
         &rendered_png,
     )?;
 
     let _cache_path = installed.path();
-    let _final_png_bytes = installed.bytes();
+    let _final_png_bytes = installed.png_bytes();
     Ok(())
 }
 
