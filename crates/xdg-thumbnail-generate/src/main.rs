@@ -13,8 +13,8 @@ use base64::Engine;
 use clap::{CommandFactory, Parser, ValueEnum};
 use serde::Serialize;
 use xdg_thumbnail::{
-    CacheNamespace, CacheRoot, PersonalOriginalUri, ReadableOriginalIdentity, ThumbnailError,
-    ThumbnailLookup, ThumbnailSize,
+    CacheNamespace, PersonalCacheRoot, PersonalOriginalUri, PersonalThumbnailLookup,
+    ReadableOriginalIdentity, ThumbnailError, ThumbnailSize,
 };
 
 #[cfg(unix)]
@@ -155,7 +155,7 @@ struct WarningRecord {
 
 struct PlanContext<'a> {
     cli: &'a Cli,
-    root: &'a CacheRoot,
+    root: &'a PersonalCacheRoot,
     thumbnailers: &'a [Thumbnailer],
     mime_db: &'a xdg_mime::SharedMimeInfo,
     sandbox_backend_error: Option<&'a ExecutionError>,
@@ -224,7 +224,7 @@ fn emit_generated_artifact(cli: &Cli) -> std::result::Result<Option<ExitCode>, S
 }
 
 fn run(cli: Cli) -> std::result::Result<u8, String> {
-    let root = CacheRoot::resolve_from_env().map_err(|error| error.to_string())?;
+    let root = PersonalCacheRoot::resolve_from_env().map_err(|error| error.to_string())?;
     let discovery = discover_thumbnailers();
     let thumbnailers = discovery.thumbnailers;
     let sandbox_backend_error = if cli.sandbox == SandboxArg::Required {
@@ -324,13 +324,14 @@ fn plan_one(
 
     if !cli.force {
         match root.validated_personal_path(&original, size) {
-            Ok(ThumbnailLookup::Valid(_)) => {
+            Ok(PersonalThumbnailLookup::Valid(_)) => {
                 record.decision = "keep";
                 record.reason = "already-valid";
                 summary.kept += 1;
                 return record;
             }
-            Ok(ThumbnailLookup::Missing | ThumbnailLookup::Invalid(_)) => {}
+            Ok(PersonalThumbnailLookup::Missing | PersonalThumbnailLookup::Invalid(_)) => {}
+            Ok(_) => {}
             Err(error) => {
                 record.decision = "skip";
                 record.reason = "cache-install-failed";
@@ -610,7 +611,7 @@ fn resolve_input_path(cwd: &Path, input: &Path) -> PathBuf {
     }
 }
 
-fn is_recursive_input(root: &CacheRoot, path: &Path) -> bool {
+fn is_recursive_input(root: &PersonalCacheRoot, path: &Path) -> bool {
     path.starts_with(root.as_path())
         || path.components().any(
             |component| matches!(component, Component::Normal(name) if name == ".sh_thumbnails"),
@@ -915,7 +916,7 @@ impl ExecutionError {
 
 fn execute_thumbnailer(
     cli: &Cli,
-    root: &CacheRoot,
+    root: &PersonalCacheRoot,
     thumbnailer: &Thumbnailer,
     original: &ReadableOriginalIdentity,
     input_path: &Path,

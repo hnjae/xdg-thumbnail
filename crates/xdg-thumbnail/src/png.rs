@@ -182,12 +182,8 @@ impl OwnedRawThumbnailImage {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[non_exhaustive]
 pub enum CacheEntryProblem {
-    /// The original local file is missing.
-    OriginalMissing,
     /// Metadata is well-formed but no longer matches the original.
     StaleMetadata,
-    /// The original could not be read well enough to validate the entry.
-    UnreadableOriginal,
     /// The cache entry itself could not be read well enough to validate.
     UnreadableEntry,
     /// The original cannot be verified in this validation context.
@@ -212,6 +208,7 @@ pub enum CacheEntryProblem {
 
 /// Validation confidence and validity for a personal-cache entry.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum PersonalValidationOutcome {
     /// Required metadata and PNG constraints are fully verified.
     FullyVerified,
@@ -221,6 +218,7 @@ pub enum PersonalValidationOutcome {
 
 /// Validation confidence and validity for a shared-repository entry.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum SharedValidationOutcome {
     /// Required metadata and PNG constraints are fully verified.
     FullyVerified,

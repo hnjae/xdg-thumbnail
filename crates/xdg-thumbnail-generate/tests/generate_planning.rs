@@ -6,8 +6,8 @@ use serde_json::Value;
 use std::ffi::OsString;
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    CacheRoot, OriginalIdentity, PersonalOriginalUri, ReadableOriginalIdentity, ThumbnailSize,
-    UnixMTimeSeconds,
+    OriginalIdentity, PersonalCacheRoot, PersonalOriginalUri, ReadableOriginalIdentity,
+    ThumbnailSize, UnixMTimeSeconds,
 };
 
 #[cfg(unix)]
@@ -436,7 +436,7 @@ impl Fixture {
             OriginalIdentity::with_mime_type(uri, mtime, Some(metadata.len()), "image/png")
                 .unwrap(),
         );
-        CacheRoot::new(self.cache_home.path().join("thumbnails"))
+        PersonalCacheRoot::new(self.cache_home.path().join("thumbnails"))
             .unwrap()
             .install_personal_thumbnail_payload(&original, ThumbnailSize::Normal, &rendered_png())
             .unwrap();

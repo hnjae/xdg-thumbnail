@@ -2,6 +2,65 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! Freedesktop thumbnail cache primitives.
+//!
+//! The library exposes typed helpers for resolving the personal thumbnail cache, constructing
+//! canonical original identities, validating existing thumbnails, and atomically installing
+//! caller-rendered thumbnail PNGs.
+//!
+//! ```no_run
+//! use xdg_thumbnail::{
+//!     PersonalCacheRoot, PersonalThumbnailLookup, ReadableOriginalIdentity, ThumbnailSize,
+//! };
+//!
+//! fn main() -> xdg_thumbnail::Result<()> {
+//!     let root = PersonalCacheRoot::resolve_from_env()?;
+//!     let original = ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
+//!
+//!     match root.validated_personal_payload(&original, ThumbnailSize::Normal)? {
+//!         PersonalThumbnailLookup::Valid(entry) => {
+//!             let _png_bytes = entry.bytes();
+//!         }
+//!         PersonalThumbnailLookup::Missing | PersonalThumbnailLookup::Invalid(_) => {}
+//!         _ => {}
+//!     }
+//!
+//!     Ok(())
+//! }
+//! ```
+//!
+//! Owned request types make it straightforward to wrap blocking filesystem work in an async
+//! runtime without adding a runtime dependency to this crate.
+//!
+//! ```no_run
+//! use xdg_thumbnail::{
+//!     PersonalCacheRoot, PersonalThumbnailInstallRequest, ReadableOriginalIdentity, ThumbnailSize,
+//! };
+//!
+//! fn spawn_blocking<F, R>(operation: F) -> R
+//! where
+//!     F: FnOnce() -> R + Send + 'static,
+//!     R: Send + 'static,
+//! {
+//!     operation()
+//! }
+//!
+//! fn main() -> xdg_thumbnail::Result<()> {
+//!     let root = PersonalCacheRoot::resolve_from_env()?;
+//!     let original = ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
+//!     let rendered_png = Vec::new();
+//!     let request = PersonalThumbnailInstallRequest::new(
+//!         root,
+//!         original,
+//!         ThumbnailSize::Normal,
+//!         rendered_png,
+//!     );
+//!
+//!     let installed = spawn_blocking(move || request.install_payload())?;
+//!     let _path = installed.path();
+//!
+//!     Ok(())
+//! }
+//! ```
 
 mod cache;
 mod error;
@@ -12,12 +71,12 @@ mod png;
 mod uri;
 
 pub use cache::{
-    CacheRoot, FailureEntryWriteRequest, InstalledThumbnailPath, InstalledThumbnailPayload,
-    PersonalThumbnailInspectionRequest, PersonalThumbnailInstallRequest,
+    FailureEntryWriteRequest, InstalledThumbnailPath, InstalledThumbnailPayload, PersonalCacheRoot,
+    PersonalThumbnailInspectionRequest, PersonalThumbnailInstallRequest, PersonalThumbnailLookup,
     PersonalThumbnailLookupRequest, PersonalThumbnailRawInstallRequest, SharedCacheEntryInspection,
     SharedCacheEntryOutcome, SharedThumbnailInspectionRequest, SharedThumbnailLookup,
-    SharedThumbnailLookupRequest, ThumbnailLookup, ValidatedThumbnailPath,
-    ValidatedThumbnailPayload,
+    SharedThumbnailLookupRequest, SharedThumbnailMetadataPolicy, ThumbnailPathLookupEntry,
+    ThumbnailPayloadLookupEntry,
 };
 pub use error::{Result, ThumbnailError};
 pub use identity::{

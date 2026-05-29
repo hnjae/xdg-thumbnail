@@ -179,9 +179,8 @@ pub enum OriginalUriIdentity {
 }
 
 pub enum CacheEntryProblem {
-    OriginalMissing,
     StaleMetadata,
-    UnreadableOriginal,
+    UnreadableEntry,
     UnverifiableOriginal,
     MissingRequiredMetadata,
     InvalidMetadataSyntax,
@@ -191,17 +190,25 @@ pub enum CacheEntryProblem {
     ResourceLimitExceeded,
 }
 
+#[non_exhaustive]
 pub enum PersonalValidationOutcome {
     FullyVerified,
     Invalid(Vec<CacheEntryProblem>),
 }
 
+#[non_exhaustive]
 pub enum SharedValidationOutcome {
     FullyVerified,
     MetadataIncomplete,
     Invalid(Vec<CacheEntryProblem>),
 }
 
+pub enum SharedThumbnailMetadataPolicy {
+    RequireComplete,
+    AllowIncomplete,
+}
+
+#[non_exhaustive]
 pub enum CacheEntryInspectionOutcome {
     Unchecked,
     Invalid(Vec<CacheEntryProblem>),
@@ -230,7 +237,7 @@ pub enum AccessTimePreservation {
 }
 
 pub struct CacheEntryHandle {
-    cache_root: CacheRoot,
+    cache_root: PersonalCacheRoot,
     path: std::path::PathBuf,
 }
 ```

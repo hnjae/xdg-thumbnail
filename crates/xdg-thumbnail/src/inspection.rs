@@ -11,7 +11,7 @@ use std::time::SystemTime;
 use std::os::unix::fs::MetadataExt;
 
 use crate::{
-    CacheEntryProblem, CacheNamespace, CacheRoot, FailureNamespace, ParsedThumbnailPng,
+    CacheEntryProblem, CacheNamespace, FailureNamespace, ParsedThumbnailPng, PersonalCacheRoot,
     PersonalOriginalUri, Result, SharedRelativeOriginalUri, ThumbnailError, ThumbnailMetadata,
     ThumbnailSize, push_problem, validate_mime_type,
 };
@@ -27,6 +27,7 @@ pub enum OriginalUriIdentity {
 
 /// Validation confidence and validity for policy-neutral cache inspection.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum CacheEntryInspectionOutcome {
     /// Inspection parsed the entry but did not validate it against an original.
     Unchecked,
@@ -144,7 +145,7 @@ impl CacheEntryHandle {
     }
 }
 
-impl CacheRoot {
+impl PersonalCacheRoot {
     /// Inspects standard successful thumbnail size directories.
     pub fn inspect_thumbnails(
         &self,

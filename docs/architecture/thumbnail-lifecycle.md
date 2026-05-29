@@ -88,24 +88,26 @@ let original = OriginalFile::open_readable(path)?;
 let identity = ReadableOriginalIdentity::from_readable_file(&uri, &original)?;
 let computed_path = cache.thumbnail_path(&uri, CacheNamespace::Size(ThumbnailSize::Normal));
 
-match cache.read_valid_thumbnail(&identity, ThumbnailSize::Normal)? {
-    ThumbnailLookup::Valid(thumbnail) => return Ok(Some(thumbnail)),
-    ThumbnailLookup::Missing | ThumbnailLookup::Invalid(_) => {}
+match cache.validated_personal_payload(&identity, ThumbnailSize::Normal)? {
+    PersonalThumbnailLookup::Valid(thumbnail) => return Ok(Some(thumbnail)),
+    PersonalThumbnailLookup::Missing | PersonalThumbnailLookup::Invalid(_) => {}
+    _ => {}
 }
 
 let shared = SharedRepositoryContext::for_direct_child(path)?;
-let shared_policy = SharedLookupPolicy::RequireFreshnessMetadata;
-match cache.read_valid_shared_thumbnail(&shared, &identity, shared_policy)? {
+let shared_policy = SharedThumbnailMetadataPolicy::RequireComplete;
+match shared.lookup_thumbnail_payload(ThumbnailSize::Normal, shared_policy, Some(identity.mtime()), identity.size())? {
     SharedThumbnailLookup::FullyVerified(thumbnail) => return Ok(Some(thumbnail)),
     SharedThumbnailLookup::MetadataIncomplete(_) => {}
     SharedThumbnailLookup::Missing | SharedThumbnailLookup::Invalid(_) => {}
     SharedThumbnailLookup::Unverifiable(_) => return Ok(None),
+    _ => {}
 }
 
 Ok(None)
 ```
 
-The exact API should be shaped by implementation, but applications should not need to know the hash filename algorithm, cache directory layout, or PNG metadata keys directly. `computed_path` is available for diagnostics or reports, while `read_valid_thumbnail` can return display-grade validated PNG bytes rather than asking the caller to reopen a path and reparse metadata. A cache miss is returned to the caller; lookup does not perform rendering, and callers that render a thumbnail use the separate install flow. The example uses a safety-oriented shared policy that can decline standard-allowed shared thumbnails with incomplete freshness metadata. Applications that intentionally accept shared thumbnails with incomplete freshness metadata should pass an explicit shared policy tied to their own trust or freshness model.
+The exact API should be shaped by implementation, but applications should not need to know the hash filename algorithm, cache directory layout, or PNG metadata keys directly. `computed_path` is available for diagnostics or reports, while validated payload lookup can return display-grade validated PNG bytes rather than asking the caller to reopen a path and reparse metadata. A cache miss is returned to the caller; lookup does not perform rendering, and callers that render a thumbnail use the separate install flow. The example uses a safety-oriented shared policy that can decline standard-allowed shared thumbnails with incomplete freshness metadata. Applications that intentionally accept shared thumbnails with incomplete freshness metadata should pass an explicit shared policy tied to their own trust or freshness model.
 
 ## Failure Entries
 

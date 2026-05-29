@@ -28,11 +28,11 @@ use crate::{
 
 /// Root directory of the personal thumbnail cache, usually `$XDG_CACHE_HOME/thumbnails`.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct CacheRoot {
+pub struct PersonalCacheRoot {
     path: PathBuf,
 }
 
-impl CacheRoot {
+impl PersonalCacheRoot {
     /// Creates a cache root from an already resolved absolute thumbnail root path.
     pub fn new(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
@@ -120,14 +120,18 @@ impl CacheRoot {
         &self,
         original: &ReadableOriginalIdentity,
         size: ThumbnailSize,
-    ) -> Result<ThumbnailLookup<ValidatedThumbnailPath>> {
+    ) -> Result<PersonalThumbnailLookup<ThumbnailPathLookupEntry>> {
         match self.validated_personal_entry(original, size)? {
-            ThumbnailLookup::Valid(entry) => Ok(ThumbnailLookup::Valid(ValidatedThumbnailPath {
-                path: entry.path,
-                metadata: entry.metadata,
-            })),
-            ThumbnailLookup::Missing => Ok(ThumbnailLookup::Missing),
-            ThumbnailLookup::Invalid(problems) => Ok(ThumbnailLookup::Invalid(problems)),
+            PersonalThumbnailLookup::Valid(entry) => {
+                Ok(PersonalThumbnailLookup::Valid(ThumbnailPathLookupEntry {
+                    path: entry.path,
+                    metadata: entry.metadata,
+                }))
+            }
+            PersonalThumbnailLookup::Missing => Ok(PersonalThumbnailLookup::Missing),
+            PersonalThumbnailLookup::Invalid(problems) => {
+                Ok(PersonalThumbnailLookup::Invalid(problems))
+            }
         }
     }
 
@@ -138,17 +142,19 @@ impl CacheRoot {
         &self,
         original: &ReadableOriginalIdentity,
         size: ThumbnailSize,
-    ) -> Result<ThumbnailLookup<ValidatedThumbnailPayload>> {
+    ) -> Result<PersonalThumbnailLookup<ThumbnailPayloadLookupEntry>> {
         match self.validated_personal_entry(original, size)? {
-            ThumbnailLookup::Valid(entry) => {
-                Ok(ThumbnailLookup::Valid(ValidatedThumbnailPayload {
+            PersonalThumbnailLookup::Valid(entry) => Ok(PersonalThumbnailLookup::Valid(
+                ThumbnailPayloadLookupEntry {
                     path: entry.path,
                     bytes: entry.bytes,
                     metadata: entry.metadata,
-                }))
+                },
+            )),
+            PersonalThumbnailLookup::Missing => Ok(PersonalThumbnailLookup::Missing),
+            PersonalThumbnailLookup::Invalid(problems) => {
+                Ok(PersonalThumbnailLookup::Invalid(problems))
             }
-            ThumbnailLookup::Missing => Ok(ThumbnailLookup::Missing),
-            ThumbnailLookup::Invalid(problems) => Ok(ThumbnailLookup::Invalid(problems)),
         }
     }
 
@@ -263,13 +269,13 @@ impl CacheRoot {
         &self,
         original: &ReadableOriginalIdentity,
         size: ThumbnailSize,
-    ) -> Result<ThumbnailLookup<ValidatedPersonalEntry>> {
+    ) -> Result<PersonalThumbnailLookup<ValidatedPersonalEntry>> {
         let path = self.personal_path(original.identity().uri(), &CacheNamespace::Size(size));
         let bytes = match read_cache_entry_no_follow(&path, "read thumbnail cache entry")? {
             CacheEntryRead::Bytes(bytes) => bytes,
-            CacheEntryRead::Missing => return Ok(ThumbnailLookup::Missing),
+            CacheEntryRead::Missing => return Ok(PersonalThumbnailLookup::Missing),
             CacheEntryRead::Unreadable => {
-                return Ok(ThumbnailLookup::Invalid(vec![
+                return Ok(PersonalThumbnailLookup::Invalid(vec![
                     CacheEntryProblem::UnreadableEntry,
                 ]));
             }
@@ -278,13 +284,15 @@ impl CacheRoot {
         match validate_personal_thumbnail(&bytes, original, size) {
             PersonalValidationOutcome::FullyVerified => {
                 let parsed = ParsedThumbnailPng::parse(&bytes)?;
-                Ok(ThumbnailLookup::Valid(ValidatedPersonalEntry {
+                Ok(PersonalThumbnailLookup::Valid(ValidatedPersonalEntry {
                     path,
                     bytes,
                     metadata: parsed.into_metadata(),
                 }))
             }
-            PersonalValidationOutcome::Invalid(problems) => Ok(ThumbnailLookup::Invalid(problems)),
+            PersonalValidationOutcome::Invalid(problems) => {
+                Ok(PersonalThumbnailLookup::Invalid(problems))
+            }
         }
     }
 
@@ -347,21 +355,22 @@ impl CacheRoot {
 
 impl SharedRepositoryContext {
     /// Returns a validated shared-repository path for integrations that must pass a filename.
-    pub fn validated_thumbnail_path(
+    pub fn lookup_thumbnail_path(
         &self,
+        size: ThumbnailSize,
+        metadata_policy: SharedThumbnailMetadataPolicy,
         mtime: Option<UnixMTimeSeconds>,
         original_size: Option<u64>,
-        size: ThumbnailSize,
-    ) -> Result<SharedThumbnailLookup<ValidatedThumbnailPath>> {
-        match self.validated_thumbnail_entry(mtime, original_size, size)? {
+    ) -> Result<SharedThumbnailLookup<ThumbnailPathLookupEntry>> {
+        match self.lookup_thumbnail_entry(size, metadata_policy, mtime, original_size)? {
             SharedThumbnailLookup::FullyVerified(entry) => Ok(
-                SharedThumbnailLookup::FullyVerified(ValidatedThumbnailPath {
+                SharedThumbnailLookup::FullyVerified(ThumbnailPathLookupEntry {
                     path: entry.path,
                     metadata: entry.metadata,
                 }),
             ),
             SharedThumbnailLookup::MetadataIncomplete(entry) => Ok(
-                SharedThumbnailLookup::MetadataIncomplete(ValidatedThumbnailPath {
+                SharedThumbnailLookup::MetadataIncomplete(ThumbnailPathLookupEntry {
                     path: entry.path,
                     metadata: entry.metadata,
                 }),
@@ -377,22 +386,23 @@ impl SharedRepositoryContext {
     }
 
     /// Returns exact validated PNG bytes from a shared thumbnail repository.
-    pub fn validated_thumbnail_payload(
+    pub fn lookup_thumbnail_payload(
         &self,
+        size: ThumbnailSize,
+        metadata_policy: SharedThumbnailMetadataPolicy,
         mtime: Option<UnixMTimeSeconds>,
         original_size: Option<u64>,
-        size: ThumbnailSize,
-    ) -> Result<SharedThumbnailLookup<ValidatedThumbnailPayload>> {
-        match self.validated_thumbnail_entry(mtime, original_size, size)? {
+    ) -> Result<SharedThumbnailLookup<ThumbnailPayloadLookupEntry>> {
+        match self.lookup_thumbnail_entry(size, metadata_policy, mtime, original_size)? {
             SharedThumbnailLookup::FullyVerified(entry) => Ok(
-                SharedThumbnailLookup::FullyVerified(ValidatedThumbnailPayload {
+                SharedThumbnailLookup::FullyVerified(ThumbnailPayloadLookupEntry {
                     path: entry.path,
                     bytes: entry.bytes,
                     metadata: entry.metadata,
                 }),
             ),
             SharedThumbnailLookup::MetadataIncomplete(entry) => Ok(
-                SharedThumbnailLookup::MetadataIncomplete(ValidatedThumbnailPayload {
+                SharedThumbnailLookup::MetadataIncomplete(ThumbnailPayloadLookupEntry {
                     path: entry.path,
                     bytes: entry.bytes,
                     metadata: entry.metadata,
@@ -424,11 +434,12 @@ impl SharedRepositoryContext {
         Ok(inspections)
     }
 
-    fn validated_thumbnail_entry(
+    fn lookup_thumbnail_entry(
         &self,
+        size: ThumbnailSize,
+        metadata_policy: SharedThumbnailMetadataPolicy,
         mtime: Option<UnixMTimeSeconds>,
         original_size: Option<u64>,
-        size: ThumbnailSize,
     ) -> Result<SharedThumbnailLookup<ValidatedSharedEntry>> {
         let path = self.thumbnail_path(size);
         let bytes = match read_cache_entry_no_follow(&path, "read shared thumbnail cache entry")? {
@@ -451,14 +462,20 @@ impl SharedRepositoryContext {
                 }))
             }
             SharedValidationOutcome::MetadataIncomplete => {
-                let parsed = ParsedThumbnailPng::parse(&bytes)?;
-                Ok(SharedThumbnailLookup::MetadataIncomplete(
-                    ValidatedSharedEntry {
-                        path,
-                        bytes,
-                        metadata: parsed.into_metadata(),
-                    },
-                ))
+                if metadata_policy == SharedThumbnailMetadataPolicy::RequireComplete {
+                    Ok(SharedThumbnailLookup::Invalid(vec![
+                        CacheEntryProblem::MissingRequiredMetadata,
+                    ]))
+                } else {
+                    let parsed = ParsedThumbnailPng::parse(&bytes)?;
+                    Ok(SharedThumbnailLookup::MetadataIncomplete(
+                        ValidatedSharedEntry {
+                            path,
+                            bytes,
+                            metadata: parsed.into_metadata(),
+                        },
+                    ))
+                }
             }
             SharedValidationOutcome::Invalid(problems) if only_unverifiable_original(&problems) => {
                 Ok(SharedThumbnailLookup::Unverifiable(problems))
@@ -550,7 +567,7 @@ impl SharedRepositoryContext {
 /// [`Self::validated_path`] or [`Self::validated_payload`] is called.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PersonalThumbnailLookupRequest {
-    root: CacheRoot,
+    root: PersonalCacheRoot,
     original: ReadableOriginalIdentity,
     size: ThumbnailSize,
 }
@@ -559,7 +576,7 @@ impl PersonalThumbnailLookupRequest {
     /// Creates an owned personal-cache lookup request.
     #[must_use]
     pub const fn new(
-        root: CacheRoot,
+        root: PersonalCacheRoot,
         original: ReadableOriginalIdentity,
         size: ThumbnailSize,
     ) -> Self {
@@ -571,7 +588,7 @@ impl PersonalThumbnailLookupRequest {
     }
 
     /// Returns a validated personal-cache path for the owned request.
-    pub fn validated_path(self) -> Result<ThumbnailLookup<ValidatedThumbnailPath>> {
+    pub fn validated_path(self) -> Result<PersonalThumbnailLookup<ThumbnailPathLookupEntry>> {
         let Self {
             root,
             original,
@@ -581,7 +598,7 @@ impl PersonalThumbnailLookupRequest {
     }
 
     /// Returns exact validated personal-cache PNG bytes for the owned request.
-    pub fn validated_payload(self) -> Result<ThumbnailLookup<ValidatedThumbnailPayload>> {
+    pub fn validated_payload(self) -> Result<PersonalThumbnailLookup<ThumbnailPayloadLookupEntry>> {
         let Self {
             root,
             original,
@@ -592,7 +609,7 @@ impl PersonalThumbnailLookupRequest {
 
     /// Splits this request into its owned parts.
     #[must_use]
-    pub fn into_parts(self) -> (CacheRoot, ReadableOriginalIdentity, ThumbnailSize) {
+    pub fn into_parts(self) -> (PersonalCacheRoot, ReadableOriginalIdentity, ThumbnailSize) {
         (self.root, self.original, self.size)
     }
 }
@@ -611,7 +628,7 @@ impl PersonalThumbnailLookupRequest {
 /// ```
 #[derive(Debug, Eq, PartialEq)]
 pub struct PersonalThumbnailInstallRequest {
-    root: CacheRoot,
+    root: PersonalCacheRoot,
     original: ReadableOriginalIdentity,
     size: ThumbnailSize,
     rendered_png: Vec<u8>,
@@ -621,7 +638,7 @@ impl PersonalThumbnailInstallRequest {
     /// Creates an owned personal-cache install request.
     #[must_use]
     pub fn new(
-        root: CacheRoot,
+        root: PersonalCacheRoot,
         original: ReadableOriginalIdentity,
         size: ThumbnailSize,
         rendered_png: Vec<u8>,
@@ -658,7 +675,14 @@ impl PersonalThumbnailInstallRequest {
 
     /// Splits this request into its owned parts.
     #[must_use]
-    pub fn into_parts(self) -> (CacheRoot, ReadableOriginalIdentity, ThumbnailSize, Vec<u8>) {
+    pub fn into_parts(
+        self,
+    ) -> (
+        PersonalCacheRoot,
+        ReadableOriginalIdentity,
+        ThumbnailSize,
+        Vec<u8>,
+    ) {
         (self.root, self.original, self.size, self.rendered_png)
     }
 }
@@ -669,7 +693,7 @@ impl PersonalThumbnailInstallRequest {
 /// installation happen only when [`Self::install_path`] or [`Self::install_payload`] is called.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PersonalThumbnailRawInstallRequest {
-    root: CacheRoot,
+    root: PersonalCacheRoot,
     original: ReadableOriginalIdentity,
     size: ThumbnailSize,
     image: OwnedRawThumbnailImage,
@@ -679,7 +703,7 @@ impl PersonalThumbnailRawInstallRequest {
     /// Creates an owned personal-cache raw install request.
     #[must_use]
     pub fn new(
-        root: CacheRoot,
+        root: PersonalCacheRoot,
         original: ReadableOriginalIdentity,
         size: ThumbnailSize,
         image: OwnedRawThumbnailImage,
@@ -719,7 +743,7 @@ impl PersonalThumbnailRawInstallRequest {
     pub fn into_parts(
         self,
     ) -> (
-        CacheRoot,
+        PersonalCacheRoot,
         ReadableOriginalIdentity,
         ThumbnailSize,
         OwnedRawThumbnailImage,
@@ -734,7 +758,7 @@ impl PersonalThumbnailRawInstallRequest {
 /// when [`Self::write_path`] or [`Self::write_payload`] is called.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FailureEntryWriteRequest {
-    root: CacheRoot,
+    root: PersonalCacheRoot,
     namespace: FailureNamespace,
     original: ReadableOriginalIdentity,
 }
@@ -743,7 +767,7 @@ impl FailureEntryWriteRequest {
     /// Creates an owned failure-entry write request.
     #[must_use]
     pub const fn new(
-        root: CacheRoot,
+        root: PersonalCacheRoot,
         namespace: FailureNamespace,
         original: ReadableOriginalIdentity,
     ) -> Self {
@@ -776,7 +800,13 @@ impl FailureEntryWriteRequest {
 
     /// Splits this request into its owned parts.
     #[must_use]
-    pub fn into_parts(self) -> (CacheRoot, FailureNamespace, ReadableOriginalIdentity) {
+    pub fn into_parts(
+        self,
+    ) -> (
+        PersonalCacheRoot,
+        FailureNamespace,
+        ReadableOriginalIdentity,
+    ) {
         (self.root, self.namespace, self.original)
     }
 }
@@ -787,7 +817,7 @@ impl FailureEntryWriteRequest {
 /// [`Self::inspect`] is called.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PersonalThumbnailInspectionRequest {
-    root: CacheRoot,
+    root: PersonalCacheRoot,
     sizes: Vec<ThumbnailSize>,
     include_nonstandard: bool,
 }
@@ -796,7 +826,7 @@ impl PersonalThumbnailInspectionRequest {
     /// Creates an owned personal-cache inspection request.
     #[must_use]
     pub const fn new(
-        root: CacheRoot,
+        root: PersonalCacheRoot,
         sizes: Vec<ThumbnailSize>,
         include_nonstandard: bool,
     ) -> Self {
@@ -819,7 +849,7 @@ impl PersonalThumbnailInspectionRequest {
 
     /// Splits this request into its owned parts.
     #[must_use]
-    pub fn into_parts(self) -> (CacheRoot, Vec<ThumbnailSize>, bool) {
+    pub fn into_parts(self) -> (PersonalCacheRoot, Vec<ThumbnailSize>, bool) {
         (self.root, self.sizes, self.include_nonstandard)
     }
 }
@@ -827,13 +857,14 @@ impl PersonalThumbnailInspectionRequest {
 /// Owned shared-repository lookup request for async or runtime-specific adapters.
 ///
 /// Constructing this request does not perform filesystem I/O. Validation happens only when
-/// [`Self::validated_path`] or [`Self::validated_payload`] is called.
+/// [`Self::lookup_path`] or [`Self::lookup_payload`] is called.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SharedThumbnailLookupRequest {
     context: SharedRepositoryContext,
+    size: ThumbnailSize,
+    metadata_policy: SharedThumbnailMetadataPolicy,
     mtime: Option<UnixMTimeSeconds>,
     original_size: Option<u64>,
-    size: ThumbnailSize,
 }
 
 impl SharedThumbnailLookupRequest {
@@ -841,38 +872,42 @@ impl SharedThumbnailLookupRequest {
     #[must_use]
     pub const fn new(
         context: SharedRepositoryContext,
+        size: ThumbnailSize,
+        metadata_policy: SharedThumbnailMetadataPolicy,
         mtime: Option<UnixMTimeSeconds>,
         original_size: Option<u64>,
-        size: ThumbnailSize,
     ) -> Self {
         Self {
             context,
+            size,
+            metadata_policy,
             mtime,
             original_size,
-            size,
         }
     }
 
     /// Returns a validated shared-repository path for the owned request.
-    pub fn validated_path(self) -> Result<SharedThumbnailLookup<ValidatedThumbnailPath>> {
+    pub fn lookup_path(self) -> Result<SharedThumbnailLookup<ThumbnailPathLookupEntry>> {
         let Self {
             context,
+            size,
+            metadata_policy,
             mtime,
             original_size,
-            size,
         } = self;
-        context.validated_thumbnail_path(mtime, original_size, size)
+        context.lookup_thumbnail_path(size, metadata_policy, mtime, original_size)
     }
 
     /// Returns exact validated shared-repository PNG bytes for the owned request.
-    pub fn validated_payload(self) -> Result<SharedThumbnailLookup<ValidatedThumbnailPayload>> {
+    pub fn lookup_payload(self) -> Result<SharedThumbnailLookup<ThumbnailPayloadLookupEntry>> {
         let Self {
             context,
+            size,
+            metadata_policy,
             mtime,
             original_size,
-            size,
         } = self;
-        context.validated_thumbnail_payload(mtime, original_size, size)
+        context.lookup_thumbnail_payload(size, metadata_policy, mtime, original_size)
     }
 
     /// Splits this request into its owned parts.
@@ -881,11 +916,18 @@ impl SharedThumbnailLookupRequest {
         self,
     ) -> (
         SharedRepositoryContext,
+        ThumbnailSize,
+        SharedThumbnailMetadataPolicy,
         Option<UnixMTimeSeconds>,
         Option<u64>,
-        ThumbnailSize,
     ) {
-        (self.context, self.mtime, self.original_size, self.size)
+        (
+            self.context,
+            self.size,
+            self.metadata_policy,
+            self.mtime,
+            self.original_size,
+        )
     }
 }
 
@@ -1045,7 +1087,8 @@ struct ValidatedSharedEntry {
 
 /// Result of a validated personal thumbnail cache lookup.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ThumbnailLookup<T> {
+#[non_exhaustive]
+pub enum PersonalThumbnailLookup<T> {
     /// The cache entry exists and passed validation.
     Valid(T),
     /// The computed cache path does not exist.
@@ -1056,6 +1099,7 @@ pub enum ThumbnailLookup<T> {
 
 /// Result of a validated shared thumbnail repository lookup.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum SharedThumbnailLookup<T> {
     /// The cache entry exists and required metadata and PNG constraints are fully verified.
     FullyVerified(T),
@@ -1069,8 +1113,18 @@ pub enum SharedThumbnailLookup<T> {
     Unverifiable(Vec<CacheEntryProblem>),
 }
 
+/// Metadata acceptance policy for shared-repository thumbnail lookups.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SharedThumbnailMetadataPolicy {
+    /// Require `Thumb::URI` and `Thumb::MTime` to be present and verified.
+    RequireComplete,
+    /// Accept standard-allowed missing `Thumb::URI` or `Thumb::MTime` as metadata-incomplete.
+    AllowIncomplete,
+}
+
 /// Validation state for a shared cache entry inspection.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum SharedCacheEntryOutcome {
     /// Required metadata and PNG constraints are fully verified.
     FullyVerified,
@@ -1133,12 +1187,12 @@ impl SharedCacheEntryInspection {
 
 /// A validated cache path and metadata facts.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ValidatedThumbnailPath {
+pub struct ThumbnailPathLookupEntry {
     path: PathBuf,
     metadata: ThumbnailMetadata,
 }
 
-impl ValidatedThumbnailPath {
+impl ThumbnailPathLookupEntry {
     /// Returns the path that was validated.
     #[must_use]
     pub fn path(&self) -> &Path {
@@ -1160,13 +1214,13 @@ impl ValidatedThumbnailPath {
 
 /// Exact validated PNG bytes and metadata facts.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ValidatedThumbnailPayload {
+pub struct ThumbnailPayloadLookupEntry {
     path: PathBuf,
     bytes: Vec<u8>,
     metadata: ThumbnailMetadata,
 }
 
-impl ValidatedThumbnailPayload {
+impl ThumbnailPayloadLookupEntry {
     /// Returns the path from which the payload was validated.
     #[must_use]
     pub fn path(&self) -> &Path {

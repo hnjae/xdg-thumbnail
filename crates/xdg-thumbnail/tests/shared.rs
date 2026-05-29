@@ -9,7 +9,7 @@ use std::os::unix::fs::symlink;
 use tempfile::TempDir;
 use xdg_thumbnail::{
     CacheEntryProblem, SharedCacheEntryOutcome, SharedRepositoryContext, SharedThumbnailLookup,
-    ThumbnailSize, UnixMTimeSeconds,
+    SharedThumbnailMetadataPolicy, ThumbnailSize, UnixMTimeSeconds,
 };
 
 #[test]
@@ -19,10 +19,11 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
         SharedRepositoryContext::new(temp.path(), OsStr::from_bytes(b"picture.png")).unwrap();
     assert_eq!(
         context
-            .validated_thumbnail_path(
+            .lookup_thumbnail_path(
+                ThumbnailSize::Normal,
+                SharedThumbnailMetadataPolicy::RequireComplete,
                 Some(UnixMTimeSeconds::new(42)),
                 Some(12),
-                ThumbnailSize::Normal
             )
             .unwrap(),
         SharedThumbnailLookup::Missing
@@ -33,10 +34,11 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
     let verified = shared_png(metadata("./picture.png", Some("42"), Some("12")));
     std::fs::write(&path, &verified).unwrap();
     match context
-        .validated_thumbnail_payload(
+        .lookup_thumbnail_payload(
+            ThumbnailSize::Normal,
+            SharedThumbnailMetadataPolicy::RequireComplete,
             Some(UnixMTimeSeconds::new(42)),
             Some(12),
-            ThumbnailSize::Normal,
         )
         .unwrap()
     {
@@ -46,13 +48,28 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
         }
         other => panic!("expected fully verified shared payload, got {other:?}"),
     }
+    match context
+        .lookup_thumbnail_path(
+            ThumbnailSize::Normal,
+            SharedThumbnailMetadataPolicy::AllowIncomplete,
+            Some(UnixMTimeSeconds::new(42)),
+            Some(12),
+        )
+        .unwrap()
+    {
+        SharedThumbnailLookup::FullyVerified(entry) => {
+            assert_eq!(entry.path(), path.as_path());
+        }
+        other => panic!("expected fully verified shared path, got {other:?}"),
+    }
 
     std::fs::write(&path, shared_png(BTreeMap::new())).unwrap();
     match context
-        .validated_thumbnail_path(
+        .lookup_thumbnail_path(
+            ThumbnailSize::Normal,
+            SharedThumbnailMetadataPolicy::AllowIncomplete,
             Some(UnixMTimeSeconds::new(42)),
             Some(12),
-            ThumbnailSize::Normal,
         )
         .unwrap()
     {
@@ -61,6 +78,20 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
         }
         other => panic!("expected metadata-incomplete shared path, got {other:?}"),
     }
+    match context
+        .lookup_thumbnail_path(
+            ThumbnailSize::Normal,
+            SharedThumbnailMetadataPolicy::RequireComplete,
+            Some(UnixMTimeSeconds::new(42)),
+            Some(12),
+        )
+        .unwrap()
+    {
+        SharedThumbnailLookup::Invalid(problems) => {
+            assert_eq!(problems, vec![CacheEntryProblem::MissingRequiredMetadata]);
+        }
+        other => panic!("expected incomplete shared path rejection, got {other:?}"),
+    }
 
     std::fs::write(
         &path,
@@ -68,10 +99,11 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
     )
     .unwrap();
     match context
-        .validated_thumbnail_path(
+        .lookup_thumbnail_path(
+            ThumbnailSize::Normal,
+            SharedThumbnailMetadataPolicy::RequireComplete,
             Some(UnixMTimeSeconds::new(42)),
             Some(12),
-            ThumbnailSize::Normal,
         )
         .unwrap()
     {
@@ -87,7 +119,12 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
     )
     .unwrap();
     match context
-        .validated_thumbnail_path(None, Some(12), ThumbnailSize::Normal)
+        .lookup_thumbnail_path(
+            ThumbnailSize::Normal,
+            SharedThumbnailMetadataPolicy::AllowIncomplete,
+            None,
+            Some(12),
+        )
         .unwrap()
     {
         SharedThumbnailLookup::Unverifiable(problems) => {
@@ -151,10 +188,11 @@ fn shared_validated_lookup_rejects_symlink_and_non_regular_entries() {
 
     assert_unreadable_shared_lookup(
         context
-            .validated_thumbnail_payload(
+            .lookup_thumbnail_payload(
+                ThumbnailSize::Normal,
+                SharedThumbnailMetadataPolicy::RequireComplete,
                 Some(UnixMTimeSeconds::new(42)),
                 Some(12),
-                ThumbnailSize::Normal,
             )
             .unwrap(),
     );
@@ -163,10 +201,11 @@ fn shared_validated_lookup_rejects_symlink_and_non_regular_entries() {
     std::fs::create_dir(&path).unwrap();
     assert_unreadable_shared_lookup(
         context
-            .validated_thumbnail_path(
+            .lookup_thumbnail_path(
+                ThumbnailSize::Normal,
+                SharedThumbnailMetadataPolicy::RequireComplete,
                 Some(UnixMTimeSeconds::new(42)),
                 Some(12),
-                ThumbnailSize::Normal,
             )
             .unwrap(),
     );

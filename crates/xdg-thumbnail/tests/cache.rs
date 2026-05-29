@@ -7,20 +7,20 @@ use std::path::Path;
 use std::time::{Duration, UNIX_EPOCH};
 
 use xdg_thumbnail::{
-    CacheNamespace, CacheRoot, FailureNamespace, OriginalIdentity, PersonalOriginalUri,
+    CacheNamespace, FailureNamespace, OriginalIdentity, PersonalCacheRoot, PersonalOriginalUri,
     ReadableOriginalIdentity, SharedRepositoryContext, ThumbnailSize, UnixMTimeSeconds,
 };
 
 #[test]
 fn cache_root_uses_absolute_xdg_cache_home_and_home_fallback() {
-    let root = CacheRoot::resolve_from_values(
+    let root = PersonalCacheRoot::resolve_from_values(
         Some(OsStr::from_bytes(b"/tmp/cache")),
         Some(OsStr::from_bytes(b"/home/alice")),
     )
     .unwrap();
     assert_eq!(root.as_path(), Path::new("/tmp/cache/thumbnails"));
 
-    let fallback = CacheRoot::resolve_from_values(
+    let fallback = PersonalCacheRoot::resolve_from_values(
         Some(OsStr::from_bytes(b"relative/cache")),
         Some(OsStr::from_bytes(b"/home/alice")),
     )
@@ -30,7 +30,7 @@ fn cache_root_uses_absolute_xdg_cache_home_and_home_fallback() {
         Path::new("/home/alice/.cache/thumbnails")
     );
 
-    assert!(CacheRoot::resolve_from_values(None, None).is_err());
+    assert!(PersonalCacheRoot::resolve_from_values(None, None).is_err());
 }
 
 #[test]
@@ -44,7 +44,7 @@ fn thumbnail_sizes_have_namespace_names_and_limits() {
 
 #[test]
 fn namespaces_compute_personal_paths() {
-    let root = CacheRoot::new(Path::new("/tmp/cache/thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(Path::new("/tmp/cache/thumbnails")).unwrap();
     let uri = PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap();
     let failure = FailureNamespace::new("xdg-thumbnail+0.1.0").unwrap();
 

@@ -12,9 +12,9 @@ use clap::{CommandFactory, Parser, ValueEnum};
 use serde::Serialize;
 use xdg_thumbnail::{
     AccessTimePreservation, CacheEntryInspection, CacheEntryInspectionOutcome, CacheEntryProblem,
-    CacheNamespace, CacheRoot, OriginalUriIdentity, PersonalOriginalUri, PersonalValidationOutcome,
-    ReadableOriginalIdentity, ThumbnailError, ThumbnailSize, validate_personal_failure_entry,
-    validate_personal_thumbnail,
+    CacheNamespace, OriginalUriIdentity, PersonalCacheRoot, PersonalOriginalUri,
+    PersonalValidationOutcome, ReadableOriginalIdentity, ThumbnailError, ThumbnailSize,
+    validate_personal_failure_entry, validate_personal_thumbnail,
 };
 
 #[cfg(unix)]
@@ -253,7 +253,7 @@ fn emit_generated_artifact(cli: &Cli) -> std::result::Result<Option<ExitCode>, S
 }
 
 fn run(cli: Cli) -> std::result::Result<u8, String> {
-    let root = CacheRoot::resolve_from_env().map_err(|error| error.to_string())?;
+    let root = PersonalCacheRoot::resolve_from_env().map_err(|error| error.to_string())?;
     let sizes = if cli.size.is_empty() {
         ThumbnailSize::all().to_vec()
     } else {
@@ -297,7 +297,7 @@ fn run(cli: Cli) -> std::result::Result<u8, String> {
 }
 
 fn evaluate_entry(
-    _root: &CacheRoot,
+    _root: &PersonalCacheRoot,
     cli: &Cli,
     classifier: &Classifier,
     entry: &CacheEntryInspection,
@@ -375,14 +375,6 @@ fn evaluate_entry(
         } else if problems.contains(&CacheEntryProblem::ResourceLimitExceeded) {
             decision = Decision::Skip;
             reason = Some("resource-limit-exceeded");
-        } else if problems.contains(&CacheEntryProblem::UnreadableEntry) {
-            decision = Decision::Skip;
-            reason = Some("unreadable-entry");
-            record_nonfatal_error(summary);
-        } else if problems.contains(&CacheEntryProblem::UnreadableOriginal) {
-            decision = Decision::Skip;
-            reason = Some("original-unverifiable");
-            record_nonfatal_error(summary);
         } else {
             decision = Decision::Skip;
             reason = Some("unreadable-entry");
@@ -552,6 +544,10 @@ fn evaluate_local_file(
             *reason = first_nonconforming_reason(&problems);
         }
         PersonalValidationOutcome::Invalid(_) => {
+            *decision = Decision::Skip;
+            *reason = Some("original-unverifiable");
+        }
+        _ => {
             *decision = Decision::Skip;
             *reason = Some("original-unverifiable");
         }

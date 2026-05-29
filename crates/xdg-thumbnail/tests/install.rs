@@ -6,7 +6,7 @@ use std::os::unix::fs::symlink;
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    CacheNamespace, CacheRoot, OriginalIdentity, ParsedThumbnailPng, PersonalOriginalUri,
+    CacheNamespace, OriginalIdentity, ParsedThumbnailPng, PersonalCacheRoot, PersonalOriginalUri,
     RawThumbnailImage, RawThumbnailPixelFormat, ReadableOriginalIdentity, ThumbnailError,
     ThumbnailPngBitDepth, ThumbnailPngColorType, ThumbnailSize, UnixMTimeSeconds,
 };
@@ -14,7 +14,7 @@ use xdg_thumbnail::{
 #[test]
 fn installs_normalized_downscaled_personal_thumbnail_atomically() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let rendered = png_without_metadata(300, 150, png::ColorType::Rgb);
 
@@ -63,7 +63,7 @@ fn installs_normalized_downscaled_personal_thumbnail_atomically() {
 #[test]
 fn path_install_variant_returns_only_installed_path() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let rendered = png_without_metadata(2, 1, png::ColorType::Rgba);
 
@@ -82,7 +82,7 @@ fn path_install_variant_returns_only_installed_path() {
 #[test]
 fn install_rejects_insecure_existing_cache_directories() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let target_dir = root.as_path().join("normal");
     std::fs::create_dir_all(&target_dir).unwrap();
     std::fs::set_permissions(&target_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -101,7 +101,7 @@ fn install_rejects_insecure_existing_cache_directories() {
 #[test]
 fn install_rejects_symlinked_cache_directories() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let outside = temp.path().join("outside");
     std::fs::create_dir_all(&outside).unwrap();
     std::fs::create_dir_all(root.as_path()).unwrap();
@@ -122,7 +122,7 @@ fn install_rejects_symlinked_cache_directories() {
 #[test]
 fn installs_rgb8_raw_thumbnail_with_opaque_alpha() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let pixels = [10, 20, 30, 40, 50, 60];
     let image = RawThumbnailImage::new(2, 1, 6, RawThumbnailPixelFormat::Rgb8, &pixels).unwrap();
@@ -152,7 +152,7 @@ fn installs_rgb8_raw_thumbnail_with_opaque_alpha() {
 #[test]
 fn installs_rgba8_raw_thumbnail_preserving_alpha() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let pixels = [10, 20, 30, 11, 40, 50, 60, 77];
     let image = RawThumbnailImage::new(2, 1, 8, RawThumbnailPixelFormat::Rgba8, &pixels).unwrap();
@@ -169,7 +169,7 @@ fn installs_rgba8_raw_thumbnail_preserving_alpha() {
 #[test]
 fn raw_thumbnail_stride_padding_is_skipped() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let pixels = [1, 2, 3, 4, 5, 6, 99, 99, 7, 8, 9, 10, 11, 12, 88, 88];
     let image = RawThumbnailImage::new(2, 2, 8, RawThumbnailPixelFormat::Rgb8, &pixels).unwrap();
@@ -189,7 +189,7 @@ fn raw_thumbnail_stride_padding_is_skipped() {
 #[test]
 fn raw_thumbnail_oversized_input_is_downscaled() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let width = 300;
     let height = 150;

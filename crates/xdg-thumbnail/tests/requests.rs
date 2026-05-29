@@ -7,15 +7,15 @@ use std::os::unix::ffi::OsStrExt;
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    CacheEntryInspection, CacheNamespace, CacheRoot, FailureEntryWriteRequest, FailureNamespace,
+    CacheEntryInspection, CacheNamespace, FailureEntryWriteRequest, FailureNamespace,
     InstalledThumbnailPath, InstalledThumbnailPayload, OriginalIdentity, OwnedRawThumbnailImage,
-    ParsedThumbnailPng, PersonalOriginalUri, PersonalThumbnailInspectionRequest,
-    PersonalThumbnailInstallRequest, PersonalThumbnailLookupRequest,
+    ParsedThumbnailPng, PersonalCacheRoot, PersonalOriginalUri, PersonalThumbnailInspectionRequest,
+    PersonalThumbnailInstallRequest, PersonalThumbnailLookup, PersonalThumbnailLookupRequest,
     PersonalThumbnailRawInstallRequest, RawThumbnailImage, RawThumbnailPixelFormat,
     ReadableOriginalIdentity, SharedCacheEntryInspection, SharedCacheEntryOutcome,
     SharedRepositoryContext, SharedThumbnailInspectionRequest, SharedThumbnailLookup,
-    SharedThumbnailLookupRequest, ThumbnailLookup, ThumbnailPngColorType, ThumbnailSize,
-    UnixMTimeSeconds, ValidatedThumbnailPath, ValidatedThumbnailPayload,
+    SharedThumbnailLookupRequest, SharedThumbnailMetadataPolicy, ThumbnailPathLookupEntry,
+    ThumbnailPayloadLookupEntry, ThumbnailPngColorType, ThumbnailSize, UnixMTimeSeconds,
 };
 
 #[test]
@@ -29,14 +29,15 @@ fn owned_request_and_result_types_are_send_sync_static() {
     assert_send_sync_static::<PersonalThumbnailInspectionRequest>();
     assert_send_sync_static::<SharedThumbnailLookupRequest>();
     assert_send_sync_static::<SharedThumbnailInspectionRequest>();
-    assert_send_sync_static::<ValidatedThumbnailPath>();
-    assert_send_sync_static::<ValidatedThumbnailPayload>();
+    assert_send_sync_static::<SharedThumbnailMetadataPolicy>();
+    assert_send_sync_static::<ThumbnailPathLookupEntry>();
+    assert_send_sync_static::<ThumbnailPayloadLookupEntry>();
     assert_send_sync_static::<InstalledThumbnailPath>();
     assert_send_sync_static::<InstalledThumbnailPayload>();
     assert_send_sync_static::<CacheEntryInspection>();
     assert_send_sync_static::<SharedCacheEntryInspection>();
-    assert_send_sync_static::<ThumbnailLookup<ValidatedThumbnailPayload>>();
-    assert_send_sync_static::<SharedThumbnailLookup<ValidatedThumbnailPayload>>();
+    assert_send_sync_static::<PersonalThumbnailLookup<ThumbnailPayloadLookupEntry>>();
+    assert_send_sync_static::<SharedThumbnailLookup<ThumbnailPayloadLookupEntry>>();
 }
 
 fn run_blocking_style<F, R>(operation: F) -> R
@@ -50,7 +51,7 @@ where
 #[test]
 fn personal_lookup_request_matches_borrowed_lookup() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let request =
         PersonalThumbnailLookupRequest::new(root.clone(), original.clone(), ThumbnailSize::Normal);
@@ -62,7 +63,7 @@ fn personal_lookup_request_matches_borrowed_lookup() {
     );
     assert_eq!(
         run_blocking_style(move || request.validated_path()).unwrap(),
-        ThumbnailLookup::Missing
+        PersonalThumbnailLookup::Missing
     );
 
     let path = root.personal_path(
@@ -80,7 +81,7 @@ fn personal_lookup_request_matches_borrowed_lookup() {
             .unwrap()
     );
     match request.clone().validated_path().unwrap() {
-        ThumbnailLookup::Valid(valid_path) => {
+        PersonalThumbnailLookup::Valid(valid_path) => {
             let (owned_path, metadata) = valid_path.into_parts();
             assert_eq!(owned_path, path);
             assert_eq!(metadata.thumb_size(), Some(12));
@@ -88,7 +89,7 @@ fn personal_lookup_request_matches_borrowed_lookup() {
         other => panic!("expected valid personal path lookup, got {other:?}"),
     }
     match request.validated_payload().unwrap() {
-        ThumbnailLookup::Valid(payload) => {
+        PersonalThumbnailLookup::Valid(payload) => {
             assert_eq!(payload.path(), path.as_path());
             assert_eq!(
                 payload.metadata().thumb_uri(),
@@ -106,7 +107,7 @@ fn personal_lookup_request_matches_borrowed_lookup() {
 #[test]
 fn personal_install_request_matches_borrowed_install_and_normalizes() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let rendered = png_without_metadata(300, 150, png::ColorType::Rgb);
     let request = PersonalThumbnailInstallRequest::new(
@@ -143,7 +144,7 @@ fn personal_install_request_matches_borrowed_install_and_normalizes() {
 #[test]
 fn personal_raw_install_request_matches_borrowed_install_and_normalizes() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let width = 300;
     let height = 150;
@@ -250,7 +251,7 @@ fn personal_raw_install_request_matches_borrowed_install_and_normalizes() {
 #[test]
 fn failure_entry_write_request_matches_borrowed_write() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let namespace = FailureNamespace::new("xdg-thumbnail-0.1.0").unwrap();
     let original = readable_original();
     let request = FailureEntryWriteRequest::new(root.clone(), namespace.clone(), original.clone());
@@ -281,7 +282,7 @@ fn failure_entry_write_request_matches_borrowed_write() {
 #[test]
 fn personal_inspection_request_owns_size_vector() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let installed = root
         .install_personal_thumbnail_payload(
@@ -311,23 +312,25 @@ fn shared_lookup_and_inspection_requests_match_borrowed_api() {
     let path = context.thumbnail_path(ThumbnailSize::Normal);
     let lookup_request = SharedThumbnailLookupRequest::new(
         context.clone(),
+        ThumbnailSize::Normal,
+        SharedThumbnailMetadataPolicy::RequireComplete,
         Some(UnixMTimeSeconds::new(42)),
         Some(12),
-        ThumbnailSize::Normal,
     );
 
     assert_eq!(
-        lookup_request.clone().validated_path().unwrap(),
+        lookup_request.clone().lookup_path().unwrap(),
         context
-            .validated_thumbnail_path(
+            .lookup_thumbnail_path(
+                ThumbnailSize::Normal,
+                SharedThumbnailMetadataPolicy::RequireComplete,
                 Some(UnixMTimeSeconds::new(42)),
                 Some(12),
-                ThumbnailSize::Normal,
             )
             .unwrap()
     );
     assert_eq!(
-        run_blocking_style(move || lookup_request.validated_path()).unwrap(),
+        run_blocking_style(move || lookup_request.lookup_path()).unwrap(),
         SharedThumbnailLookup::Missing
     );
 
@@ -337,17 +340,19 @@ fn shared_lookup_and_inspection_requests_match_borrowed_api() {
 
     let lookup_request = SharedThumbnailLookupRequest::new(
         context.clone(),
+        ThumbnailSize::Normal,
+        SharedThumbnailMetadataPolicy::RequireComplete,
         Some(UnixMTimeSeconds::new(42)),
         Some(12),
-        ThumbnailSize::Normal,
     );
     assert_eq!(
-        run_blocking_style(move || lookup_request.validated_payload()).unwrap(),
+        run_blocking_style(move || lookup_request.lookup_payload()).unwrap(),
         context
-            .validated_thumbnail_payload(
+            .lookup_thumbnail_payload(
+                ThumbnailSize::Normal,
+                SharedThumbnailMetadataPolicy::RequireComplete,
                 Some(UnixMTimeSeconds::new(42)),
                 Some(12),
-                ThumbnailSize::Normal,
             )
             .unwrap()
     );

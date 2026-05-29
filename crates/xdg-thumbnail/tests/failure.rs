@@ -3,15 +3,15 @@
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    CacheEntryProblem, CacheNamespace, CacheRoot, FailureNamespace, OriginalIdentity,
-    ParsedThumbnailPng, PersonalOriginalUri, PersonalValidationOutcome, ReadableOriginalIdentity,
+    CacheEntryProblem, CacheNamespace, FailureNamespace, OriginalIdentity, ParsedThumbnailPng,
+    PersonalCacheRoot, PersonalOriginalUri, PersonalValidationOutcome, ReadableOriginalIdentity,
     ThumbnailPngColorType, UnixMTimeSeconds, validate_personal_failure_entry,
 };
 
 #[test]
 fn writes_deterministic_failure_namespace_entries() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let namespace = FailureNamespace::new("xdg-thumbnail-0.1.0").unwrap();
     let original = readable_original();
 
@@ -53,7 +53,7 @@ fn writes_deterministic_failure_namespace_entries() {
 #[test]
 fn failure_path_variant_returns_only_installed_path() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let namespace = FailureNamespace::new("xdg-thumbnail-0.1.0").unwrap();
     let original = readable_original();
 

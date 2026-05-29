@@ -7,14 +7,14 @@ use std::os::unix::fs::symlink;
 use tempfile::TempDir;
 use xdg_thumbnail::{
     AccessTimePreservation, CacheEntryInspectionOutcome, CacheEntryProblem, CacheNamespace,
-    CacheRoot, FailureNamespace, OriginalIdentity, OriginalUriIdentity, PersonalOriginalUri,
-    ReadableOriginalIdentity, ThumbnailSize,
+    FailureNamespace, OriginalIdentity, OriginalUriIdentity, PersonalCacheRoot,
+    PersonalOriginalUri, ReadableOriginalIdentity, ThumbnailSize,
 };
 
 #[test]
 fn inspection_iterates_standard_entries_and_reports_facts() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let installed = root
         .install_personal_thumbnail_payload(
@@ -63,7 +63,7 @@ fn inspection_iterates_standard_entries_and_reports_facts() {
 #[test]
 fn inspection_reports_invalid_uri_metadata_and_filename_uri_mismatch() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let dir = root.as_path().join("normal");
     std::fs::create_dir_all(&dir).unwrap();
 
@@ -117,7 +117,7 @@ fn inspection_reports_invalid_uri_metadata_and_filename_uri_mismatch() {
 #[test]
 fn failure_iteration_is_limited_to_one_real_namespace_level() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let namespace = FailureNamespace::new("app-1").unwrap();
     root.write_failure_entry_payload(&namespace, &original)
@@ -146,7 +146,7 @@ fn failure_iteration_is_limited_to_one_real_namespace_level() {
 #[test]
 fn inspection_does_not_follow_symlinked_size_namespace_directories() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let outside = temp.path().join("outside-normal");
     std::fs::create_dir_all(&outside).unwrap();
     std::fs::create_dir_all(root.as_path()).unwrap();
@@ -167,7 +167,7 @@ fn inspection_does_not_follow_symlinked_size_namespace_directories() {
 #[test]
 fn cache_entry_handles_remove_files_without_following_symlinks() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let installed = root
         .install_personal_thumbnail_payload(

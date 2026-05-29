@@ -6,14 +6,14 @@ use std::os::unix::fs::symlink;
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    CacheEntryProblem, CacheNamespace, CacheRoot, OriginalIdentity, PersonalOriginalUri,
-    ReadableOriginalIdentity, ThumbnailLookup, ThumbnailSize, UnixMTimeSeconds,
+    CacheEntryProblem, CacheNamespace, OriginalIdentity, PersonalCacheRoot, PersonalOriginalUri,
+    PersonalThumbnailLookup, ReadableOriginalIdentity, ThumbnailSize, UnixMTimeSeconds,
 };
 
 #[test]
 fn validated_path_lookup_distinguishes_valid_missing_and_invalid_entries() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = original_identity(42);
     let path = root.personal_path(
         original.identity().uri(),
@@ -24,7 +24,7 @@ fn validated_path_lookup_distinguishes_valid_missing_and_invalid_entries() {
     assert_eq!(
         root.validated_personal_path(&original, ThumbnailSize::Normal)
             .unwrap(),
-        ThumbnailLookup::Missing
+        PersonalThumbnailLookup::Missing
     );
 
     let valid_bytes = png_with_metadata(metadata("42"));
@@ -33,7 +33,7 @@ fn validated_path_lookup_distinguishes_valid_missing_and_invalid_entries() {
         .validated_personal_path(&original, ThumbnailSize::Normal)
         .unwrap()
     {
-        ThumbnailLookup::Valid(valid) => {
+        PersonalThumbnailLookup::Valid(valid) => {
             assert_eq!(valid.path(), path.as_path());
             assert_eq!(
                 valid.metadata().thumb_uri(),
@@ -48,7 +48,7 @@ fn validated_path_lookup_distinguishes_valid_missing_and_invalid_entries() {
         .validated_personal_path(&original, ThumbnailSize::Normal)
         .unwrap()
     {
-        ThumbnailLookup::Invalid(problems) => {
+        PersonalThumbnailLookup::Invalid(problems) => {
             assert!(problems.contains(&CacheEntryProblem::StaleMetadata));
         }
         other => panic!("expected invalid lookup, got {other:?}"),
@@ -58,7 +58,7 @@ fn validated_path_lookup_distinguishes_valid_missing_and_invalid_entries() {
 #[test]
 fn validated_payload_lookup_returns_exact_validated_png_bytes() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = original_identity(42);
     let path = root.personal_path(
         original.identity().uri(),
@@ -72,7 +72,7 @@ fn validated_payload_lookup_returns_exact_validated_png_bytes() {
         .validated_personal_payload(&original, ThumbnailSize::Normal)
         .unwrap()
     {
-        ThumbnailLookup::Valid(valid) => {
+        PersonalThumbnailLookup::Valid(valid) => {
             assert_eq!(valid.path(), path.as_path());
             assert_eq!(valid.bytes(), valid_bytes.as_slice());
             assert_eq!(valid.metadata().thumb_size(), Some(12));
@@ -84,7 +84,7 @@ fn validated_payload_lookup_returns_exact_validated_png_bytes() {
 #[test]
 fn validated_lookup_rejects_symlink_and_non_regular_entries() {
     let temp = TempDir::new().unwrap();
-    let root = CacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = original_identity(42);
     let path = root.personal_path(
         original.identity().uri(),
@@ -108,9 +108,9 @@ fn validated_lookup_rejects_symlink_and_non_regular_entries() {
     );
 }
 
-fn assert_unreadable_lookup<T: std::fmt::Debug>(lookup: ThumbnailLookup<T>) {
+fn assert_unreadable_lookup<T: std::fmt::Debug>(lookup: PersonalThumbnailLookup<T>) {
     match lookup {
-        ThumbnailLookup::Invalid(problems) => {
+        PersonalThumbnailLookup::Invalid(problems) => {
             assert_eq!(problems, vec![CacheEntryProblem::UnreadableEntry]);
         }
         other => panic!("expected unreadable invalid lookup, got {other:?}"),

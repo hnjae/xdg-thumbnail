@@ -10,6 +10,10 @@ license = "MPL-2.0"
 repository.workspace = true
 authors.workspace = true
 description = "Freedesktop thumbnail cache primitives"
+readme = "README.md"
+documentation = "https://docs.rs/xdg-thumbnail"
+keywords = ["freedesktop", "thumbnail", "xdg", "cache", "png"]
+categories = ["filesystem", "multimedia::images", "os::unix-apis"]
 
 [lib]
 name = "xdg_thumbnail"
