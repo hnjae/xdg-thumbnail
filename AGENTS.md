@@ -6,7 +6,7 @@
 
 - Run the full CI check with `devenv tasks run ci:check`.
 - Format the repository with `devenv shell -- treefmt`.
-- Run pre-commit checks with `prek`.
+- Run all pre-commit hooks with `devenv tasks run ci:git-hooks`.
 
 ## Compatibility Policy
 
