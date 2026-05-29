@@ -77,7 +77,8 @@ The `x-large` and `xx-large` size classes are treated as supported documented be
 
 ## Prune CLI Responsibilities
 
-- Parse command-line options such as `--older-than`, `--delete`, `--delete-stale-local`, `--allow-delete-failures`, `--size`, `--scope`, `--age-basis`, `--include-nonstandard-files`, `--format`, `--ignore-fhs-media`, `--verbose`, and repeated custom removable path hints.
+- Implement the user-visible prune contract documented in `docs/spec/prune-cli-behavior.md` and `docs/spec/cleanup-policy.md`.
+- Parse prune command-line options and translate them into cleanup policy.
 - Classify URI schemes and path prefixes according to user-facing cleanup policy.
 - Apply age-based cleanup for remote, virtual, and removable-media-like entries.
 - Inspect and classify failure entries when the user includes failure namespaces in the scan scope, while relying on library-owned failure-entry metadata validation and requiring an extra failure-deletion opt-in before treating them as deletion candidates.
@@ -91,7 +92,8 @@ The `x-large` and `xx-large` size classes are treated as supported documented be
 
 ## Generate CLI Responsibilities
 
-- Parse command-line options such as `--size`, `--force`, `--dry-run`, `--timeout`, `--sandbox`, `--format`, and `--verbose`.
+- Implement the user-visible generate contract documented in `docs/spec/generate-cli-behavior.md`.
+- Parse generate command-line options and translate them into thumbnailer selection, execution, and reporting policy.
 - Resolve relative local input paths against the current working directory into absolute paths, apply generate CLI input policy such as recursive-cache rejection, and call the library to construct canonical personal-cache thumbnail URIs without hidden symlink normalization.
 - Reject inputs located under the personal thumbnail cache or a shared `.sh_thumbnails` repository.
 - Confirm local input readability and obtain original metadata before keeping an existing thumbnail as valid or asking the library to install a generated thumbnail.
@@ -109,15 +111,11 @@ The `x-large` and `xx-large` size classes are treated as supported documented be
 
 ## Thumbnailer Sandbox
 
-The initial generate CLI sandbox backend is `bubblewrap` (`bwrap`) on Linux, and the default generate command uses `--sandbox required`. Sandbox setup belongs to the generate CLI crate because it is tied to external thumbnailer execution, command expansion, temporary renderer output, and user-facing `--sandbox` policy rather than Freedesktop cache inspection or installation.
-
-In `--sandbox required` mode, the generate CLI must fail before executing a thumbnailer when `bwrap` is unavailable, when the host is not Linux, when the requested isolation cannot be applied, or when the selected thumbnailer does not fit the documented sandbox profile. CLI help, diagnostics, dry-run output, and summaries for such failures must make the Linux `bubblewrap` default requirement explicit. In `--dry-run` mode these same checks are reported as planned failures without executing thumbnailers or mutating the cache, and they should be represented per input-size pair when enough information is available. There is no implicit unsandboxed fallback. `--sandbox off` is an explicit user opt-out and should be reflected in human and JSONL reports.
-
-The sandbox should create a private mount namespace and unshare networking. The thumbnailer should receive read access to the selected input, read access to documented read-only system runtime resources, and write access only to a private temporary output directory owned by the generate CLI. The initial profile may expose read-only system locations such as `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, and `/etc` when needed for ordinary system thumbnailers to start. User-controlled locations such as the user's home, personal thumbnail cache, `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`, user entries from `$XDG_CONFIG_DIRS` or `$XDG_DATA_DIRS`, and arbitrary writable host paths must not be exposed wholesale unless a later spec explicitly defines a compatibility mode. The generate CLI is not required to infer arbitrary runtime dependencies for user-provided thumbnailers, plugins, codecs, configuration, or helper programs outside the documented profile. A selected user-provided thumbnailer may run in `--sandbox required` only when the resolved command and literal host paths fit the same documented sandbox profile as system entries. Shell-based thumbnailer entries are not eligible in the initial required sandbox because shell command strings cannot be bounded to the documented path exposure model without broader command analysis. Otherwise, the generate CLI reports `sandbox-ineligible` and does not run that thumbnailer unsandboxed.
+Sandbox setup belongs to the generate CLI crate because it is tied to external thumbnailer execution, command expansion, temporary renderer output, and user-facing sandbox policy rather than Freedesktop cache inspection or installation. The user-visible sandbox modes, default behavior, failure reporting, path exposure model, and thumbnailer eligibility rules are specified in `docs/spec/generate-cli-behavior.md`.
 
 `%i` and `%o` expand to sandbox-visible paths. `%u` expands to a thumbnailer input URI that the external process can open; under `--sandbox required`, this may be a `file:` URI for the sandbox-visible input path rather than the host path. The canonical original URI used for cache identity, hashing, `Thumb::URI`, and validation remains a separate value derived from the host input path. The generate CLI owns the mapping between host input and sandbox input, the private temporary output directory, and cleanup of temporary files after it has read the generated PNG into memory.
 
-Executable and `TryExec` lookup should happen before entering the sandbox using desktop-entry-compatible path lookup rules. Sandbox eligibility should then check the resolved executable, resolved script interpreter if any, and literal host paths in the command template against the documented sandbox profile. If a thumbnailer explicitly names a shell in `Exec`, or resolves to a shell through an interpreter wrapper, the initial `--sandbox required` mode reports `sandbox-ineligible`; shell command support requires `--sandbox off` or a later documented compatibility mode.
+Executable and `TryExec` lookup should happen before entering the sandbox using desktop-entry-compatible path lookup rules. Sandbox eligibility then evaluates the resolved executable, resolved script interpreter if any, and literal host paths in the command template against the profile defined by the generate CLI spec.
 
 Landlock may be considered later as an additional hardening layer or fallback for specific filesystem restrictions, but it is not the initial backend because the generate CLI requires a network namespace and predictable path exposure for external thumbnailer processes.
 
