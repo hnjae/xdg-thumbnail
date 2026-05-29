@@ -43,15 +43,15 @@ Thumbnail source creation is outside the base library and prune CLI scope. The g
 
 When the generate CLI runs external `.thumbnailer` helpers, sandbox setup is part of CLI execution policy rather than the base library because it belongs to external process execution, command expansion, and temporary renderer output. The generate CLI keeps the host canonical URI for cache identity, hashing, metadata, and validation separate from the sandbox-visible URI passed to thumbnailers through `%u`. The user-visible sandbox modes, default behavior, failure reporting, path exposure model, and thumbnailer eligibility rules are specified in `docs/spec/generate-cli-behavior.md`.
 
-The library owns the Freedesktop installation mechanics for personal-cache entries once a caller supplies a readability-confirmed original identity and an already rendered thumbnail payload. The caller owns renderer temporary files, including external thumbnailer `%o` outputs, until rendered output is handed to the library through a supported input form. The install path normalizes supported rendered PNG payloads to 8-bit non-interlaced RGBA PNG output with full alpha support, downscales rendered output when needed to fit the target namespace, writes standard metadata, creates missing cache directories with mode `0700`, rejects existing standard cache directories that are not current-user-owned and private, writes temporary files in the target directory, installs final files with mode `0600`, and publishes the result with an atomic rename. Supported normalization may include adding opaque alpha to RGB output, expanding grayscale or indexed-color PNG output, converting supported PNG bit depths to 8-bit output, and rewriting the PNG to add or replace standard thumbnail metadata. Source decoding, source metadata interpretation, animation frame selection, and repairing aspect-ratio mistakes remain outside the base library.
+The library owns the Freedesktop installation mechanics for personal-cache entries once a caller supplies a readability-confirmed original identity and already rendered thumbnail bytes. The caller owns renderer temporary files, including external thumbnailer `%o` outputs, until rendered output is handed to the library through a supported input form. The install path normalizes supported rendered PNG bytes to 8-bit non-interlaced RGBA PNG output with full alpha support, downscales rendered output when needed to fit the target namespace, writes standard metadata, creates missing cache directories with mode `0700`, rejects existing standard cache directories that are not current-user-owned and private, writes temporary files in the target directory, installs final files with mode `0600`, and publishes the result with an atomic rename. Supported normalization may include adding opaque alpha to RGB output, expanding grayscale or indexed-color PNG output, converting supported PNG bit depths to 8-bit output, and rewriting the PNG to add or replace standard thumbnail metadata. Source decoding, source metadata interpretation, animation frame selection, and repairing aspect-ratio mistakes remain outside the base library.
 
-Shared-repository writes remain outside the initial lifecycle. Failure entry writing is an explicit library primitive because it uses the same Freedesktop filename, metadata, permission, and atomic-install rules, but callers own the policy for when a failure should be recorded. The initial failure writer creates a deterministic minimal 1x1 transparent RGBA PNG with required failure metadata instead of accepting a renderer-provided payload.
+Shared-repository writes remain outside the initial lifecycle. Failure entry writing is an explicit library primitive because it uses the same Freedesktop filename, metadata, permission, and atomic-install rules, but callers own the policy for when a failure should be recorded. The initial failure writer creates a deterministic minimal 1x1 transparent RGBA PNG with required failure metadata instead of accepting renderer-provided bytes.
 
 Application lookup must not use existing thumbnails when the original is not currently readable. Separate management-tool inspection may still parse thumbnail files and metadata without opening the original, but such inspection must report facts rather than validate the thumbnail for display.
 
 ## Lookup Result Surfaces
 
-The library exposes cache reuse through layered result surfaces. A computed path is only the MD5-derived cache location for an accepted URI identity and namespace; it is useful for reports, dry-run output, and install targeting, but it does not mean a thumbnail exists or is valid. A validated path means the library opened the cache PNG and verified it against the original identity and namespace before returning the path; it is a convenience for toolkits that require a filename, but callers that reopen the path accept that the file can be replaced after validation. A validated payload means the library returns the exact PNG bytes that passed validation, plus the cache path and metadata facts; this is the preferred surface for application thumbnail views. Output selection is caller-driven: lookup should expose either separate calls or an explicit mode for path versus bytes. Opened handles or mmap-backed payloads can be added later as optimized variants, but the initial caller-selectable outputs are path and bytes.
+The library exposes cache reuse through layered result surfaces. A computed path is only the MD5-derived cache location for an accepted URI identity and namespace; it is useful for reports, dry-run output, and install targeting, but it does not mean a thumbnail exists or is valid. A validated path means the library opened the cache PNG and verified it against the original identity and namespace before returning the path; it is a convenience for toolkits that require a filename, but callers that reopen the path accept that the file can be replaced after validation. A validated bytes result means the library returns the exact PNG bytes that passed validation, plus the cache path and metadata facts; this is the preferred surface for application thumbnail views. Output selection is caller-driven: lookup should expose either separate calls or an explicit mode for path versus bytes. Opened handles or mmap-backed byte buffers can be added later as optimized variants, but the initial caller-selectable outputs are path and bytes.
 
 Lookup results should distinguish valid, missing, invalid, and unverifiable originals. Missing and invalid results let an application decide whether to render and install a new thumbnail. Unverifiable results mean the caller did not or could not provide readability and modification-time proof for the original, so the library must not present an existing cache entry as display-valid.
 
@@ -59,7 +59,7 @@ Lookup results should distinguish valid, missing, invalid, and unverifiable orig
 
 ```mermaid
 flowchart TD
-    A[Caller rendered thumbnail payload] --> B{Readable original identity has URI and mtime?}
+    A[Caller rendered thumbnail bytes] --> B{Readable original identity has URI and mtime?}
     B -- no --> C[Reject write]
     B -- yes --> D[Compute personal cache path]
     D --> E[Normalize and downscale PNG for namespace]
@@ -70,7 +70,7 @@ flowchart TD
     I --> J[Return installed path and optional final PNG bytes]
 ```
 
-Applications that embed their own renderer should use this install flow instead of reimplementing the Freedesktop cache filename, metadata, permission, and atomic-save rules. The library should not know whether the payload came from Qt image decoding, a Rust image decoder, a document renderer, a video frame extractor, or an external thumbnailer. Install results should at least report the installed cache path. When the caller requests payload output, the library should return the final normalized PNG bytes for the installed entry; that payload represents the cache entry after cache-size downscaling, metadata writing, and normalization, not the original renderer input. Install should follow the same explicit path-versus-bytes output selection model as lookup.
+Applications that embed their own renderer should use this install flow instead of reimplementing the Freedesktop cache filename, metadata, permission, and atomic-save rules. The library should not know whether the renderer input bytes came from Qt image decoding, a Rust image decoder, a document renderer, a video frame extractor, or an external thumbnailer. Install results should at least report the installed cache path. When the caller requests bytes output, the library should return the final normalized PNG bytes for the installed entry; those bytes represent the cache entry after cache-size downscaling, metadata writing, and normalization, not the original renderer input. Install should follow the same explicit path-versus-bytes output selection model as lookup.
 
 ## Pruning Model
 
@@ -88,7 +88,7 @@ let original = OriginalFile::open_readable(path)?;
 let identity = ReadableOriginalIdentity::from_readable_file(&uri, &original)?;
 let computed_path = cache.thumbnail_path(&uri, CacheNamespace::Size(ThumbnailSize::Normal));
 
-match cache.validated_personal_payload(&identity, ThumbnailSize::Normal)? {
+match cache.validated_personal_bytes(&identity, ThumbnailSize::Normal)? {
     PersonalThumbnailLookup::Valid(thumbnail) => return Ok(Some(thumbnail)),
     PersonalThumbnailLookup::Missing | PersonalThumbnailLookup::Invalid(_) => {}
     _ => {}
@@ -96,7 +96,7 @@ match cache.validated_personal_payload(&identity, ThumbnailSize::Normal)? {
 
 let shared = SharedRepositoryContext::for_direct_child(path)?;
 let shared_policy = SharedThumbnailMetadataPolicy::RequireComplete;
-match shared.lookup_thumbnail_payload(ThumbnailSize::Normal, shared_policy, Some(identity.mtime()), identity.size())? {
+match shared.lookup_thumbnail_bytes(ThumbnailSize::Normal, shared_policy, Some(identity.mtime()), identity.original_byte_size())? {
     SharedThumbnailLookup::FullyVerified(thumbnail) => return Ok(Some(thumbnail)),
     SharedThumbnailLookup::MetadataIncomplete(_) => {}
     SharedThumbnailLookup::Missing | SharedThumbnailLookup::Invalid(_) => {}
@@ -107,7 +107,7 @@ match shared.lookup_thumbnail_payload(ThumbnailSize::Normal, shared_policy, Some
 Ok(None)
 ```
 
-The exact API should be shaped by implementation, but applications should not need to know the hash filename algorithm, cache directory layout, or PNG metadata keys directly. `computed_path` is available for diagnostics or reports, while validated payload lookup can return display-grade validated PNG bytes rather than asking the caller to reopen a path and reparse metadata. A cache miss is returned to the caller; lookup does not perform rendering, and callers that render a thumbnail use the separate install flow. The example uses a safety-oriented shared policy that can decline standard-allowed shared thumbnails with incomplete freshness metadata. Applications that intentionally accept shared thumbnails with incomplete freshness metadata should pass an explicit shared policy tied to their own trust or freshness model.
+The exact API should be shaped by implementation, but applications should not need to know the hash filename algorithm, cache directory layout, or PNG metadata keys directly. `computed_path` is available for diagnostics or reports, while validated bytes lookup can return display-grade validated PNG bytes rather than asking the caller to reopen a path and reparse metadata. A cache miss is returned to the caller; lookup does not perform rendering, and callers that render a thumbnail use the separate install flow. The example uses a safety-oriented shared policy that can decline standard-allowed shared thumbnails with incomplete freshness metadata. Applications that intentionally accept shared thumbnails with incomplete freshness metadata should pass an explicit shared policy tied to their own trust or freshness model.
 
 ## Failure Entries
 

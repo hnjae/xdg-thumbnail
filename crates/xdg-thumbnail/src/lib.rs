@@ -16,7 +16,7 @@
 //!     let root = PersonalCacheRoot::resolve_from_env()?;
 //!     let original = ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
 //!
-//!     match root.validated_personal_payload(&original, ThumbnailSize::Normal)? {
+//!     match root.validated_personal_bytes(&original, ThumbnailSize::Normal)? {
 //!         PersonalThumbnailLookup::Valid(entry) => {
 //!             let _png_bytes = entry.bytes();
 //!         }
@@ -55,7 +55,7 @@
 //!         rendered_png,
 //!     );
 //!
-//!     let installed = spawn_blocking(move || request.install_payload())?;
+//!     let installed = spawn_blocking(move || request.install_bytes())?;
 //!     let _path = installed.path();
 //!
 //!     Ok(())
@@ -71,12 +71,12 @@ mod png;
 mod uri;
 
 pub use cache::{
-    FailureEntryWriteRequest, InstalledThumbnailPath, InstalledThumbnailPayload, PersonalCacheRoot,
+    FailureEntryWriteRequest, InstalledThumbnailBytes, InstalledThumbnailPath, PersonalCacheRoot,
     PersonalThumbnailInspectionRequest, PersonalThumbnailInstallRequest, PersonalThumbnailLookup,
     PersonalThumbnailLookupRequest, PersonalThumbnailRawInstallRequest, SharedCacheEntryInspection,
     SharedCacheEntryOutcome, SharedThumbnailInspectionRequest, SharedThumbnailLookup,
-    SharedThumbnailLookupRequest, SharedThumbnailMetadataPolicy, ThumbnailPathLookupEntry,
-    ThumbnailPayloadLookupEntry,
+    SharedThumbnailLookupRequest, SharedThumbnailMetadataPolicy, ThumbnailBytesLookupEntry,
+    ThumbnailPathLookupEntry,
 };
 pub use error::{Result, ThumbnailError};
 pub use identity::{

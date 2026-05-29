@@ -15,6 +15,7 @@ const MAX_RENDERED_DECODE_BYTES: usize = 256 * 1024 * 1024;
 
 /// Explicit raw pixel format accepted by raw thumbnail install APIs.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
 pub enum RawThumbnailPixelFormat {
     /// Three 8-bit channels per pixel in red, green, blue order.
     Rgb8,
@@ -565,7 +566,7 @@ pub fn validate_shared_thumbnail(
     bytes: &[u8],
     context: &SharedRepositoryContext,
     mtime: Option<UnixMTimeSeconds>,
-    original_size: Option<u64>,
+    original_byte_size: Option<u64>,
     size: ThumbnailSize,
 ) -> SharedValidationOutcome {
     let parsed = match parse_thumbnail_for_validation(bytes) {
@@ -596,7 +597,7 @@ pub fn validate_shared_thumbnail(
         (Err(_), _) => push_problem(&mut problems, CacheEntryProblem::InvalidMetadataSyntax),
     }
 
-    compare_optional_size(&mut problems, metadata, original_size);
+    compare_optional_size(&mut problems, metadata, original_byte_size);
 
     if !problems.is_empty() {
         SharedValidationOutcome::Invalid(problems)
@@ -628,7 +629,7 @@ fn compare_personal_metadata(
         Err(_) => push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax),
     }
 
-    compare_optional_size(problems, metadata, original.size());
+    compare_optional_size(problems, metadata, original.original_byte_size());
     compare_optional_mimetype(problems, metadata, original.mime_type());
 }
 
@@ -729,8 +730,8 @@ pub(crate) fn thumbnail_metadata_pairs(original: &OriginalIdentity) -> Vec<(Stri
         ("Thumb::URI".to_owned(), original.uri().as_str().to_owned()),
         ("Thumb::MTime".to_owned(), original.mtime().to_string()),
     ];
-    if let Some(size) = original.size() {
-        metadata.push(("Thumb::Size".to_owned(), size.to_string()));
+    if let Some(original_byte_size) = original.original_byte_size() {
+        metadata.push(("Thumb::Size".to_owned(), original_byte_size.to_string()));
     }
     if let Some(mime_type) = original.mime_type() {
         metadata.push(("Thumb::Mimetype".to_owned(), mime_type.to_owned()));

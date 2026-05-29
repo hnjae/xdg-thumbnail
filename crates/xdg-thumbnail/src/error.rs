@@ -6,6 +6,10 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 /// Errors returned by thumbnail cache identity and filesystem operations.
+///
+/// Reason strings carried by variants are diagnostic text for humans and logs. They are not stable
+/// machine-matchable API values; callers should use structured variants and typed validation
+/// problems for control flow.
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum ThumbnailError {
@@ -39,7 +43,7 @@ pub enum ThumbnailError {
     /// Thumbnail metadata is invalid.
     #[error("invalid thumbnail metadata: {0}")]
     InvalidMetadata(&'static str),
-    /// Rendered thumbnail payload is unsupported.
+    /// Rendered thumbnail bytes are unsupported.
     #[error("unsupported rendered thumbnail: {0}")]
     UnsupportedRenderedThumbnail(&'static str),
     /// PNG parsing or thumbnail normalization would exceed configured resource limits.

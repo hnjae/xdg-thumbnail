@@ -354,7 +354,7 @@ impl Fixture {
             )
             .unwrap(),
         );
-        root.install_personal_thumbnail_payload(&original, ThumbnailSize::Normal, &rendered_png())
+        root.install_personal_thumbnail_bytes(&original, ThumbnailSize::Normal, &rendered_png())
             .unwrap();
         root.personal_path(
             original.identity().uri(),
@@ -391,7 +391,7 @@ impl Fixture {
                 .unwrap(),
         );
         let namespace = FailureNamespace::new("app-1").unwrap();
-        root.write_failure_entry_payload(&namespace, &original)
+        root.write_failure_entry_bytes(&namespace, &original)
             .unwrap();
         root.personal_path(
             original.identity().uri(),
@@ -412,7 +412,7 @@ impl Fixture {
             .unwrap(),
         );
         let installed = root
-            .install_personal_thumbnail_payload(&original, ThumbnailSize::Normal, &rendered_png())
+            .install_personal_thumbnail_bytes(&original, ThumbnailSize::Normal, &rendered_png())
             .unwrap();
         let wrong_uri =
             PersonalOriginalUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-other.png").unwrap();
@@ -434,7 +434,7 @@ impl Fixture {
                 .unwrap(),
         );
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
-        root.install_personal_thumbnail_payload(&original, ThumbnailSize::Normal, &rendered_png())
+        root.install_personal_thumbnail_bytes(&original, ThumbnailSize::Normal, &rendered_png())
             .unwrap();
         root.personal_path(
             original.identity().uri(),
@@ -456,7 +456,7 @@ impl Fixture {
                 .unwrap(),
         );
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
-        root.install_personal_thumbnail_payload(&original, ThumbnailSize::Normal, &rendered_png())
+        root.install_personal_thumbnail_bytes(&original, ThumbnailSize::Normal, &rendered_png())
             .unwrap();
         root.personal_path(
             original.identity().uri(),
@@ -489,7 +489,7 @@ fn png_with_metadata(width: u32, height: u32, original: &OriginalIdentity) -> Ve
         encoder
             .add_text_chunk("Thumb::MTime".to_owned(), original.mtime().to_string())
             .unwrap();
-        if let Some(size) = original.size() {
+        if let Some(size) = original.original_byte_size() {
             encoder
                 .add_text_chunk("Thumb::Size".to_owned(), size.to_string())
                 .unwrap();

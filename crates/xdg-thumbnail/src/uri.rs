@@ -107,16 +107,10 @@ impl PersonalOriginalUri {
         &self.value
     }
 
-    /// Returns the Freedesktop MD5 filename stem for this URI identity.
-    #[must_use]
-    pub fn md5_stem(&self) -> String {
-        md5_stem(self.value.as_bytes())
-    }
-
     /// Returns the Freedesktop thumbnail filename for this URI identity.
     #[must_use]
     pub fn thumbnail_filename(&self) -> String {
-        format!("{}.png", self.md5_stem())
+        format!("{}.png", md5_stem(self.value.as_bytes()))
     }
 }
 
@@ -169,16 +163,10 @@ impl SharedRelativeOriginalUri {
         &self.value
     }
 
-    /// Returns the Freedesktop MD5 filename stem for this URI identity.
-    #[must_use]
-    pub fn md5_stem(&self) -> String {
-        md5_stem(self.value.as_bytes())
-    }
-
     /// Returns the Freedesktop thumbnail filename for this URI identity.
     #[must_use]
     pub fn thumbnail_filename(&self) -> String {
-        format!("{}.png", self.md5_stem())
+        format!("{}.png", md5_stem(self.value.as_bytes()))
     }
 }
 

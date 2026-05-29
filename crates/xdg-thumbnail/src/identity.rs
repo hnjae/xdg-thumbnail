@@ -76,18 +76,22 @@ impl fmt::Display for UnixMTimeSeconds {
 pub struct OriginalIdentity {
     uri: PersonalOriginalUri,
     mtime: UnixMTimeSeconds,
-    size: Option<u64>,
+    original_byte_size: Option<u64>,
     mime_type: Option<String>,
 }
 
 impl OriginalIdentity {
     /// Creates an original identity from caller-confirmed facts without a MIME type.
     #[must_use]
-    pub fn new(uri: PersonalOriginalUri, mtime: UnixMTimeSeconds, size: Option<u64>) -> Self {
+    pub fn new(
+        uri: PersonalOriginalUri,
+        mtime: UnixMTimeSeconds,
+        original_byte_size: Option<u64>,
+    ) -> Self {
         Self {
             uri,
             mtime,
-            size,
+            original_byte_size,
             mime_type: None,
         }
     }
@@ -96,7 +100,7 @@ impl OriginalIdentity {
     pub fn with_mime_type(
         uri: PersonalOriginalUri,
         mtime: UnixMTimeSeconds,
-        size: Option<u64>,
+        original_byte_size: Option<u64>,
         mime_type: impl Into<String>,
     ) -> Result<Self> {
         let mime_type = mime_type.into();
@@ -104,7 +108,7 @@ impl OriginalIdentity {
         Ok(Self {
             uri,
             mtime,
-            size,
+            original_byte_size,
             mime_type: Some(mime_type),
         })
     }
@@ -123,8 +127,8 @@ impl OriginalIdentity {
 
     /// Returns the original byte size when known.
     #[must_use]
-    pub const fn size(&self) -> Option<u64> {
-        self.size
+    pub const fn original_byte_size(&self) -> Option<u64> {
+        self.original_byte_size
     }
 
     /// Returns the original MIME type when known.

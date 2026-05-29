@@ -87,7 +87,7 @@ fn original_identity_preserves_required_freshness_facts() {
 
     assert_eq!(identity.uri(), &uri);
     assert_eq!(identity.mtime().as_u64(), 42);
-    assert_eq!(identity.size(), Some(12));
+    assert_eq!(identity.original_byte_size(), Some(12));
     assert_eq!(identity.mime_type(), Some("image/png"));
     assert_eq!(readable.identity().uri(), &uri);
 }

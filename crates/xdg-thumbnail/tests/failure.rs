@@ -16,10 +16,10 @@ fn writes_deterministic_failure_namespace_entries() {
     let original = readable_original();
 
     let first = root
-        .write_failure_entry_payload(&namespace, &original)
+        .write_failure_entry_bytes(&namespace, &original)
         .unwrap();
     let second = root
-        .write_failure_entry_payload(&namespace, &original)
+        .write_failure_entry_bytes(&namespace, &original)
         .unwrap();
 
     let expected_path = root.personal_path(
@@ -124,7 +124,7 @@ fn failure_png_with_metadata(width: u32, height: u32, original: &OriginalIdentit
         encoder
             .add_text_chunk("Thumb::MTime".to_owned(), original.mtime().to_string())
             .unwrap();
-        if let Some(size) = original.size() {
+        if let Some(size) = original.original_byte_size() {
             encoder
                 .add_text_chunk("Thumb::Size".to_owned(), size.to_string())
                 .unwrap();

@@ -34,7 +34,7 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
     let verified = shared_png(metadata("./picture.png", Some("42"), Some("12")));
     std::fs::write(&path, &verified).unwrap();
     match context
-        .lookup_thumbnail_payload(
+        .lookup_thumbnail_bytes(
             ThumbnailSize::Normal,
             SharedThumbnailMetadataPolicy::RequireComplete,
             Some(UnixMTimeSeconds::new(42)),
@@ -42,11 +42,11 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
         )
         .unwrap()
     {
-        SharedThumbnailLookup::FullyVerified(payload) => {
-            assert_eq!(payload.path(), path.as_path());
-            assert_eq!(payload.bytes(), verified.as_slice());
+        SharedThumbnailLookup::FullyVerified(bytes) => {
+            assert_eq!(bytes.path(), path.as_path());
+            assert_eq!(bytes.bytes(), verified.as_slice());
         }
-        other => panic!("expected fully verified shared payload, got {other:?}"),
+        other => panic!("expected fully verified shared bytes, got {other:?}"),
     }
     match context
         .lookup_thumbnail_path(
@@ -188,7 +188,7 @@ fn shared_validated_lookup_rejects_symlink_and_non_regular_entries() {
 
     assert_unreadable_shared_lookup(
         context
-            .lookup_thumbnail_payload(
+            .lookup_thumbnail_bytes(
                 ThumbnailSize::Normal,
                 SharedThumbnailMetadataPolicy::RequireComplete,
                 Some(UnixMTimeSeconds::new(42)),
