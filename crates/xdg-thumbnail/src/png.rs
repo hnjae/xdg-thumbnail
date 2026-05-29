@@ -701,6 +701,13 @@ struct RgbaImage {
     pixels: Vec<u8>,
 }
 
+pub(crate) struct DecodedThumbnailRgba8 {
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) stride: usize,
+    pub(crate) pixels: Vec<u8>,
+}
+
 pub(crate) fn normalized_personal_thumbnail_png(
     rendered_png: &[u8],
     original: &OriginalIdentity,
@@ -859,6 +866,91 @@ fn rgba_buffer_len(width: u32, height: u32) -> Result<usize> {
     pixel_count_len(width, height)?.checked_mul(4).ok_or(
         ThumbnailError::UnsupportedRenderedThumbnail("RGBA buffer length overflows usize"),
     )
+}
+
+fn validated_lookup_rgba_buffer_len(width: u32, height: u32) -> Result<usize> {
+    let pixels = u64::from(width) * u64::from(height);
+    let len = usize::try_from(pixels)
+        .ok()
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or(ThumbnailError::ResourceLimitExceeded(
+            "PNG decode resource limit exceeded",
+        ))?;
+    if len > MAX_RENDERED_DECODE_BYTES {
+        return Err(ThumbnailError::ResourceLimitExceeded(
+            "PNG decode resource limit exceeded",
+        ));
+    }
+    Ok(len)
+}
+
+pub(crate) fn decode_validated_thumbnail_png_to_rgba8(
+    bytes: &[u8],
+) -> Result<DecodedThumbnailRgba8> {
+    let decoder = png::Decoder::new(Cursor::new(bytes));
+    let mut reader = decoder
+        .read_info()
+        .map_err(|err| ThumbnailError::Png(err.to_string()))?;
+    let Some(output_buffer_size) = reader.output_buffer_size() else {
+        return Err(ThumbnailError::Png(
+            "png output buffer size is unavailable".to_owned(),
+        ));
+    };
+    let info = reader.info();
+    ensure_parsed_png_resource_limits(info.width, info.height, output_buffer_size)?;
+    let mut buffer = vec![0; output_buffer_size];
+    let output = reader
+        .next_frame(&mut buffer)
+        .map_err(|err| ThumbnailError::Png(err.to_string()))?;
+    if output.bit_depth != png::BitDepth::Eight {
+        return Err(ThumbnailError::Png(
+            "validated thumbnail did not decode to 8-bit samples".to_owned(),
+        ));
+    }
+
+    let stride = usize::try_from(output.width)
+        .ok()
+        .and_then(|width| width.checked_mul(4))
+        .ok_or(ThumbnailError::ResourceLimitExceeded(
+            "PNG decode resource limit exceeded",
+        ))?;
+    let expected_len = validated_lookup_rgba_buffer_len(output.width, output.height)?;
+    let frame = &buffer[..output.buffer_size()];
+    let pixels = match output.color_type {
+        png::ColorType::Rgba => {
+            if frame.len() != expected_len {
+                return Err(ThumbnailError::Png(
+                    "decoded RGBA buffer length does not match dimensions".to_owned(),
+                ));
+            }
+            frame.to_vec()
+        }
+        png::ColorType::GrayscaleAlpha => {
+            let expected_gray_alpha_len = expected_len / 2;
+            if frame.len() != expected_gray_alpha_len {
+                return Err(ThumbnailError::Png(
+                    "decoded grayscale-alpha buffer length does not match dimensions".to_owned(),
+                ));
+            }
+            let mut out = Vec::with_capacity(expected_len);
+            for pixel in frame.chunks_exact(2) {
+                out.extend_from_slice(&[pixel[0], pixel[0], pixel[0], pixel[1]]);
+            }
+            out
+        }
+        png::ColorType::Grayscale | png::ColorType::Rgb | png::ColorType::Indexed => {
+            return Err(ThumbnailError::Png(
+                "validated thumbnail color type is not RGBA or grayscale-alpha".to_owned(),
+            ));
+        }
+    };
+
+    Ok(DecodedThumbnailRgba8 {
+        width: output.width,
+        height: output.height,
+        stride,
+        pixels,
+    })
 }
 
 fn decode_rendered_png_to_rgba8(bytes: &[u8]) -> Result<RgbaImage> {

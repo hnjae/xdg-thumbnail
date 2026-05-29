@@ -15,8 +15,8 @@ use xdg_thumbnail::{
     RawThumbnailPixelFormat, ReadableOriginalIdentity, SharedCacheEntryInspection,
     SharedCacheEntryOutcome, SharedRepositoryContext, SharedThumbnailInspectionRequest,
     SharedThumbnailLookup, SharedThumbnailLookupRequest, SharedThumbnailMetadataPolicy,
-    ThumbnailPathLookupEntry, ThumbnailPngBytesLookupEntry, ThumbnailPngColorType, ThumbnailSize,
-    UnixMTimeSeconds,
+    ThumbnailPathLookupEntry, ThumbnailPngBytesLookupEntry, ThumbnailPngColorType,
+    ThumbnailRgba8LookupEntry, ThumbnailSize, UnixMTimeSeconds,
 };
 
 #[test]
@@ -34,12 +34,15 @@ fn owned_request_and_result_types_are_send_sync_static() {
     assert_send_sync_static::<NonstandardEntryPolicy>();
     assert_send_sync_static::<ThumbnailPathLookupEntry>();
     assert_send_sync_static::<ThumbnailPngBytesLookupEntry>();
+    assert_send_sync_static::<ThumbnailRgba8LookupEntry>();
     assert_send_sync_static::<InstalledThumbnailPath>();
     assert_send_sync_static::<InstalledThumbnailPngBytes>();
     assert_send_sync_static::<CacheEntryInspection>();
     assert_send_sync_static::<SharedCacheEntryInspection>();
     assert_send_sync_static::<PersonalThumbnailLookup<ThumbnailPngBytesLookupEntry>>();
     assert_send_sync_static::<SharedThumbnailLookup<ThumbnailPngBytesLookupEntry>>();
+    assert_send_sync_static::<PersonalThumbnailLookup<ThumbnailRgba8LookupEntry>>();
+    assert_send_sync_static::<SharedThumbnailLookup<ThumbnailRgba8LookupEntry>>();
 }
 
 fn run_blocking_style<F, R>(operation: F) -> R
@@ -103,6 +106,23 @@ fn personal_lookup_request_matches_borrowed_lookup() {
             assert_eq!(metadata.thumb_mtime(), Some(UnixMTimeSeconds::new(42)));
         }
         other => panic!("expected valid personal bytes lookup, got {other:?}"),
+    }
+
+    let request =
+        PersonalThumbnailLookupRequest::new(root.clone(), original.clone(), ThumbnailSize::Normal);
+    assert_eq!(
+        request.clone().lookup_rgba8().unwrap(),
+        root.lookup_thumbnail_rgba8(&original, ThumbnailSize::Normal)
+            .unwrap()
+    );
+    match request.lookup_rgba8().unwrap() {
+        PersonalThumbnailLookup::Valid(rgba8) => {
+            assert_eq!(rgba8.path(), path.as_path());
+            assert_eq!((rgba8.width(), rgba8.height(), rgba8.stride()), (2, 1, 8));
+            assert_eq!(rgba8.rgba8_pixels(), &[255; 8]);
+            assert_eq!(rgba8.metadata().thumb_size(), Some(12));
+        }
+        other => panic!("expected valid personal RGBA8 lookup, got {other:?}"),
     }
 }
 
@@ -354,6 +374,24 @@ fn shared_lookup_and_inspection_requests_match_borrowed_api() {
         run_blocking_style(move || lookup_request.lookup_png_bytes()).unwrap(),
         context
             .lookup_thumbnail_png_bytes(
+                ThumbnailSize::Normal,
+                SharedThumbnailMetadataPolicy::RequireComplete,
+                Some(UnixMTimeSeconds::new(42)),
+                Some(12),
+            )
+            .unwrap()
+    );
+    let lookup_request = SharedThumbnailLookupRequest::new(
+        context.clone(),
+        ThumbnailSize::Normal,
+        SharedThumbnailMetadataPolicy::RequireComplete,
+        Some(UnixMTimeSeconds::new(42)),
+        Some(12),
+    );
+    assert_eq!(
+        run_blocking_style(move || lookup_request.lookup_rgba8()).unwrap(),
+        context
+            .lookup_thumbnail_rgba8(
                 ThumbnailSize::Normal,
                 SharedThumbnailMetadataPolicy::RequireComplete,
                 Some(UnixMTimeSeconds::new(42)),

@@ -82,6 +82,106 @@ fn lookup_thumbnail_png_bytes_returns_exact_validated_png_bytes() {
 }
 
 #[test]
+fn lookup_thumbnail_rgba8_returns_decoded_pixels_and_metadata() {
+    let temp = TempDir::new().unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = original_identity(42);
+    let path = root.cache_entry_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::Normal),
+    );
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let pixels = [1, 2, 3, 4, 5, 6, 7, 8];
+    std::fs::write(
+        &path,
+        png_with_metadata_pixels(metadata("42"), png::ColorType::Rgba, &pixels),
+    )
+    .unwrap();
+
+    match root
+        .lookup_thumbnail_rgba8(&original, ThumbnailSize::Normal)
+        .unwrap()
+    {
+        PersonalThumbnailLookup::Valid(valid) => {
+            assert_eq!(valid.path(), path.as_path());
+            assert_eq!(valid.width(), 2);
+            assert_eq!(valid.height(), 1);
+            assert_eq!(valid.stride(), 8);
+            assert_eq!(valid.rgba8_pixels(), pixels.as_slice());
+            assert_eq!(valid.metadata().thumb_size(), Some(12));
+
+            let (owned_path, width, height, stride, owned_pixels, metadata) = valid.into_parts();
+            assert_eq!(owned_path, path);
+            assert_eq!((width, height, stride), (2, 1, 8));
+            assert_eq!(owned_pixels, pixels);
+            assert_eq!(metadata.thumb_mtime(), Some(UnixMTimeSeconds::new(42)));
+        }
+        other => panic!("expected valid RGBA8 lookup, got {other:?}"),
+    }
+}
+
+#[test]
+fn lookup_thumbnail_rgba8_converts_grayscale_alpha_pixels() {
+    let temp = TempDir::new().unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = original_identity(42);
+    let path = root.cache_entry_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::Normal),
+    );
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &path,
+        png_with_metadata_pixels(
+            metadata("42"),
+            png::ColorType::GrayscaleAlpha,
+            &[10, 20, 30, 40],
+        ),
+    )
+    .unwrap();
+
+    match root
+        .lookup_thumbnail_rgba8(&original, ThumbnailSize::Normal)
+        .unwrap()
+    {
+        PersonalThumbnailLookup::Valid(valid) => {
+            assert_eq!(valid.width(), 2);
+            assert_eq!(valid.height(), 1);
+            assert_eq!(valid.stride(), 8);
+            assert_eq!(valid.rgba8_pixels(), &[10, 10, 10, 20, 30, 30, 30, 40]);
+        }
+        other => panic!("expected valid grayscale-alpha RGBA8 lookup, got {other:?}"),
+    }
+}
+
+#[test]
+fn lookup_thumbnail_rgba8_keeps_rgb_without_alpha_invalid() {
+    let temp = TempDir::new().unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = original_identity(42);
+    let path = root.cache_entry_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::Normal),
+    );
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &path,
+        png_with_metadata_pixels(metadata("42"), png::ColorType::Rgb, &[1, 2, 3, 4, 5, 6]),
+    )
+    .unwrap();
+
+    match root
+        .lookup_thumbnail_rgba8(&original, ThumbnailSize::Normal)
+        .unwrap()
+    {
+        PersonalThumbnailLookup::Invalid(problems) => {
+            assert_eq!(problems, vec![CacheEntryProblem::NonconformingPngFormat]);
+        }
+        other => panic!("expected nonconforming RGBA8 lookup, got {other:?}"),
+    }
+}
+
+#[test]
 fn validated_lookup_rejects_symlink_and_non_regular_entries() {
     let temp = TempDir::new().unwrap();
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
@@ -139,10 +239,18 @@ fn metadata(mtime: &'static str) -> BTreeMap<&'static str, &'static str> {
 }
 
 fn png_with_metadata(metadata: BTreeMap<&str, &str>) -> Vec<u8> {
+    png_with_metadata_pixels(metadata, png::ColorType::Rgba, &[255; 8])
+}
+
+fn png_with_metadata_pixels(
+    metadata: BTreeMap<&str, &str>,
+    color_type: png::ColorType,
+    pixels: &[u8],
+) -> Vec<u8> {
     let mut output = Vec::new();
     {
         let mut encoder = png::Encoder::new(&mut output, 2, 1);
-        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_color(color_type);
         encoder.set_depth(png::BitDepth::Eight);
         for (key, value) in metadata {
             encoder
@@ -150,7 +258,7 @@ fn png_with_metadata(metadata: BTreeMap<&str, &str>) -> Vec<u8> {
                 .unwrap();
         }
         let mut writer = encoder.write_header().unwrap();
-        writer.write_image_data(&[255; 8]).unwrap();
+        writer.write_image_data(pixels).unwrap();
     }
     output
 }

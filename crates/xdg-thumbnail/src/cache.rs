@@ -19,9 +19,9 @@ use crate::{
     OwnedRawThumbnailImage, ParsedThumbnailPng, PersonalValidationOutcome, RawThumbnailImage,
     ReadableOriginalIdentity, Result, SharedRelativeOriginalUri, SharedRepositoryContext,
     SharedValidationOutcome, ThumbnailError, ThumbnailMetadata, ThumbnailSize, ThumbnailTimestamps,
-    UnixMTimeSeconds, encode_rgba_png, normalized_personal_thumbnail_png,
-    normalized_personal_thumbnail_raw_png, thumbnail_metadata_pairs, validate_personal_thumbnail,
-    validate_shared_thumbnail,
+    UnixMTimeSeconds, decode_validated_thumbnail_png_to_rgba8, encode_rgba_png,
+    normalized_personal_thumbnail_png, normalized_personal_thumbnail_raw_png,
+    thumbnail_metadata_pairs, validate_personal_thumbnail, validate_shared_thumbnail,
 };
 
 /// Root directory of the personal thumbnail cache, usually `$XDG_CACHE_HOME/thumbnails`.
@@ -165,6 +165,31 @@ impl PersonalCacheRoot {
                     bytes: entry.bytes,
                     metadata: entry.metadata,
                 },
+            )),
+            PersonalThumbnailLookup::Missing => Ok(PersonalThumbnailLookup::Missing),
+            PersonalThumbnailLookup::Invalid(problems) => {
+                Ok(PersonalThumbnailLookup::Invalid(problems))
+            }
+        }
+    }
+
+    /// Returns decoded tightly packed RGBA8 pixels from the personal thumbnail cache.
+    ///
+    /// The original identity must have already been confirmed readable. The returned pixels are
+    /// row-major `[red, green, blue, alpha]` bytes with straight alpha and `stride == width * 4`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for unexpected filesystem I/O while reading the candidate or for PNG
+    /// decoding failures after validation succeeds.
+    pub fn lookup_thumbnail_rgba8(
+        &self,
+        original: &ReadableOriginalIdentity,
+        size: ThumbnailSize,
+    ) -> Result<PersonalThumbnailLookup<ThumbnailRgba8LookupEntry>> {
+        match self.lookup_thumbnail_entry(original, size)? {
+            PersonalThumbnailLookup::Valid(entry) => Ok(PersonalThumbnailLookup::Valid(
+                rgba8_lookup_entry_from_parts(entry.path, &entry.bytes, entry.metadata)?,
             )),
             PersonalThumbnailLookup::Missing => Ok(PersonalThumbnailLookup::Missing),
             PersonalThumbnailLookup::Invalid(problems) => {
@@ -473,6 +498,43 @@ impl SharedRepositoryContext {
         }
     }
 
+    /// Returns decoded tightly packed RGBA8 pixels from a shared thumbnail repository.
+    ///
+    /// The returned pixels are row-major `[red, green, blue, alpha]` bytes with straight alpha and
+    /// `stride == width * 4`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for unexpected filesystem I/O while reading the candidate or for PNG
+    /// decoding failures after validation succeeds.
+    pub fn lookup_thumbnail_rgba8(
+        &self,
+        size: ThumbnailSize,
+        metadata_policy: SharedThumbnailMetadataPolicy,
+        mtime: Option<UnixMTimeSeconds>,
+        original_byte_size: Option<u64>,
+    ) -> Result<SharedThumbnailLookup<ThumbnailRgba8LookupEntry>> {
+        match self.lookup_thumbnail_entry(size, metadata_policy, mtime, original_byte_size)? {
+            SharedThumbnailLookup::FullyVerified(entry) => {
+                Ok(SharedThumbnailLookup::FullyVerified(
+                    rgba8_lookup_entry_from_parts(entry.path, &entry.bytes, entry.metadata)?,
+                ))
+            }
+            SharedThumbnailLookup::MetadataIncomplete(entry) => {
+                Ok(SharedThumbnailLookup::MetadataIncomplete(
+                    rgba8_lookup_entry_from_parts(entry.path, &entry.bytes, entry.metadata)?,
+                ))
+            }
+            SharedThumbnailLookup::Missing => Ok(SharedThumbnailLookup::Missing),
+            SharedThumbnailLookup::Invalid(problems) => {
+                Ok(SharedThumbnailLookup::Invalid(problems))
+            }
+            SharedThumbnailLookup::Unverifiable(problems) => {
+                Ok(SharedThumbnailLookup::Unverifiable(problems))
+            }
+        }
+    }
+
     /// Inspects existing shared-repository thumbnails without exposing removal handles.
     ///
     /// # Errors
@@ -624,7 +686,7 @@ impl SharedRepositoryContext {
 /// Owned personal-cache lookup request for async or runtime-specific adapters.
 ///
 /// Constructing this request does not perform filesystem I/O. Validation happens only when
-/// [`Self::lookup_path`] or [`Self::lookup_png_bytes`] is called.
+/// [`Self::lookup_path`], [`Self::lookup_png_bytes`], or [`Self::lookup_rgba8`] is called.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PersonalThumbnailLookupRequest {
     root: PersonalCacheRoot,
@@ -673,6 +735,20 @@ impl PersonalThumbnailLookupRequest {
             size,
         } = self;
         root.lookup_thumbnail_png_bytes(&original, size)
+    }
+
+    /// Returns decoded tightly packed RGBA8 pixels for the owned request.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`PersonalCacheRoot::lookup_thumbnail_rgba8`].
+    pub fn lookup_rgba8(self) -> Result<PersonalThumbnailLookup<ThumbnailRgba8LookupEntry>> {
+        let Self {
+            root,
+            original,
+            size,
+        } = self;
+        root.lookup_thumbnail_rgba8(&original, size)
     }
 
     /// Splits this request into its owned parts.
@@ -985,7 +1061,7 @@ impl PersonalThumbnailInspectionRequest {
 /// Owned shared-repository lookup request for async or runtime-specific adapters.
 ///
 /// Constructing this request does not perform filesystem I/O. Validation happens only when
-/// [`Self::lookup_path`] or [`Self::lookup_png_bytes`] is called.
+/// [`Self::lookup_path`], [`Self::lookup_png_bytes`], or [`Self::lookup_rgba8`] is called.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SharedThumbnailLookupRequest {
     context: SharedRepositoryContext,
@@ -1044,6 +1120,22 @@ impl SharedThumbnailLookupRequest {
             original_byte_size,
         } = self;
         context.lookup_thumbnail_png_bytes(size, metadata_policy, mtime, original_byte_size)
+    }
+
+    /// Returns decoded tightly packed RGBA8 pixels for the owned request.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`SharedRepositoryContext::lookup_thumbnail_rgba8`].
+    pub fn lookup_rgba8(self) -> Result<SharedThumbnailLookup<ThumbnailRgba8LookupEntry>> {
+        let Self {
+            context,
+            size,
+            metadata_policy,
+            mtime,
+            original_byte_size,
+        } = self;
+        context.lookup_thumbnail_rgba8(size, metadata_policy, mtime, original_byte_size)
     }
 
     /// Splits this request into its owned parts.
@@ -1212,6 +1304,22 @@ struct ValidatedSharedEntry {
     metadata: ThumbnailMetadata,
 }
 
+fn rgba8_lookup_entry_from_parts(
+    path: PathBuf,
+    bytes: &[u8],
+    metadata: ThumbnailMetadata,
+) -> Result<ThumbnailRgba8LookupEntry> {
+    let decoded = decode_validated_thumbnail_png_to_rgba8(bytes)?;
+    Ok(ThumbnailRgba8LookupEntry {
+        path,
+        width: decoded.width,
+        height: decoded.height,
+        stride: decoded.stride,
+        pixels: decoded.pixels,
+        metadata,
+    })
+}
+
 /// Result of a validated personal thumbnail cache lookup.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -1371,6 +1479,73 @@ impl ThumbnailPngBytesLookupEntry {
     #[must_use]
     pub fn into_parts(self) -> (PathBuf, Vec<u8>, ThumbnailMetadata) {
         (self.path, self.bytes, self.metadata)
+    }
+}
+
+/// Decoded tightly packed RGBA8 pixels and metadata facts from a validated cache PNG.
+///
+/// Pixels are row-major `[red, green, blue, alpha]` bytes with straight alpha and
+/// `stride == width * 4`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ThumbnailRgba8LookupEntry {
+    path: PathBuf,
+    width: u32,
+    height: u32,
+    stride: usize,
+    pixels: Vec<u8>,
+    metadata: ThumbnailMetadata,
+}
+
+impl ThumbnailRgba8LookupEntry {
+    /// Returns the path from which the PNG was validated and decoded.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Returns the decoded image width in pixels.
+    #[must_use]
+    pub const fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// Returns the decoded image height in pixels.
+    #[must_use]
+    pub const fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// Returns the row stride in bytes.
+    ///
+    /// RGBA8 lookup results are tightly packed, so this is always `width * 4`.
+    #[must_use]
+    pub const fn stride(&self) -> usize {
+        self.stride
+    }
+
+    /// Returns the decoded row-major RGBA8 pixel buffer.
+    #[must_use]
+    pub fn rgba8_pixels(&self) -> &[u8] {
+        &self.pixels
+    }
+
+    /// Returns metadata parsed from the validated PNG.
+    #[must_use]
+    pub const fn metadata(&self) -> &ThumbnailMetadata {
+        &self.metadata
+    }
+
+    /// Splits this result into its owned path, dimensions, stride, RGBA8 pixels, and metadata.
+    #[must_use]
+    pub fn into_parts(self) -> (PathBuf, u32, u32, usize, Vec<u8>, ThumbnailMetadata) {
+        (
+            self.path,
+            self.width,
+            self.height,
+            self.stride,
+            self.pixels,
+            self.metadata,
+        )
     }
 }
 

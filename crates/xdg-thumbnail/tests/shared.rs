@@ -49,6 +49,24 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
         other => panic!("expected fully verified shared bytes, got {other:?}"),
     }
     match context
+        .lookup_thumbnail_rgba8(
+            ThumbnailSize::Normal,
+            SharedThumbnailMetadataPolicy::RequireComplete,
+            Some(UnixMTimeSeconds::new(42)),
+            Some(12),
+        )
+        .unwrap()
+    {
+        SharedThumbnailLookup::FullyVerified(rgba8) => {
+            assert_eq!(rgba8.path(), path.as_path());
+            assert_eq!(rgba8.width(), 2);
+            assert_eq!(rgba8.height(), 1);
+            assert_eq!(rgba8.stride(), 8);
+            assert_eq!(rgba8.rgba8_pixels(), &[255; 8]);
+        }
+        other => panic!("expected fully verified shared RGBA8, got {other:?}"),
+    }
+    match context
         .lookup_thumbnail_path(
             ThumbnailSize::Normal,
             SharedThumbnailMetadataPolicy::AllowIncomplete,
@@ -77,6 +95,22 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
             assert_eq!(entry.path(), path.as_path());
         }
         other => panic!("expected metadata-incomplete shared path, got {other:?}"),
+    }
+    match context
+        .lookup_thumbnail_rgba8(
+            ThumbnailSize::Normal,
+            SharedThumbnailMetadataPolicy::AllowIncomplete,
+            Some(UnixMTimeSeconds::new(42)),
+            Some(12),
+        )
+        .unwrap()
+    {
+        SharedThumbnailLookup::MetadataIncomplete(entry) => {
+            assert_eq!(entry.path(), path.as_path());
+            assert_eq!(entry.rgba8_pixels(), &[255; 8]);
+            assert_eq!(entry.metadata().thumb_uri(), None);
+        }
+        other => panic!("expected metadata-incomplete shared RGBA8, got {other:?}"),
     }
     match context
         .lookup_thumbnail_path(

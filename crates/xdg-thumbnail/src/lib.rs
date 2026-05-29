@@ -93,7 +93,7 @@ pub use cache::{
     PersonalThumbnailLookup, PersonalThumbnailLookupRequest, PersonalThumbnailRawInstallRequest,
     SharedCacheEntryInspection, SharedCacheEntryOutcome, SharedThumbnailInspectionRequest,
     SharedThumbnailLookup, SharedThumbnailLookupRequest, SharedThumbnailMetadataPolicy,
-    ThumbnailPathLookupEntry, ThumbnailPngBytesLookupEntry,
+    ThumbnailPathLookupEntry, ThumbnailPngBytesLookupEntry, ThumbnailRgba8LookupEntry,
 };
 #[cfg(unix)]
 pub use error::{Result, ThumbnailError};
@@ -120,6 +120,7 @@ pub use uri::{PersonalOriginalUri, SharedRelativeOriginalUri};
 
 #[cfg(unix)]
 pub(crate) use png::{
-    encode_rgba_png, normalized_personal_thumbnail_png, normalized_personal_thumbnail_raw_png,
-    push_problem, thumbnail_metadata_pairs, validate_mime_type,
+    decode_validated_thumbnail_png_to_rgba8, encode_rgba_png, normalized_personal_thumbnail_png,
+    normalized_personal_thumbnail_raw_png, push_problem, thumbnail_metadata_pairs,
+    validate_mime_type,
 };
