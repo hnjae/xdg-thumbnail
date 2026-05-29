@@ -42,17 +42,17 @@ The library keeps a flat public API through `lib.rs` re-exports, but internal mo
 - Represent personal absolute original URIs and shared-repository relative original URIs as separate library-owned string newtypes that preserve the exact MD5 and `Thumb::URI` input for their own context.
 - Construct canonical personal original URIs for local filesystem paths and textual local `file:` URI inputs, construct canonical shared-repository relative original URIs from raw direct-child filenames, and validate and preserve caller-selected stable absolute personal original URI identities for other schemes without parser reserialization or scheme-specific normalization.
 - Use maintained dependencies for commodity primitives such as MD5 digest calculation, byte percent-encoding, and optional URI syntax validation, while keeping canonical thumbnail URI identity and cache filename policy in the library instead of exposing parser-specific URL objects or handwritten digest code.
-- Represent thumbnail sizes: `normal`, `large`, `x-large`, and `xx-large`.
+- Represent thumbnail sizes: `normal`, `large`, `x-large`, and `xx-large`. `ThumbnailSize::all()` returns a static slice in cache scan order rather than exposing a fixed array length as part of the public API contract.
 - Represent cache namespaces separately for successful thumbnail sizes and program-version failure entries.
 - Compute thumbnail filenames from canonical thumbnail URIs using MD5 and the `.png` suffix, including absolute canonical URIs for the personal cache and `./`-prefixed relative URIs for shared repositories, as specified in `docs/spec/uri-canonicalization.md`.
-- Expose pure computed-path APIs separately from validation APIs so callers cannot mistake an MD5-derived cache path for a display-valid thumbnail.
+- Expose pure computed-path APIs separately from validation APIs so callers cannot mistake an MD5-derived cache path for a display-valid thumbnail. Personal-cache path calculation is exposed as `PersonalCacheRoot::cache_entry_path`.
 - Compute shared-repository cache paths only from an explicit shared repository context that includes the repository root, direct child original filename, and shared relative URI, so personal-cache absolute URI identity is never reused as a shared-repository lookup key.
 - Keep raw shared-repository filename construction separate from textual shared-URI parsing. Raw filenames with literal percent-looking text such as `dir%2Fpicture.png` are valid direct child names and are percent-encoded as `./dir%252Fpicture.png`; textual shared URIs that decode to multiple path segments, such as `./dir%2Fpicture.png`, are rejected. On Unix-like targets, backslash remains a filename byte and is preserved through percent-encoding when needed.
 - Read standard PNG text metadata such as `Thumb::URI`, `Thumb::MTime`, `Thumb::Size`, and `Thumb::Mimetype`, while exposing crate-owned PNG bit-depth and color-type enums instead of parser dependency types.
 - Write standard PNG text metadata such as required `Thumb::URI` and `Thumb::MTime`, plus optional `Thumb::Size`, `Thumb::Mimetype`, and media-specific keys when the caller supplies them.
 - Require `Thumb::URI` and `Thumb::MTime` for personal-cache validation and compare `Thumb::MTime` as whole Unix epoch seconds.
-- Expose validated path lookup for callers that need a toolkit-consumable path while documenting the post-validation replacement race when the caller reopens that path. Validated lookup must open cache entries without following symlinks; missing entries are lookup misses, while symlinks, non-regular entries, and no-follow open refusals are invalid unreadable entries.
-- Expose validated bytes lookup as the preferred display surface for thumbnail views, returning the exact cache PNG bytes opened without following symlinks and validated together with path and metadata facts when the caller requests bytes output. Opened handles may be added later as optimized variants.
+- Expose validated path lookup for callers that need a toolkit-consumable path while documenting the post-validation replacement race when the caller reopens that path. Personal and shared path lookup APIs are named `lookup_thumbnail_path`. Validated lookup must open cache entries without following symlinks; missing entries are lookup misses, while symlinks, non-regular entries, and no-follow open refusals are invalid unreadable entries.
+- Expose validated bytes lookup as the preferred display surface for thumbnail views, returning the exact cache PNG bytes opened without following symlinks and validated together with path and metadata facts when the caller requests bytes output. Personal and shared bytes lookup APIs are named `lookup_thumbnail_bytes`. Opened handles may be added later as optimized variants.
 - Make path-versus-bytes output selection explicit in lookup and install APIs instead of returning an ambiguous path-or-bytes union.
 - Reject personal-cache successful thumbnail and failure-entry writes when the caller cannot provide a readability-confirmed original identity with an original modification time, because such entries violate the Freedesktop write preconditions or cannot satisfy global-cache freshness checks.
 - Iterate cache entries from the personal thumbnail cache and optional shared thumbnail repositories.
@@ -64,7 +64,7 @@ The library keeps a flat public API through `lib.rs` re-exports, but internal mo
 - Treat failure entries as metadata-carrying PNG files in program-version failure namespaces, not as successful thumbnail size entries, and validate their required personal-cache metadata without applying successful-thumbnail dimension limits.
 - Provide opt-in failure-entry writing when the caller supplies an explicit validated program-version namespace and a readability-confirmed original identity, without deciding application retry policy. The initial writer should generate a deterministic minimal 1x1 transparent RGBA PNG instead of accepting caller-rendered failure bytes.
 - Treat shared thumbnail repositories as read-only during initial lookup, cleanup, and application generation; shared-repository writes are outside the initial library and CLI responsibilities.
-- Return structured, policy-neutral inspection facts without applying CLI cleanup policy. Invalid PNG structure, missing required metadata, invalid metadata syntax, stale metadata, nonconforming PNG encoding, and dimension violations must remain distinguishable facts.
+- Return structured, policy-neutral inspection facts without applying CLI cleanup policy. Personal-cache inspection uses `NonstandardEntryPolicy` rather than a boolean flag; `Exclude` is the default and skips nonstandard filenames, while `Include` reports them as invalid entries. Invalid PNG structure, missing required metadata, invalid metadata syntax, stale metadata, nonconforming PNG encoding, and dimension violations must remain distinguishable facts.
 - Provide cache entry handles for entries discovered by library iteration or explicit cache-path resolution, and implement safe removal on those handles with containment checks and no symlink following. The removal design should prefer directory-relative APIs such as `openat` and `unlinkat`, or a capability-style equivalent, so containment and symlink checks are not only string-prefix checks. Any fallback that cannot provide that strength must be documented and reported as best-effort.
 - Expose thumbnail file timestamp facts, including modification time, access time when available, and whether metadata inspection preserved access time, without deciding age-based cleanup policy.
 - Avoid exposing user-facing URI classification, age thresholds, deletion reasons, or cleanup decisions from the library API.
@@ -213,6 +213,12 @@ pub enum SharedValidationOutcome {
 pub enum SharedThumbnailMetadataPolicy {
     RequireComplete,
     AllowIncomplete,
+}
+
+#[non_exhaustive]
+pub enum NonstandardEntryPolicy {
+    Exclude,
+    Include,
 }
 
 #[non_exhaustive]

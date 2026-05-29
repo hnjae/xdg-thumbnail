@@ -86,9 +86,9 @@ A thumbnail consumer that only wants to reuse existing thumbnails should be able
 let uri = ThumbnailUri::from_file_path(path)?;
 let original = OriginalFile::open_readable(path)?;
 let identity = ReadableOriginalIdentity::from_readable_file(&uri, &original)?;
-let computed_path = cache.thumbnail_path(&uri, CacheNamespace::Size(ThumbnailSize::Normal));
+let computed_path = cache.cache_entry_path(&uri, &CacheNamespace::Size(ThumbnailSize::Normal));
 
-match cache.validated_personal_bytes(&identity, ThumbnailSize::Normal)? {
+match cache.lookup_thumbnail_bytes(&identity, ThumbnailSize::Normal)? {
     PersonalThumbnailLookup::Valid(thumbnail) => return Ok(Some(thumbnail)),
     PersonalThumbnailLookup::Missing | PersonalThumbnailLookup::Invalid(_) => {}
     _ => {}
