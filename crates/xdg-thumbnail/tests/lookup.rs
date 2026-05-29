@@ -11,18 +11,18 @@ use xdg_thumbnail::{
 };
 
 #[test]
-fn validated_path_lookup_distinguishes_valid_missing_and_invalid_entries() {
+fn lookup_thumbnail_path_distinguishes_valid_missing_and_invalid_entries() {
     let temp = TempDir::new().unwrap();
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = original_identity(42);
-    let path = root.personal_path(
+    let path = root.cache_entry_path(
         original.identity().uri(),
         &CacheNamespace::Size(ThumbnailSize::Normal),
     );
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
 
     assert_eq!(
-        root.validated_personal_path(&original, ThumbnailSize::Normal)
+        root.lookup_thumbnail_path(&original, ThumbnailSize::Normal)
             .unwrap(),
         PersonalThumbnailLookup::Missing
     );
@@ -30,7 +30,7 @@ fn validated_path_lookup_distinguishes_valid_missing_and_invalid_entries() {
     let valid_bytes = png_with_metadata(metadata("42"));
     std::fs::write(&path, &valid_bytes).unwrap();
     match root
-        .validated_personal_path(&original, ThumbnailSize::Normal)
+        .lookup_thumbnail_path(&original, ThumbnailSize::Normal)
         .unwrap()
     {
         PersonalThumbnailLookup::Valid(valid) => {
@@ -45,7 +45,7 @@ fn validated_path_lookup_distinguishes_valid_missing_and_invalid_entries() {
 
     std::fs::write(&path, png_with_metadata(metadata("41"))).unwrap();
     match root
-        .validated_personal_path(&original, ThumbnailSize::Normal)
+        .lookup_thumbnail_path(&original, ThumbnailSize::Normal)
         .unwrap()
     {
         PersonalThumbnailLookup::Invalid(problems) => {
@@ -56,11 +56,11 @@ fn validated_path_lookup_distinguishes_valid_missing_and_invalid_entries() {
 }
 
 #[test]
-fn validated_bytes_lookup_returns_exact_validated_png_bytes() {
+fn lookup_thumbnail_bytes_returns_exact_validated_png_bytes() {
     let temp = TempDir::new().unwrap();
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = original_identity(42);
-    let path = root.personal_path(
+    let path = root.cache_entry_path(
         original.identity().uri(),
         &CacheNamespace::Size(ThumbnailSize::Normal),
     );
@@ -69,7 +69,7 @@ fn validated_bytes_lookup_returns_exact_validated_png_bytes() {
     std::fs::write(&path, &valid_bytes).unwrap();
 
     match root
-        .validated_personal_bytes(&original, ThumbnailSize::Normal)
+        .lookup_thumbnail_bytes(&original, ThumbnailSize::Normal)
         .unwrap()
     {
         PersonalThumbnailLookup::Valid(valid) => {
@@ -86,7 +86,7 @@ fn validated_lookup_rejects_symlink_and_non_regular_entries() {
     let temp = TempDir::new().unwrap();
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = original_identity(42);
-    let path = root.personal_path(
+    let path = root.cache_entry_path(
         original.identity().uri(),
         &CacheNamespace::Size(ThumbnailSize::Normal),
     );
@@ -96,14 +96,14 @@ fn validated_lookup_rejects_symlink_and_non_regular_entries() {
     symlink(&outside, &path).unwrap();
 
     assert_unreadable_lookup(
-        root.validated_personal_bytes(&original, ThumbnailSize::Normal)
+        root.lookup_thumbnail_bytes(&original, ThumbnailSize::Normal)
             .unwrap(),
     );
 
     std::fs::remove_file(&path).unwrap();
     std::fs::create_dir(&path).unwrap();
     assert_unreadable_lookup(
-        root.validated_personal_path(&original, ThumbnailSize::Normal)
+        root.lookup_thumbnail_path(&original, ThumbnailSize::Normal)
             .unwrap(),
     );
 }

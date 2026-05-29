@@ -7,8 +7,8 @@ use std::os::unix::fs::symlink;
 use tempfile::TempDir;
 use xdg_thumbnail::{
     AccessTimePreservation, CacheEntryInspectionOutcome, CacheEntryProblem, CacheNamespace,
-    FailureNamespace, OriginalIdentity, OriginalUriIdentity, PersonalCacheRoot,
-    PersonalOriginalUri, ReadableOriginalIdentity, ThumbnailSize,
+    FailureNamespace, NonstandardEntryPolicy, OriginalIdentity, OriginalUriIdentity,
+    PersonalCacheRoot, PersonalOriginalUri, ReadableOriginalIdentity, ThumbnailSize,
 };
 
 #[test]
@@ -27,7 +27,7 @@ fn inspection_iterates_standard_entries_and_reports_facts() {
     std::fs::write(nonstandard_dir.join("note.txt"), b"not a thumbnail").unwrap();
 
     let default_entries = root
-        .inspect_thumbnails(&[ThumbnailSize::Normal], false)
+        .inspect_thumbnails(&[ThumbnailSize::Normal], NonstandardEntryPolicy::Exclude)
         .unwrap();
     assert_eq!(default_entries.len(), 1);
     assert_eq!(default_entries[0].path(), installed.path());
@@ -52,7 +52,7 @@ fn inspection_iterates_standard_entries_and_reports_facts() {
     ));
 
     let visible_entries = root
-        .inspect_thumbnails(&[ThumbnailSize::Normal], true)
+        .inspect_thumbnails(&[ThumbnailSize::Normal], NonstandardEntryPolicy::Include)
         .unwrap();
     assert_eq!(visible_entries.len(), 2);
     assert!(visible_entries.iter().any(|entry| {
@@ -101,7 +101,7 @@ fn inspection_reports_invalid_uri_metadata_and_filename_uri_mismatch() {
     .unwrap();
 
     let entries = root
-        .inspect_thumbnails(&[ThumbnailSize::Normal], false)
+        .inspect_thumbnails(&[ThumbnailSize::Normal], NonstandardEntryPolicy::Exclude)
         .unwrap();
 
     assert!(entries.iter().any(|entry| {
@@ -135,7 +135,9 @@ fn failure_iteration_is_limited_to_one_real_namespace_level() {
     std::fs::create_dir(&outside).unwrap();
     symlink(&outside, root.as_path().join("fail/link")).unwrap();
 
-    let entries = root.inspect_failure_entries(false).unwrap();
+    let entries = root
+        .inspect_failure_entries(NonstandardEntryPolicy::Exclude)
+        .unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(
         entries[0].namespace(),
@@ -158,7 +160,7 @@ fn inspection_does_not_follow_symlinked_size_namespace_directories() {
     symlink(&outside, root.as_path().join("normal")).unwrap();
 
     let entries = root
-        .inspect_thumbnails(&[ThumbnailSize::Normal], false)
+        .inspect_thumbnails(&[ThumbnailSize::Normal], NonstandardEntryPolicy::Exclude)
         .unwrap();
 
     assert!(entries.is_empty());
@@ -177,7 +179,7 @@ fn cache_entry_handles_remove_files_without_following_symlinks() {
         )
         .unwrap();
     let handle = root
-        .inspect_thumbnails(&[ThumbnailSize::Normal], false)
+        .inspect_thumbnails(&[ThumbnailSize::Normal], NonstandardEntryPolicy::Exclude)
         .unwrap()[0]
         .handle()
         .clone();
@@ -192,7 +194,7 @@ fn cache_entry_handles_remove_files_without_following_symlinks() {
     symlink(&outside, &symlink_path).unwrap();
 
     let symlink_handle = root
-        .inspect_thumbnails(&[ThumbnailSize::Normal], false)
+        .inspect_thumbnails(&[ThumbnailSize::Normal], NonstandardEntryPolicy::Exclude)
         .unwrap()[0]
         .handle()
         .clone();

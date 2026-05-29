@@ -307,7 +307,7 @@ fn plan_one(
         }
     };
     record.uri = Some(original.identity().uri().as_str().to_owned());
-    let cache_path = root.personal_path(original.identity().uri(), &CacheNamespace::Size(size));
+    let cache_path = root.cache_entry_path(original.identity().uri(), &CacheNamespace::Size(size));
     record.cache_path_display = Some(cache_path.display().to_string());
     record.cache_path_bytes_b64 = path_bytes_b64(&cache_path);
 
@@ -323,7 +323,7 @@ fn plan_one(
     };
 
     if !cli.force {
-        match root.validated_personal_path(&original, size) {
+        match root.lookup_thumbnail_path(&original, size) {
             Ok(PersonalThumbnailLookup::Valid(_)) => {
                 record.decision = "keep";
                 record.reason = "already-valid";

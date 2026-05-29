@@ -22,7 +22,7 @@ fn writes_deterministic_failure_namespace_entries() {
         .write_failure_entry_bytes(&namespace, &original)
         .unwrap();
 
-    let expected_path = root.personal_path(
+    let expected_path = root.cache_entry_path(
         original.identity().uri(),
         &CacheNamespace::Failure(namespace.clone()),
     );
@@ -60,7 +60,7 @@ fn failure_path_variant_returns_only_installed_path() {
     let installed = root
         .write_failure_entry_path(&namespace, &original)
         .unwrap();
-    let expected_path = root.personal_path(
+    let expected_path = root.cache_entry_path(
         original.identity().uri(),
         &CacheNamespace::Failure(namespace),
     );

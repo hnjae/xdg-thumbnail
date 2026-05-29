@@ -43,17 +43,17 @@ fn thumbnail_sizes_have_namespace_names_and_limits() {
 }
 
 #[test]
-fn namespaces_compute_personal_paths() {
+fn namespaces_compute_cache_entry_paths() {
     let root = PersonalCacheRoot::new(Path::new("/tmp/cache/thumbnails")).unwrap();
     let uri = PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap();
     let failure = FailureNamespace::new("xdg-thumbnail+0.1.0").unwrap();
 
     assert_eq!(
-        root.personal_path(&uri, &CacheNamespace::Size(ThumbnailSize::Normal)),
+        root.cache_entry_path(&uri, &CacheNamespace::Size(ThumbnailSize::Normal)),
         Path::new("/tmp/cache/thumbnails/normal/82346fd12242a0f50d9cf25786189951.png")
     );
     assert_eq!(
-        root.personal_path(&uri, &CacheNamespace::Failure(failure)),
+        root.cache_entry_path(&uri, &CacheNamespace::Failure(failure)),
         Path::new(
             "/tmp/cache/thumbnails/fail/xdg-thumbnail+0.1.0/82346fd12242a0f50d9cf25786189951.png"
         )

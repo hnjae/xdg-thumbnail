@@ -6,6 +6,13 @@ use std::path::{Path, PathBuf};
 
 use crate::{Result, ThumbnailError};
 
+static THUMBNAIL_SIZES: [ThumbnailSize; 4] = [
+    ThumbnailSize::Normal,
+    ThumbnailSize::Large,
+    ThumbnailSize::XLarge,
+    ThumbnailSize::XxLarge,
+];
+
 /// A successful-thumbnail size namespace or a program failure namespace.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[non_exhaustive]
@@ -117,8 +124,8 @@ impl ThumbnailSize {
 
     /// Returns all standard thumbnail sizes in cache scan order.
     #[must_use]
-    pub const fn all() -> [Self; 4] {
-        [Self::Normal, Self::Large, Self::XLarge, Self::XxLarge]
+    pub const fn all() -> &'static [Self] {
+        &THUMBNAIL_SIZES
     }
 }
 
@@ -136,7 +143,11 @@ mod tests {
 
     #[test]
     fn all_thumbnail_sizes_are_in_scan_order() {
-        let names = ThumbnailSize::all().map(ThumbnailSize::directory_name);
+        let names = ThumbnailSize::all()
+            .iter()
+            .copied()
+            .map(ThumbnailSize::directory_name)
+            .collect::<Vec<_>>();
 
         assert_eq!(names, ["normal", "large", "x-large", "xx-large"]);
     }

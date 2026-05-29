@@ -356,7 +356,7 @@ impl Fixture {
         );
         root.install_personal_thumbnail_bytes(&original, ThumbnailSize::Normal, &rendered_png())
             .unwrap();
-        root.personal_path(
+        root.cache_entry_path(
             original.identity().uri(),
             &CacheNamespace::Size(ThumbnailSize::Normal),
         )
@@ -372,7 +372,8 @@ impl Fixture {
             "image/png",
         )
         .unwrap();
-        let path = root.personal_path(original.uri(), &CacheNamespace::Size(ThumbnailSize::Normal));
+        let path =
+            root.cache_entry_path(original.uri(), &CacheNamespace::Size(ThumbnailSize::Normal));
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, png_with_metadata(129, 1, &original)).unwrap();
         path
@@ -393,7 +394,7 @@ impl Fixture {
         let namespace = FailureNamespace::new("app-1").unwrap();
         root.write_failure_entry_bytes(&namespace, &original)
             .unwrap();
-        root.personal_path(
+        root.cache_entry_path(
             original.identity().uri(),
             &CacheNamespace::Failure(namespace),
         )
@@ -417,7 +418,7 @@ impl Fixture {
         let wrong_uri =
             PersonalOriginalUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-other.png").unwrap();
         let mismatched =
-            root.personal_path(&wrong_uri, &CacheNamespace::Size(ThumbnailSize::Normal));
+            root.cache_entry_path(&wrong_uri, &CacheNamespace::Size(ThumbnailSize::Normal));
         std::fs::rename(installed.path(), &mismatched).unwrap();
         mismatched
     }
@@ -436,7 +437,7 @@ impl Fixture {
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
         root.install_personal_thumbnail_bytes(&original, ThumbnailSize::Normal, &rendered_png())
             .unwrap();
-        root.personal_path(
+        root.cache_entry_path(
             original.identity().uri(),
             &CacheNamespace::Size(ThumbnailSize::Normal),
         )
@@ -458,7 +459,7 @@ impl Fixture {
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
         root.install_personal_thumbnail_bytes(&original, ThumbnailSize::Normal, &rendered_png())
             .unwrap();
-        root.personal_path(
+        root.cache_entry_path(
             original.identity().uri(),
             &CacheNamespace::Size(ThumbnailSize::Normal),
         )

@@ -319,6 +319,7 @@ fn parse_thumb_size(value: &str) -> Result<u64> {
 
 /// PNG sample bit depth reported by [`ParsedThumbnailPng`].
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
 pub enum ThumbnailPngBitDepth {
     /// 1-bit samples.
     One,
@@ -346,6 +347,7 @@ impl ThumbnailPngBitDepth {
 
 /// PNG color type reported by [`ParsedThumbnailPng`].
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
 pub enum ThumbnailPngColorType {
     /// Grayscale samples without alpha.
     Grayscale,

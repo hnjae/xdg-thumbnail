@@ -16,7 +16,7 @@
 //!     let root = PersonalCacheRoot::resolve_from_env()?;
 //!     let original = ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
 //!
-//!     match root.validated_personal_bytes(&original, ThumbnailSize::Normal)? {
+//!     match root.lookup_thumbnail_bytes(&original, ThumbnailSize::Normal)? {
 //!         PersonalThumbnailLookup::Valid(entry) => {
 //!             let _png_bytes = entry.bytes();
 //!         }
@@ -104,7 +104,7 @@ pub use identity::{
 #[cfg(unix)]
 pub use inspection::{
     AccessTimePreservation, CacheEntryHandle, CacheEntryInspection, CacheEntryInspectionOutcome,
-    OriginalUriIdentity, ThumbnailTimestamps,
+    NonstandardEntryPolicy, OriginalUriIdentity, ThumbnailTimestamps,
 };
 #[cfg(unix)]
 pub use namespace::{CacheNamespace, FailureNamespace, ThumbnailSize};

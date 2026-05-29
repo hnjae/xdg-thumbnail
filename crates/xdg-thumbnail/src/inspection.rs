@@ -77,6 +77,17 @@ impl ThumbnailTimestamps {
     }
 }
 
+/// Policy for nonstandard filenames discovered during personal-cache inspection.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+#[non_exhaustive]
+pub enum NonstandardEntryPolicy {
+    /// Skip nonstandard filenames during inspection.
+    #[default]
+    Exclude,
+    /// Include nonstandard filenames as invalid inspection entries.
+    Include,
+}
+
 /// Policy-neutral inspection facts for a cache entry.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CacheEntryInspection {
@@ -160,7 +171,7 @@ impl PersonalCacheRoot {
     pub fn inspect_thumbnails(
         &self,
         sizes: &[ThumbnailSize],
-        include_nonstandard: bool,
+        nonstandard_entry_policy: NonstandardEntryPolicy,
     ) -> Result<Vec<CacheEntryInspection>> {
         let mut inspections = Vec::new();
         for &size in sizes {
@@ -169,7 +180,7 @@ impl PersonalCacheRoot {
             inspect_namespace_dir(
                 &dir,
                 namespace,
-                include_nonstandard,
+                nonstandard_entry_policy,
                 Some(size),
                 &mut inspections,
             )?;
@@ -184,7 +195,7 @@ impl PersonalCacheRoot {
     /// Returns an error when the failure root or a selected failure namespace cannot be inspected.
     pub fn inspect_failure_entries(
         &self,
-        include_nonstandard: bool,
+        nonstandard_entry_policy: NonstandardEntryPolicy,
     ) -> Result<Vec<CacheEntryInspection>> {
         let fail_root = self.as_path().join("fail");
         let mut inspections = Vec::new();
@@ -220,7 +231,7 @@ impl PersonalCacheRoot {
             inspect_namespace_dir(
                 &entry.path(),
                 CacheNamespace::Failure(namespace),
-                include_nonstandard,
+                nonstandard_entry_policy,
                 None,
                 &mut inspections,
             )?;
@@ -232,7 +243,7 @@ impl PersonalCacheRoot {
 fn inspect_namespace_dir(
     dir: &Path,
     namespace: CacheNamespace,
-    include_nonstandard: bool,
+    nonstandard_entry_policy: NonstandardEntryPolicy,
     successful_size: Option<ThumbnailSize>,
     inspections: &mut Vec<CacheEntryInspection>,
 ) -> Result<()> {
@@ -270,7 +281,7 @@ fn inspect_namespace_dir(
         let standard = filename
             .to_str()
             .is_some_and(is_standard_thumbnail_filename);
-        if !standard && !include_nonstandard {
+        if !standard && nonstandard_entry_policy == NonstandardEntryPolicy::Exclude {
             continue;
         }
 

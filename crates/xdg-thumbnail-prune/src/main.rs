@@ -12,9 +12,9 @@ use clap::{CommandFactory, Parser, ValueEnum};
 use serde::Serialize;
 use xdg_thumbnail::{
     AccessTimePreservation, CacheEntryInspection, CacheEntryInspectionOutcome, CacheEntryProblem,
-    CacheNamespace, OriginalUriIdentity, PersonalCacheRoot, PersonalOriginalUri,
-    PersonalValidationOutcome, ReadableOriginalIdentity, ThumbnailError, ThumbnailSize,
-    validate_personal_failure_entry, validate_personal_thumbnail,
+    CacheNamespace, NonstandardEntryPolicy, OriginalUriIdentity, PersonalCacheRoot,
+    PersonalOriginalUri, PersonalValidationOutcome, ReadableOriginalIdentity, ThumbnailError,
+    ThumbnailSize, validate_personal_failure_entry, validate_personal_thumbnail,
 };
 
 #[cfg(unix)]
@@ -259,17 +259,22 @@ fn run(cli: Cli) -> std::result::Result<u8, String> {
     } else {
         cli.size.iter().copied().map(ThumbnailSize::from).collect()
     };
+    let nonstandard_entry_policy = if cli.include_nonstandard_files {
+        NonstandardEntryPolicy::Include
+    } else {
+        NonstandardEntryPolicy::Exclude
+    };
 
     let mut entries = Vec::new();
     if matches!(cli.scope, ScopeArg::Thumbnails | ScopeArg::All) {
         entries.extend(
-            root.inspect_thumbnails(&sizes, cli.include_nonstandard_files)
+            root.inspect_thumbnails(&sizes, nonstandard_entry_policy)
                 .map_err(|error| error.to_string())?,
         );
     }
     if matches!(cli.scope, ScopeArg::Failures | ScopeArg::All) {
         entries.extend(
-            root.inspect_failure_entries(cli.include_nonstandard_files)
+            root.inspect_failure_entries(nonstandard_entry_policy)
                 .map_err(|error| error.to_string())?,
         );
     }

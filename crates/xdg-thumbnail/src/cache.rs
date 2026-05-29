@@ -11,8 +11,8 @@ use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
 use crate::PersonalOriginalUri;
 use crate::inspection::{
-    CacheEntryInspection, read_thumbnail_for_inspection, thumbnail_timestamps,
-    thumbnail_timestamps_from_metadata,
+    CacheEntryInspection, NonstandardEntryPolicy, read_thumbnail_for_inspection,
+    thumbnail_timestamps, thumbnail_timestamps_from_metadata,
 };
 use crate::{
     AccessTimePreservation, CacheEntryProblem, CacheNamespace, FailureNamespace,
@@ -108,7 +108,11 @@ impl PersonalCacheRoot {
 
     /// Computes the personal-cache path for an accepted URI and namespace without reading it.
     #[must_use]
-    pub fn personal_path(&self, uri: &PersonalOriginalUri, namespace: &CacheNamespace) -> PathBuf {
+    pub fn cache_entry_path(
+        &self,
+        uri: &PersonalOriginalUri,
+        namespace: &CacheNamespace,
+    ) -> PathBuf {
         namespace.join_under(&self.path, &uri.thumbnail_filename())
     }
 
@@ -122,12 +126,12 @@ impl PersonalCacheRoot {
     ///
     /// Returns an error for unexpected filesystem I/O while reading the candidate or for PNG
     /// metadata parse failures after validation succeeds.
-    pub fn validated_personal_path(
+    pub fn lookup_thumbnail_path(
         &self,
         original: &ReadableOriginalIdentity,
         size: ThumbnailSize,
     ) -> Result<PersonalThumbnailLookup<ThumbnailPathLookupEntry>> {
-        match self.validated_personal_entry(original, size)? {
+        match self.lookup_thumbnail_entry(original, size)? {
             PersonalThumbnailLookup::Valid(entry) => {
                 Ok(PersonalThumbnailLookup::Valid(ThumbnailPathLookupEntry {
                     path: entry.path,
@@ -149,12 +153,12 @@ impl PersonalCacheRoot {
     ///
     /// Returns an error for unexpected filesystem I/O while reading the candidate or for PNG
     /// metadata parse failures after validation succeeds.
-    pub fn validated_personal_bytes(
+    pub fn lookup_thumbnail_bytes(
         &self,
         original: &ReadableOriginalIdentity,
         size: ThumbnailSize,
     ) -> Result<PersonalThumbnailLookup<ThumbnailBytesLookupEntry>> {
-        match self.validated_personal_entry(original, size)? {
+        match self.lookup_thumbnail_entry(original, size)? {
             PersonalThumbnailLookup::Valid(entry) => {
                 Ok(PersonalThumbnailLookup::Valid(ThumbnailBytesLookupEntry {
                     path: entry.path,
@@ -240,7 +244,7 @@ impl PersonalCacheRoot {
         rendered_png: &[u8],
     ) -> Result<(PathBuf, Vec<u8>)> {
         let namespace = CacheNamespace::Size(size);
-        let path = self.personal_path(original.identity().uri(), &namespace);
+        let path = self.cache_entry_path(original.identity().uri(), &namespace);
         let bytes = normalized_personal_thumbnail_png(rendered_png, original.identity(), size)?;
         self.write_personal_entry(&path, &namespace, &bytes)?;
         Ok((path, bytes))
@@ -253,7 +257,7 @@ impl PersonalCacheRoot {
         image: RawThumbnailImage<'_>,
     ) -> Result<(PathBuf, Vec<u8>)> {
         let namespace = CacheNamespace::Size(size);
-        let path = self.personal_path(original.identity().uri(), &namespace);
+        let path = self.cache_entry_path(original.identity().uri(), &namespace);
         let bytes = normalized_personal_thumbnail_raw_png(image, original.identity(), size)?;
         self.write_personal_entry(&path, &namespace, &bytes)?;
         Ok((path, bytes))
@@ -295,7 +299,7 @@ impl PersonalCacheRoot {
         original: &ReadableOriginalIdentity,
     ) -> Result<(PathBuf, Vec<u8>)> {
         let namespace = CacheNamespace::Failure(namespace.clone());
-        let path = self.personal_path(original.identity().uri(), &namespace);
+        let path = self.cache_entry_path(original.identity().uri(), &namespace);
         let bytes = encode_rgba_png(
             1,
             1,
@@ -306,12 +310,12 @@ impl PersonalCacheRoot {
         Ok((path, bytes))
     }
 
-    fn validated_personal_entry(
+    fn lookup_thumbnail_entry(
         &self,
         original: &ReadableOriginalIdentity,
         size: ThumbnailSize,
     ) -> Result<PersonalThumbnailLookup<ValidatedPersonalEntry>> {
-        let path = self.personal_path(original.identity().uri(), &CacheNamespace::Size(size));
+        let path = self.cache_entry_path(original.identity().uri(), &CacheNamespace::Size(size));
         let bytes = match read_cache_entry_no_follow(&path, "read thumbnail cache entry")? {
             CacheEntryRead::Bytes(bytes) => bytes,
             CacheEntryRead::Missing => return Ok(PersonalThumbnailLookup::Missing),
@@ -620,7 +624,7 @@ impl SharedRepositoryContext {
 /// Owned personal-cache lookup request for async or runtime-specific adapters.
 ///
 /// Constructing this request does not perform filesystem I/O. Validation happens only when
-/// [`Self::validated_path`] or [`Self::validated_bytes`] is called.
+/// [`Self::lookup_path`] or [`Self::lookup_bytes`] is called.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PersonalThumbnailLookupRequest {
     root: PersonalCacheRoot,
@@ -647,28 +651,28 @@ impl PersonalThumbnailLookupRequest {
     ///
     /// # Errors
     ///
-    /// Returns the same errors as [`PersonalCacheRoot::validated_personal_path`].
-    pub fn validated_path(self) -> Result<PersonalThumbnailLookup<ThumbnailPathLookupEntry>> {
+    /// Returns the same errors as [`PersonalCacheRoot::lookup_thumbnail_path`].
+    pub fn lookup_path(self) -> Result<PersonalThumbnailLookup<ThumbnailPathLookupEntry>> {
         let Self {
             root,
             original,
             size,
         } = self;
-        root.validated_personal_path(&original, size)
+        root.lookup_thumbnail_path(&original, size)
     }
 
     /// Returns exact validated personal-cache PNG bytes for the owned request.
     ///
     /// # Errors
     ///
-    /// Returns the same errors as [`PersonalCacheRoot::validated_personal_bytes`].
-    pub fn validated_bytes(self) -> Result<PersonalThumbnailLookup<ThumbnailBytesLookupEntry>> {
+    /// Returns the same errors as [`PersonalCacheRoot::lookup_thumbnail_bytes`].
+    pub fn lookup_bytes(self) -> Result<PersonalThumbnailLookup<ThumbnailBytesLookupEntry>> {
         let Self {
             root,
             original,
             size,
         } = self;
-        root.validated_personal_bytes(&original, size)
+        root.lookup_thumbnail_bytes(&original, size)
     }
 
     /// Splits this request into its owned parts.
@@ -933,7 +937,7 @@ impl FailureEntryWriteRequest {
 pub struct PersonalThumbnailInspectionRequest {
     root: PersonalCacheRoot,
     sizes: Vec<ThumbnailSize>,
-    include_nonstandard: bool,
+    nonstandard_entry_policy: NonstandardEntryPolicy,
 }
 
 impl PersonalThumbnailInspectionRequest {
@@ -942,12 +946,12 @@ impl PersonalThumbnailInspectionRequest {
     pub const fn new(
         root: PersonalCacheRoot,
         sizes: Vec<ThumbnailSize>,
-        include_nonstandard: bool,
+        nonstandard_entry_policy: NonstandardEntryPolicy,
     ) -> Self {
         Self {
             root,
             sizes,
-            include_nonstandard,
+            nonstandard_entry_policy,
         }
     }
 
@@ -960,15 +964,21 @@ impl PersonalThumbnailInspectionRequest {
         let Self {
             root,
             sizes,
-            include_nonstandard,
+            nonstandard_entry_policy,
         } = self;
-        root.inspect_thumbnails(&sizes, include_nonstandard)
+        root.inspect_thumbnails(&sizes, nonstandard_entry_policy)
     }
 
     /// Splits this request into its owned parts.
     #[must_use]
-    pub fn into_parts(self) -> (PersonalCacheRoot, Vec<ThumbnailSize>, bool) {
-        (self.root, self.sizes, self.include_nonstandard)
+    pub fn into_parts(
+        self,
+    ) -> (
+        PersonalCacheRoot,
+        Vec<ThumbnailSize>,
+        NonstandardEntryPolicy,
+    ) {
+        (self.root, self.sizes, self.nonstandard_entry_policy)
     }
 }
 

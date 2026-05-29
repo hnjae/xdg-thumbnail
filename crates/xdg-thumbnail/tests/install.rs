@@ -22,7 +22,7 @@ fn installs_normalized_downscaled_personal_thumbnail_atomically() {
         .install_personal_thumbnail_bytes(&original, ThumbnailSize::Normal, &rendered)
         .unwrap();
 
-    let expected_path = root.personal_path(
+    let expected_path = root.cache_entry_path(
         original.identity().uri(),
         &CacheNamespace::Size(ThumbnailSize::Normal),
     );
@@ -71,7 +71,7 @@ fn path_install_variant_returns_only_installed_path() {
         .install_personal_thumbnail_path(&original, ThumbnailSize::Normal, &rendered)
         .unwrap();
 
-    let expected_path = root.personal_path(
+    let expected_path = root.cache_entry_path(
         original.identity().uri(),
         &CacheNamespace::Size(ThumbnailSize::Normal),
     );
@@ -131,7 +131,7 @@ fn installs_rgb8_raw_thumbnail_with_opaque_alpha() {
         .install_personal_thumbnail_raw_bytes(&original, ThumbnailSize::Normal, image)
         .unwrap();
 
-    let expected_path = root.personal_path(
+    let expected_path = root.cache_entry_path(
         original.identity().uri(),
         &CacheNamespace::Size(ThumbnailSize::Normal),
     );

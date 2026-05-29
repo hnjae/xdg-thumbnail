@@ -8,14 +8,15 @@ use std::os::unix::ffi::OsStrExt;
 use tempfile::TempDir;
 use xdg_thumbnail::{
     CacheEntryInspection, CacheNamespace, FailureEntryWriteRequest, FailureNamespace,
-    InstalledThumbnailBytes, InstalledThumbnailPath, OriginalIdentity, OwnedRawThumbnailImage,
-    ParsedThumbnailPng, PersonalCacheRoot, PersonalOriginalUri, PersonalThumbnailInspectionRequest,
-    PersonalThumbnailInstallRequest, PersonalThumbnailLookup, PersonalThumbnailLookupRequest,
-    PersonalThumbnailRawInstallRequest, RawThumbnailImage, RawThumbnailPixelFormat,
-    ReadableOriginalIdentity, SharedCacheEntryInspection, SharedCacheEntryOutcome,
-    SharedRepositoryContext, SharedThumbnailInspectionRequest, SharedThumbnailLookup,
-    SharedThumbnailLookupRequest, SharedThumbnailMetadataPolicy, ThumbnailBytesLookupEntry,
-    ThumbnailPathLookupEntry, ThumbnailPngColorType, ThumbnailSize, UnixMTimeSeconds,
+    InstalledThumbnailBytes, InstalledThumbnailPath, NonstandardEntryPolicy, OriginalIdentity,
+    OwnedRawThumbnailImage, ParsedThumbnailPng, PersonalCacheRoot, PersonalOriginalUri,
+    PersonalThumbnailInspectionRequest, PersonalThumbnailInstallRequest, PersonalThumbnailLookup,
+    PersonalThumbnailLookupRequest, PersonalThumbnailRawInstallRequest, RawThumbnailImage,
+    RawThumbnailPixelFormat, ReadableOriginalIdentity, SharedCacheEntryInspection,
+    SharedCacheEntryOutcome, SharedRepositoryContext, SharedThumbnailInspectionRequest,
+    SharedThumbnailLookup, SharedThumbnailLookupRequest, SharedThumbnailMetadataPolicy,
+    ThumbnailBytesLookupEntry, ThumbnailPathLookupEntry, ThumbnailPngColorType, ThumbnailSize,
+    UnixMTimeSeconds,
 };
 
 #[test]
@@ -30,6 +31,7 @@ fn owned_request_and_result_types_are_send_sync_static() {
     assert_send_sync_static::<SharedThumbnailLookupRequest>();
     assert_send_sync_static::<SharedThumbnailInspectionRequest>();
     assert_send_sync_static::<SharedThumbnailMetadataPolicy>();
+    assert_send_sync_static::<NonstandardEntryPolicy>();
     assert_send_sync_static::<ThumbnailPathLookupEntry>();
     assert_send_sync_static::<ThumbnailBytesLookupEntry>();
     assert_send_sync_static::<InstalledThumbnailPath>();
@@ -57,16 +59,16 @@ fn personal_lookup_request_matches_borrowed_lookup() {
         PersonalThumbnailLookupRequest::new(root.clone(), original.clone(), ThumbnailSize::Normal);
 
     assert_eq!(
-        request.clone().validated_path().unwrap(),
-        root.validated_personal_path(&original, ThumbnailSize::Normal)
+        request.clone().lookup_path().unwrap(),
+        root.lookup_thumbnail_path(&original, ThumbnailSize::Normal)
             .unwrap()
     );
     assert_eq!(
-        run_blocking_style(move || request.validated_path()).unwrap(),
+        run_blocking_style(move || request.lookup_path()).unwrap(),
         PersonalThumbnailLookup::Missing
     );
 
-    let path = root.personal_path(
+    let path = root.cache_entry_path(
         original.identity().uri(),
         &CacheNamespace::Size(ThumbnailSize::Normal),
     );
@@ -76,11 +78,11 @@ fn personal_lookup_request_matches_borrowed_lookup() {
         PersonalThumbnailLookupRequest::new(root.clone(), original.clone(), ThumbnailSize::Normal);
 
     assert_eq!(
-        request.clone().validated_path().unwrap(),
-        root.validated_personal_path(&original, ThumbnailSize::Normal)
+        request.clone().lookup_path().unwrap(),
+        root.lookup_thumbnail_path(&original, ThumbnailSize::Normal)
             .unwrap()
     );
-    match request.clone().validated_path().unwrap() {
+    match request.clone().lookup_path().unwrap() {
         PersonalThumbnailLookup::Valid(valid_path) => {
             let (owned_path, metadata) = valid_path.into_parts();
             assert_eq!(owned_path, path);
@@ -88,7 +90,7 @@ fn personal_lookup_request_matches_borrowed_lookup() {
         }
         other => panic!("expected valid personal path lookup, got {other:?}"),
     }
-    match request.validated_bytes().unwrap() {
+    match request.lookup_bytes().unwrap() {
         PersonalThumbnailLookup::Valid(bytes) => {
             assert_eq!(bytes.path(), path.as_path());
             assert_eq!(
@@ -268,7 +270,7 @@ fn failure_entry_write_request_matches_borrowed_write() {
         .unwrap();
     assert_eq!(request_path, borrowed_path);
 
-    let expected_path = root.personal_path(
+    let expected_path = root.cache_entry_path(
         original.identity().uri(),
         &CacheNamespace::Failure(namespace),
     );
@@ -289,7 +291,10 @@ fn personal_inspection_request_owns_size_vector() {
         )
         .unwrap();
     let sizes = vec![ThumbnailSize::Normal];
-    let request = PersonalThumbnailInspectionRequest::new(root, sizes, false);
+    let request =
+        PersonalThumbnailInspectionRequest::new(root, sizes, NonstandardEntryPolicy::Exclude);
+    let (_, _, policy) = request.clone().into_parts();
+    assert_eq!(policy, NonstandardEntryPolicy::Exclude);
 
     let entries = request.inspect().unwrap();
 
