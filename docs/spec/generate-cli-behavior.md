@@ -20,9 +20,13 @@ Options:
 --sandbox <MODE>              Thumbnailer sandbox mode: required or off. Defaults to required, which requires Linux with bubblewrap and never falls back to unsandboxed execution.
 --format <FORMAT>             Output format: human or jsonl. Defaults to human.
 --verbose                     Print discovery, MIME, command, validation, and cache-write details.
+--generate-completion <SHELL> Generate a shell completion script to stdout and exit. Supported shells are defined by clap_complete.
+--generate-manpage            Generate a man page to stdout and exit.
 ```
 
 The option names above are the initial generate CLI contract. Behavior or option-name changes require a spec update.
+
+`--generate-completion` and `--generate-manpage` are metadata-generation modes derived from the clap command definition. They do not require input paths, do not inspect thumbnailers or cache state, do not read or write thumbnails, and exit successfully after writing the requested artifact to stdout. The generated man page and installed shell completions must describe the same command shape as the executable. Nix package outputs must include generated bash, fish, and zsh completions plus section 1 man pages for installed CLI binaries.
 
 ## Duration Syntax
 

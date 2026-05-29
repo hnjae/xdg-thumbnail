@@ -25,9 +25,13 @@ Options:
 --age-basis <BASIS>           Timestamp basis for age-based cleanup: access-time or modification-time. Defaults to access-time. modification-time is a more portable and more aggressive explicit mode.
 --format <FORMAT>             Output format: human or jsonl. Defaults to human.
 --verbose                     Print classification and timestamp details.
+--generate-completion <SHELL> Generate a shell completion script to stdout and exit. Supported shells are defined by clap_complete.
+--generate-manpage            Generate a man page to stdout and exit.
 ```
 
 The option names above are the initial prune CLI contract. Behavior or option-name changes require a spec update.
+
+`--generate-completion` and `--generate-manpage` are metadata-generation modes derived from the clap command definition. They do not scan cache state, do not read or delete thumbnails, bypass deletion-option validation, and exit successfully after writing the requested artifact to stdout. The generated man page and installed shell completions must describe the same command shape as the executable. Nix package outputs must include generated bash, fish, and zsh completions plus section 1 man pages for installed CLI binaries.
 
 ## Duration Syntax
 
