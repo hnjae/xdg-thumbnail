@@ -129,7 +129,7 @@ impl UriClass {
 enum Decision {
     Keep,
     Delete,
-    Recreate,
+    Stale,
     Skip,
 }
 
@@ -138,7 +138,7 @@ impl Decision {
         match self {
             Self::Keep => "keep",
             Self::Delete => "delete",
-            Self::Recreate => "recreate",
+            Self::Stale => "stale",
             Self::Skip => "skip",
         }
     }
@@ -461,11 +461,11 @@ fn evaluate_local_file(
         ValidationOutcome::Invalid(problems)
             if problems.contains(&CacheEntryProblem::StaleMetadata) =>
         {
-            if cli.delete_stale_local {
+            if cli.delete_stale_local && cli.delete {
                 *decision = Decision::Delete;
                 *reason = Some("stale-local-metadata");
             } else {
-                *decision = Decision::Recreate;
+                *decision = Decision::Stale;
                 *reason = Some("stale-local-metadata");
             }
         }
@@ -560,7 +560,11 @@ fn write_human(records: &[EntryRecord], summary: &Summary, age_basis: AgeBasisAr
         summary.timestamp_unreliable,
         summary.timestamp_preservation_unavailable
     );
-    if age_basis == AgeBasisArg::AccessTime && summary.timestamp_preservation_unavailable > 0 {
+    if age_basis == AgeBasisArg::AccessTime
+        && (summary.timestamp_unavailable > 0
+            || summary.timestamp_unreliable > 0
+            || summary.timestamp_preservation_unavailable > 0)
+    {
         println!(
             "hint: modification-time cleanup is more portable and more aggressive; for example: xdg-thumbnail-prune --older-than 30d --age-basis modification-time"
         );

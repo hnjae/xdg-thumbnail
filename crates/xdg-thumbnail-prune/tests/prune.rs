@@ -113,6 +113,67 @@ fn deletes_stale_local_failure_entries_when_both_stale_and_failure_deletion_are_
 }
 
 #[test]
+fn reports_stale_local_thumbnails_with_stale_decision_until_delete_is_enabled() {
+    let fixture = Fixture::new();
+    let thumbnail = fixture.install_stale_local_thumbnail();
+
+    let output = Command::cargo_bin("xdg-thumbnail-prune")
+        .unwrap()
+        .env("XDG_CACHE_HOME", fixture.cache_home.path())
+        .env("HOME", fixture.home.path())
+        .args([
+            "--delete-stale-local",
+            "--format",
+            "jsonl",
+            "--age-basis",
+            "modification-time",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let lines = String::from_utf8(output).unwrap();
+    let records = lines
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+
+    assert!(thumbnail.exists());
+    assert_eq!(records[0]["decision"], "stale");
+    assert_eq!(records[0]["applied"], false);
+    assert_eq!(records[0]["reason"], "stale-local-metadata");
+
+    let output = Command::cargo_bin("xdg-thumbnail-prune")
+        .unwrap()
+        .env("XDG_CACHE_HOME", fixture.cache_home.path())
+        .env("HOME", fixture.home.path())
+        .args([
+            "--delete-stale-local",
+            "--delete",
+            "--format",
+            "jsonl",
+            "--age-basis",
+            "modification-time",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let lines = String::from_utf8(output).unwrap();
+    let records = lines
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+
+    assert!(!thumbnail.exists());
+    assert_eq!(records[0]["decision"], "delete");
+    assert_eq!(records[0]["applied"], true);
+    assert_eq!(records[0]["reason"], "stale-local-metadata");
+}
+
+#[test]
 fn deletes_entries_whose_filename_does_not_match_stored_uri() {
     let fixture = Fixture::new();
     let thumbnail = fixture.install_uri_filename_mismatch();
@@ -236,6 +297,26 @@ impl Fixture {
             root.personal_path(&wrong_uri, &CacheNamespace::Size(ThumbnailSize::Normal));
         std::fs::rename(installed.path(), &mismatched).unwrap();
         mismatched
+    }
+
+    fn install_stale_local_thumbnail(&self) -> std::path::PathBuf {
+        let original_path = self.home.path().join("stale-original.png");
+        std::fs::write(&original_path, b"current original").unwrap();
+        let uri = PersonalThumbnailUri::from_absolute_path_bytes(
+            original_path.as_os_str().as_encoded_bytes(),
+        )
+        .unwrap();
+        let original = ReadableOriginalIdentity::new(
+            OriginalIdentity::new(uri, UnixMTimeSeconds::new(1), Some(1), Some("image/png"))
+                .unwrap(),
+        );
+        let root = CacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
+        root.install_personal_thumbnail(&original, ThumbnailSize::Normal, &rendered_png())
+            .unwrap();
+        root.personal_path(
+            original.identity().uri(),
+            &CacheNamespace::Size(ThumbnailSize::Normal),
+        )
     }
 
     fn install_valid_local_thumbnail(&self) -> std::path::PathBuf {

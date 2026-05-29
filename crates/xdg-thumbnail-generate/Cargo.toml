@@ -16,6 +16,7 @@ path = "src/main.rs"
 base64.workspace = true
 clap.workspace = true
 freedesktop_entry_parser.workspace = true
+mime.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 shell-words.workspace = true

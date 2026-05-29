@@ -1061,6 +1061,7 @@ dependencies = [
  "base64",
  "clap",
  "freedesktop_entry_parser",
+ "mime",
  "png",
  "predicates",
  "serde",
