@@ -17,6 +17,8 @@ authors = ["KIM Hyunjae"]
 assert_cmd = "2.0.17"
 base64 = "0.22.1"
 clap = { version = "4.5.51", features = ["derive"] }
+clap_complete = "4.6.5"
+clap_mangen = "0.3.0"
 freedesktop_entry_parser = "2.0.1"
 md5 = "0.8.0"
 mime = "0.3.17"

@@ -13,6 +13,28 @@ use xdg_thumbnail::{
 use std::os::unix::fs::PermissionsExt;
 
 #[test]
+fn generates_completion_without_scanning_cache() {
+    Command::cargo_bin("xdg-thumbnail-prune")
+        .unwrap()
+        .args(["--generate-completion", "zsh"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("#compdef xdg-thumbnail-prune"));
+}
+
+#[test]
+fn generates_manpage_before_delete_option_validation() {
+    Command::cargo_bin("xdg-thumbnail-prune")
+        .unwrap()
+        .args(["--allow-delete-failures", "--generate-manpage"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "Prune stale or invalid Freedesktop thumbnail cache entries",
+        ));
+}
+
+#[test]
 fn reports_missing_local_originals_without_deleting_by_default() {
     let fixture = Fixture::new();
     let thumbnail = fixture.install_for_missing_original();

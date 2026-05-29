@@ -63,10 +63,11 @@
                 pkgs.clippy
               ];
 
-              buildPhaseCargoCommand = ''
-                cargo clippy --profile release --locked --workspace --all-targets --all-features -- -D warnings
-                cargo test --profile release --locked --workspace --all-features
-              '';
+              buildPhaseCargoCommand = # sh
+                ''
+                  cargo clippy --profile release --locked --workspace --all-targets --all-features -- -D warnings
+                  cargo test --profile release --locked --workspace --all-features
+                '';
 
               installPhaseCommand = "mkdir -p $out";
             }
@@ -77,6 +78,32 @@
             // {
               cargoArtifacts = lintAndTest;
               doCheck = false;
+
+              nativeBuildInputs = [
+                pkgs.installShellFiles
+              ];
+
+              postInstall = ''
+                installCliMetadata() {
+                  local name="$1"
+                  local artifacts
+                  artifacts="$(mktemp -d)"
+
+                  "$out/bin/$name" --generate-completion bash > "$artifacts/$name.bash"
+                  "$out/bin/$name" --generate-completion fish > "$artifacts/$name.fish"
+                  "$out/bin/$name" --generate-completion zsh > "$artifacts/_$name"
+                  installShellCompletion --cmd "$name" \
+                    --bash "$artifacts/$name.bash" \
+                    --fish "$artifacts/$name.fish" \
+                    --zsh "$artifacts/_$name"
+
+                  "$out/bin/$name" --generate-manpage > "$artifacts/$name.1"
+                  installManPage "$artifacts/$name.1"
+                }
+
+                installCliMetadata xdg-thumbnail-generate
+                installCliMetadata xdg-thumbnail-prune
+              '';
             }
           );
         in

@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::ffi::OsString;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
-use clap::{Parser, ValueEnum};
+use clap::{CommandFactory, Parser, ValueEnum};
 use serde::Serialize;
 use xdg_thumbnail::{
     AccessTimePreservation, CacheEntryInspection, CacheEntryProblem, CacheNamespace, CacheRoot,
@@ -46,6 +47,15 @@ struct Cli {
     format: FormatArg,
     #[arg(long)]
     verbose: bool,
+    #[arg(
+        long,
+        value_enum,
+        value_name = "SHELL",
+        conflicts_with = "generate_manpage"
+    )]
+    generate_completion: Option<clap_complete::Shell>,
+    #[arg(long, conflicts_with = "generate_completion")]
+    generate_manpage: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -194,6 +204,15 @@ fn main() -> ExitCode {
         }
     };
 
+    match emit_generated_artifact(&cli) {
+        Ok(Some(code)) => return code,
+        Ok(None) => {}
+        Err(message) => {
+            eprintln!("{message}");
+            return ExitCode::from(3);
+        }
+    }
+
     if cli.allow_delete_failures && matches!(cli.scope, ScopeArg::Thumbnails) {
         eprintln!("--allow-delete-failures requires --scope failures or --scope all");
         return ExitCode::from(2);
@@ -210,6 +229,27 @@ fn main() -> ExitCode {
             ExitCode::from(3)
         }
     }
+}
+
+fn emit_generated_artifact(cli: &Cli) -> std::result::Result<Option<ExitCode>, String> {
+    if let Some(shell) = cli.generate_completion {
+        let mut command = Cli::command();
+        let command_name = command.get_name().to_owned();
+        let mut stdout = std::io::stdout().lock();
+        clap_complete::generate(shell, &mut command, command_name, &mut stdout);
+        return Ok(Some(ExitCode::SUCCESS));
+    }
+
+    if cli.generate_manpage {
+        let mut stdout = std::io::stdout().lock();
+        clap_mangen::Man::new(Cli::command())
+            .render(&mut stdout)
+            .map_err(|error| error.to_string())?;
+        stdout.flush().map_err(|error| error.to_string())?;
+        return Ok(Some(ExitCode::SUCCESS));
+    }
+
+    Ok(None)
 }
 
 fn run(cli: Cli) -> std::result::Result<u8, String> {

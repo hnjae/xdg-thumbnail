@@ -4,13 +4,13 @@
 use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command as ProcessCommand, ExitCode};
 use std::time::{Duration, Instant};
 
 use base64::Engine;
-use clap::{Parser, ValueEnum};
+use clap::{CommandFactory, Parser, ValueEnum};
 use serde::Serialize;
 use xdg_thumbnail::{
     CacheNamespace, CacheRoot, PersonalThumbnailUri, ReadableOriginalIdentity, ThumbnailError,
@@ -39,7 +39,16 @@ struct Cli {
     format: FormatArg,
     #[arg(long)]
     verbose: bool,
-    #[arg(required = true)]
+    #[arg(
+        long,
+        value_enum,
+        value_name = "SHELL",
+        conflicts_with = "generate_manpage"
+    )]
+    generate_completion: Option<clap_complete::Shell>,
+    #[arg(long, conflicts_with = "generate_completion")]
+    generate_manpage: bool,
+    #[arg(required_unless_present_any = ["generate_completion", "generate_manpage"])]
     paths: Vec<PathBuf>,
 }
 
@@ -175,6 +184,15 @@ fn main() -> ExitCode {
         }
     };
 
+    match emit_generated_artifact(&cli) {
+        Ok(Some(code)) => return code,
+        Ok(None) => {}
+        Err(message) => {
+            eprintln!("{message}");
+            return ExitCode::from(3);
+        }
+    }
+
     match run(cli) {
         Ok(code) => ExitCode::from(code),
         Err(message) => {
@@ -182,6 +200,27 @@ fn main() -> ExitCode {
             ExitCode::from(3)
         }
     }
+}
+
+fn emit_generated_artifact(cli: &Cli) -> std::result::Result<Option<ExitCode>, String> {
+    if let Some(shell) = cli.generate_completion {
+        let mut command = Cli::command();
+        let command_name = command.get_name().to_owned();
+        let mut stdout = std::io::stdout().lock();
+        clap_complete::generate(shell, &mut command, command_name, &mut stdout);
+        return Ok(Some(ExitCode::SUCCESS));
+    }
+
+    if cli.generate_manpage {
+        let mut stdout = std::io::stdout().lock();
+        clap_mangen::Man::new(Cli::command())
+            .render(&mut stdout)
+            .map_err(|error| error.to_string())?;
+        stdout.flush().map_err(|error| error.to_string())?;
+        return Ok(Some(ExitCode::SUCCESS));
+    }
+
+    Ok(None)
 }
 
 fn run(cli: Cli) -> std::result::Result<u8, String> {

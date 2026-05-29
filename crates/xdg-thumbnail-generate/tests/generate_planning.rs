@@ -14,6 +14,28 @@ use xdg_thumbnail::{
 use std::os::unix::fs::PermissionsExt;
 
 #[test]
+fn generates_completion_without_inputs() {
+    Command::cargo_bin("xdg-thumbnail-generate")
+        .unwrap()
+        .args(["--generate-completion", "bash"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("_xdg-thumbnail-generate"));
+}
+
+#[test]
+fn generates_manpage_without_inputs() {
+    Command::cargo_bin("xdg-thumbnail-generate")
+        .unwrap()
+        .arg("--generate-manpage")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "Generate Freedesktop thumbnail cache entries",
+        ));
+}
+
+#[test]
 fn dry_run_reports_selected_thumbnailer_and_target_cache_path() {
     let fixture = Fixture::new();
     let input = fixture.write_png_input("photo.png");
