@@ -207,6 +207,11 @@ pub struct OwnedRawThumbnailImageParts {
 }
 
 /// Policy-neutral problem found while validating or inspecting a cache entry.
+///
+/// This is a compact fact vocabulary for caller policy branching, not a detailed diagnostic
+/// surface that carries expected and actual values for every failure class. Metadata problems carry
+/// typed detail through [`ThumbnailMetadataProblem`]; future non-metadata detail should be exposed
+/// separately instead of changing existing variant payloads.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[non_exhaustive]
 pub enum CacheEntryProblem {

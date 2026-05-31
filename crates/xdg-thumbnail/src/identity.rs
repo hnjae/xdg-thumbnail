@@ -286,9 +286,9 @@ impl SharedRepositoryContext {
         &self.shared_uri
     }
 
-    /// Computes the shared repository path for a successful thumbnail size.
+    /// Computes the shared repository cache entry path for a successful thumbnail size.
     #[must_use]
-    pub fn thumbnail_path(&self, size: ThumbnailSize) -> PathBuf {
+    pub fn cache_entry_path(&self, size: ThumbnailSize) -> PathBuf {
         self.repository_root
             .join(".sh_thumbnails")
             .join(size.directory_name())

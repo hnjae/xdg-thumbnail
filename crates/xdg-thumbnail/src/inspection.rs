@@ -31,7 +31,7 @@ pub enum OriginalUriIdentity {
 #[non_exhaustive]
 pub enum CacheEntryInspectionOutcome {
     /// Inspection parsed the entry but did not validate it against an original.
-    Unchecked,
+    Unvalidated,
     /// The entry is invalid for inspection or cache-management use.
     Invalid(Vec<CacheEntryProblem>),
 }
@@ -407,7 +407,7 @@ fn inspect_cache_entry(
         inspect_filename_uri_match(&mut problems, &path, uri);
     }
     let outcome = if problems.is_empty() {
-        CacheEntryInspectionOutcome::Unchecked
+        CacheEntryInspectionOutcome::Unvalidated
     } else {
         CacheEntryInspectionOutcome::Invalid(problems)
     };

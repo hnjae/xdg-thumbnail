@@ -561,7 +561,7 @@ impl SharedRepositoryContext {
         size: ThumbnailSize,
         original_facts: SharedOriginalFacts,
     ) -> Result<SharedThumbnailLookup<ValidatedSharedEntry>> {
-        let path = self.thumbnail_path(size);
+        let path = self.cache_entry_path(size);
         let bytes = match read_cache_entry_no_follow(&path, "read shared thumbnail cache entry")? {
             CacheEntryRead::Bytes(bytes) => bytes,
             CacheEntryRead::Missing => return Ok(SharedThumbnailLookup::Missing),
@@ -614,7 +614,7 @@ impl SharedRepositoryContext {
         size: ThumbnailSize,
         original: SharedOriginalMetadata,
     ) -> Result<Option<SharedCacheEntryInspection>> {
-        let path = self.thumbnail_path(size);
+        let path = self.cache_entry_path(size);
         let metadata = match fs::symlink_metadata(&path) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
