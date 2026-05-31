@@ -21,6 +21,8 @@ fn sandbox_off_executes_thumbnailer_and_installs_output() {
     );
 
     let records = fixture.run_jsonl([
+        "--size",
+        "normal",
         "--sandbox",
         "off",
         "--format",
@@ -56,6 +58,8 @@ fn thumbnailer_timeout_is_reported_without_installing_output() {
         .command([
             "--sandbox",
             "off",
+            "--size",
+            "normal",
             "--timeout",
             "1s",
             "--format",
@@ -86,7 +90,13 @@ fn required_sandbox_execution_failures_report_sandbox_applied() {
     fixture.write_thumbnailer("missing.thumbnailer", "true %i %o %s", "image/png;");
 
     let output = fixture
-        .command(["--format", "jsonl", input.to_str().unwrap()])
+        .command([
+            "--size",
+            "normal",
+            "--format",
+            "jsonl",
+            input.to_str().unwrap(),
+        ])
         .code(1)
         .get_output()
         .stdout

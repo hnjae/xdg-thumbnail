@@ -33,7 +33,7 @@ struct Cli {
         long,
         value_enum,
         value_name = "SIZE",
-        help = "Generate one size namespace: normal, large, x-large, or xx-large. Defaults to normal. Can be passed multiple times."
+        help = "Restrict generation to one size namespace: normal, large, x-large, or xx-large. Defaults to all supported sizes. Can be passed multiple times; duplicate values are ignored after their first occurrence."
     )]
     size: Vec<SizeArg>,
     #[arg(
@@ -285,11 +285,7 @@ fn run(cli: Cli) -> std::result::Result<u8, String> {
     } else {
         None
     };
-    let sizes = if cli.size.is_empty() {
-        vec![ThumbnailSize::Normal]
-    } else {
-        cli.size.iter().copied().map(ThumbnailSize::from).collect()
-    };
+    let sizes = selected_sizes(&cli.size);
     let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
     let mime_db = xdg_mime::SharedMimeInfo::new();
 
@@ -326,6 +322,22 @@ fn run(cli: Cli) -> std::result::Result<u8, String> {
     }
 
     Ok(exit_code)
+}
+
+fn selected_sizes(size_args: &[SizeArg]) -> Vec<ThumbnailSize> {
+    if size_args.is_empty() {
+        return ThumbnailSize::all().to_vec();
+    }
+
+    let mut seen = HashSet::new();
+    let mut sizes = Vec::new();
+    for size_arg in size_args {
+        let size = ThumbnailSize::from(*size_arg);
+        if seen.insert(size) {
+            sizes.push(size);
+        }
+    }
+    sizes
 }
 
 fn plan_one(
@@ -386,7 +398,7 @@ fn plan_one(
             Ok(PersonalThumbnailLookup::Missing | PersonalThumbnailLookup::Invalid(_)) => {}
             Err(error) => {
                 record.decision = "skip";
-                record.reason = "cache-install-failed";
+                record.reason = "cache-lookup-failed";
                 record.error = Some(ErrorRecord {
                     kind: "cache-lookup-failed",
                     message: error.to_string(),

@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::collections::HashSet;
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -44,14 +45,14 @@ struct Cli {
     allow_stale_local_deletion: bool,
     #[arg(
         long,
-        help = "Allow scanned failure entries to become deletion candidates. Actual deletion still requires --delete."
+        help = "Allow scanned failure entries to become deletion candidates. Requires --scope failures or --scope all. Actual deletion still requires --delete."
     )]
     allow_failure_deletion: bool,
     #[arg(
         long,
         value_enum,
         value_name = "SIZE",
-        help = "Restrict successful thumbnail scan to one size namespace: normal, large, x-large, or xx-large. Can be passed multiple times."
+        help = "Restrict successful thumbnail scan to one size namespace: normal, large, x-large, or xx-large. Can be passed multiple times; duplicate values are ignored after their first occurrence."
     )]
     size: Vec<SizeArg>,
     #[arg(
@@ -312,11 +313,7 @@ fn emit_generated_artifact(cli: &Cli) -> std::result::Result<Option<ExitCode>, S
 
 fn run(cli: Cli) -> std::result::Result<u8, String> {
     let root = PersonalCacheRoot::resolve_from_env().map_err(|error| error.to_string())?;
-    let sizes = if cli.size.is_empty() {
-        ThumbnailSize::all().to_vec()
-    } else {
-        cli.size.iter().copied().map(ThumbnailSize::from).collect()
-    };
+    let sizes = selected_sizes(&cli.size);
     let nonstandard_entry_policy = if cli.include_nonstandard_files {
         NonstandardEntryPolicy::Include
     } else {
@@ -357,6 +354,22 @@ fn run(cli: Cli) -> std::result::Result<u8, String> {
     } else {
         Ok(0)
     }
+}
+
+fn selected_sizes(size_args: &[SizeArg]) -> Vec<ThumbnailSize> {
+    if size_args.is_empty() {
+        return ThumbnailSize::all().to_vec();
+    }
+
+    let mut seen = HashSet::new();
+    let mut sizes = Vec::new();
+    for size_arg in size_args {
+        let size = ThumbnailSize::from(*size_arg);
+        if seen.insert(size) {
+            sizes.push(size);
+        }
+    }
+    sizes
 }
 
 fn evaluate_entry(
