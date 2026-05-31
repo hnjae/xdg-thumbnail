@@ -32,7 +32,8 @@ fn help_and_version_are_successful_metadata_modes() {
         .stdout(predicate::str::contains("Required for generation"))
         .stdout(predicate::str::contains("--generate-completion"))
         .stdout(predicate::str::contains("--generate-manpage"))
-        .stdout(predicate::str::contains("without PATH operands"));
+        .stdout(predicate::str::contains("without PATH operands"))
+        .stdout(predicate::str::contains("--verbose").not());
 
     Command::cargo_bin("xdg-thumbnail-generate")
         .unwrap()
@@ -74,6 +75,16 @@ fn generation_requires_input_path() {
         .stderr(predicate::str::contains(
             "required arguments were not provided",
         ));
+}
+
+#[test]
+fn verbose_is_not_a_generate_option() {
+    Command::cargo_bin("xdg-thumbnail-generate")
+        .unwrap()
+        .args(["--verbose", "input.png"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("--verbose"));
 }
 
 #[test]

@@ -351,7 +351,9 @@ fn verbose_human_output_includes_kept_entries() {
         .assert()
         .success()
         .stdout(predicates::str::contains("keep"))
-        .stdout(predicates::str::contains("local-stable-file"));
+        .stdout(predicates::str::contains("local-stable-file"))
+        .stdout(predicates::str::contains("timestamp="))
+        .stdout(predicates::str::contains("access-time-preservation="));
 }
 
 #[test]
