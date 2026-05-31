@@ -39,14 +39,14 @@ struct Cli {
     delete: bool,
     #[arg(
         long,
-        help = "Include stale local thumbnails as deletion candidates. Actual deletion still requires --delete."
+        help = "Allow stale local thumbnails to become deletion candidates. Actual deletion still requires --delete."
     )]
-    delete_stale_local: bool,
+    allow_stale_local_deletion: bool,
     #[arg(
         long,
         help = "Allow scanned failure entries to become deletion candidates. Actual deletion still requires --delete."
     )]
-    allow_delete_failures: bool,
+    allow_failure_deletion: bool,
     #[arg(
         long,
         value_enum,
@@ -74,7 +74,7 @@ struct Cli {
     )]
     removable_prefix: Vec<PathBuf>,
     #[arg(long, help = "Do not treat /media as removable by default.")]
-    ignore_fhs_media: bool,
+    ignore_media_prefix: bool,
     #[arg(
         long,
         value_enum,
@@ -271,8 +271,8 @@ fn main() -> ExitCode {
         }
     }
 
-    if cli.allow_delete_failures && matches!(cli.scope, ScopeArg::Thumbnails) {
-        eprintln!("--allow-delete-failures requires --scope failures or --scope all");
+    if cli.allow_failure_deletion && matches!(cli.scope, ScopeArg::Thumbnails) {
+        eprintln!("--allow-failure-deletion requires --scope failures or --scope all");
         return ExitCode::from(2);
     }
     if !cli.size.is_empty() && matches!(cli.scope, ScopeArg::Failures) {
@@ -484,7 +484,7 @@ fn evaluate_entry(
 
     if is_failure_namespace(entry.namespace())
         && decision == Decision::Delete
-        && !cli.allow_delete_failures
+        && !cli.allow_failure_deletion
     {
         decision = Decision::Skip;
         reason = Some("failure-deletion-not-enabled");
@@ -585,7 +585,7 @@ fn evaluate_local_file(
         PersonalValidationOutcome::Invalid(problems)
             if has_metadata_kind(&problems, ThumbnailMetadataProblemKind::ValueMismatch) =>
         {
-            if cli.delete_stale_local {
+            if cli.allow_stale_local_deletion {
                 *decision = Decision::Delete;
                 *reason = Some("stale-local-metadata");
             } else {
@@ -786,7 +786,7 @@ fn write_jsonl(records: &[EntryRecord], summary: &Summary, age_basis: AgeBasisAr
 
 struct Classifier {
     removable_prefixes: Vec<PathBuf>,
-    ignore_fhs_media: bool,
+    ignore_media_prefix: bool,
 }
 
 impl Classifier {
@@ -799,12 +799,12 @@ impl Classifier {
             PathBuf::from(format!("/run/user/{uid}/gvfs")),
             PathBuf::from(format!("/run/user/{uid}/kio-fuse")),
         ]);
-        if !cli.ignore_fhs_media {
+        if !cli.ignore_media_prefix {
             removable_prefixes.push(PathBuf::from("/media"));
         }
         Self {
             removable_prefixes,
-            ignore_fhs_media: cli.ignore_fhs_media,
+            ignore_media_prefix: cli.ignore_media_prefix,
         }
     }
 
@@ -823,7 +823,7 @@ impl Classifier {
                 {
                     UriClass::LocalRemovableOrPortal
                 } else {
-                    let _ = self.ignore_fhs_media;
+                    let _ = self.ignore_media_prefix;
                     UriClass::LocalStableFile
                 }
             }
