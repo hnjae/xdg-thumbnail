@@ -440,7 +440,7 @@ fn inspect_required_metadata(
     if metadata.thumb_size_result().is_err() {
         push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax);
     }
-    if let Some(mime_type) = metadata.thumb_mimetype() {
+    if let Some(mime_type) = metadata.thumb_mime_type() {
         if validate_mime_type(mime_type).is_err() {
             push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax);
         }
@@ -457,7 +457,7 @@ fn inspect_filename_uri_match(
         push_problem(problems, CacheEntryProblem::UriFilenameMismatch);
         return;
     };
-    if filename != uri.thumbnail_filename() {
+    if filename != uri.thumbnail_file_name() {
         push_problem(problems, CacheEntryProblem::UriFilenameMismatch);
     }
 }

@@ -113,7 +113,7 @@ impl PersonalCacheRoot {
         uri: &PersonalOriginalUri,
         namespace: &CacheNamespace,
     ) -> PathBuf {
-        namespace.join_under(&self.path, &uri.thumbnail_filename())
+        namespace.join_under(&self.path, &uri.thumbnail_file_name())
     }
 
     /// Returns a validated personal-cache path for integrations that must pass a filename.
@@ -432,10 +432,10 @@ impl SharedRepositoryContext {
     /// metadata parse failures after validation succeeds.
     pub fn lookup_thumbnail_path(
         &self,
+        original_facts: SharedOriginalFacts,
         size: ThumbnailSize,
-        original: SharedOriginalFacts,
     ) -> Result<SharedThumbnailLookup<ThumbnailPathLookupEntry>> {
-        match self.lookup_thumbnail_entry(size, original)? {
+        match self.lookup_thumbnail_entry(size, original_facts)? {
             SharedThumbnailLookup::FullyVerified(entry) => Ok(
                 SharedThumbnailLookup::FullyVerified(ThumbnailPathLookupEntry {
                     path: entry.path,
@@ -466,10 +466,10 @@ impl SharedRepositoryContext {
     /// metadata parse failures after validation succeeds.
     pub fn lookup_thumbnail_png_bytes(
         &self,
+        original_facts: SharedOriginalFacts,
         size: ThumbnailSize,
-        original: SharedOriginalFacts,
     ) -> Result<SharedThumbnailLookup<ThumbnailPngBytesLookupEntry>> {
-        match self.lookup_thumbnail_entry(size, original)? {
+        match self.lookup_thumbnail_entry(size, original_facts)? {
             SharedThumbnailLookup::FullyVerified(entry) => Ok(
                 SharedThumbnailLookup::FullyVerified(ThumbnailPngBytesLookupEntry {
                     path: entry.path,
@@ -505,10 +505,10 @@ impl SharedRepositoryContext {
     /// decoding failures after validation succeeds.
     pub fn lookup_thumbnail_rgba8(
         &self,
+        original_facts: SharedOriginalFacts,
         size: ThumbnailSize,
-        original: SharedOriginalFacts,
     ) -> Result<SharedThumbnailLookup<ThumbnailRgba8LookupEntry>> {
-        match self.lookup_thumbnail_entry(size, original)? {
+        match self.lookup_thumbnail_entry(size, original_facts)? {
             SharedThumbnailLookup::FullyVerified(entry) => {
                 Ok(SharedThumbnailLookup::FullyVerified(
                     rgba8_lookup_entry_from_parts(entry.path, &entry.bytes, entry.metadata)?,
@@ -552,7 +552,7 @@ impl SharedRepositoryContext {
     fn lookup_thumbnail_entry(
         &self,
         size: ThumbnailSize,
-        original: SharedOriginalFacts,
+        original_facts: SharedOriginalFacts,
     ) -> Result<SharedThumbnailLookup<ValidatedSharedEntry>> {
         let path = self.thumbnail_path(size);
         let bytes = match read_cache_entry_no_follow(&path, "read shared thumbnail cache entry")? {
@@ -565,7 +565,7 @@ impl SharedRepositoryContext {
             }
         };
 
-        match validate_shared_thumbnail(&bytes, self, original.metadata(), size) {
+        match validate_shared_thumbnail(&bytes, self, original_facts.metadata(), size) {
             SharedValidationOutcome::FullyVerified => {
                 let parsed = ParsedThumbnailPng::parse(&bytes)?;
                 Ok(SharedThumbnailLookup::FullyVerified(ValidatedSharedEntry {
@@ -575,7 +575,9 @@ impl SharedRepositoryContext {
                 }))
             }
             SharedValidationOutcome::MetadataIncomplete => {
-                if original.metadata_policy() == SharedThumbnailMetadataPolicy::RequireComplete {
+                if original_facts.metadata_policy()
+                    == SharedThumbnailMetadataPolicy::RequireComplete
+                {
                     Ok(SharedThumbnailLookup::Invalid(vec![
                         CacheEntryProblem::MissingRequiredMetadata,
                     ]))
@@ -1110,8 +1112,8 @@ pub struct PersonalThumbnailInspectionRequestParts {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SharedThumbnailLookupRequest {
     context: SharedRepositoryContext,
+    original_facts: SharedOriginalFacts,
     size: ThumbnailSize,
-    original: SharedOriginalFacts,
 }
 
 impl SharedThumbnailLookupRequest {
@@ -1119,13 +1121,13 @@ impl SharedThumbnailLookupRequest {
     #[must_use]
     pub fn new(
         context: SharedRepositoryContext,
+        original_facts: SharedOriginalFacts,
         size: ThumbnailSize,
-        original: SharedOriginalFacts,
     ) -> Self {
         Self {
             context,
+            original_facts,
             size,
-            original,
         }
     }
 
@@ -1137,10 +1139,10 @@ impl SharedThumbnailLookupRequest {
     pub fn lookup_path(self) -> Result<SharedThumbnailLookup<ThumbnailPathLookupEntry>> {
         let Self {
             context,
+            original_facts,
             size,
-            original,
         } = self;
-        context.lookup_thumbnail_path(size, original)
+        context.lookup_thumbnail_path(original_facts, size)
     }
 
     /// Returns exact validated shared-repository PNG bytes for the owned request.
@@ -1151,10 +1153,10 @@ impl SharedThumbnailLookupRequest {
     pub fn lookup_png_bytes(self) -> Result<SharedThumbnailLookup<ThumbnailPngBytesLookupEntry>> {
         let Self {
             context,
+            original_facts,
             size,
-            original,
         } = self;
-        context.lookup_thumbnail_png_bytes(size, original)
+        context.lookup_thumbnail_png_bytes(original_facts, size)
     }
 
     /// Returns decoded tightly packed RGBA8 pixels for the owned request.
@@ -1165,10 +1167,10 @@ impl SharedThumbnailLookupRequest {
     pub fn lookup_rgba8(self) -> Result<SharedThumbnailLookup<ThumbnailRgba8LookupEntry>> {
         let Self {
             context,
+            original_facts,
             size,
-            original,
         } = self;
-        context.lookup_thumbnail_rgba8(size, original)
+        context.lookup_thumbnail_rgba8(original_facts, size)
     }
 
     /// Splits this request into its owned parts.
@@ -1176,8 +1178,8 @@ impl SharedThumbnailLookupRequest {
     pub fn into_parts(self) -> SharedThumbnailLookupRequestParts {
         SharedThumbnailLookupRequestParts {
             context: self.context,
+            original_facts: self.original_facts,
             size: self.size,
-            original: self.original,
         }
     }
 }
@@ -1188,10 +1190,10 @@ impl SharedThumbnailLookupRequest {
 pub struct SharedThumbnailLookupRequestParts {
     /// Shared repository lookup context.
     pub context: SharedRepositoryContext,
+    /// Shared original freshness facts and metadata policy.
+    pub original_facts: SharedOriginalFacts,
     /// Requested thumbnail size.
     pub size: ThumbnailSize,
-    /// Shared original freshness facts and metadata policy.
-    pub original: SharedOriginalFacts,
 }
 
 /// Owned shared-repository inspection request for async or runtime-specific adapters.

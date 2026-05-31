@@ -323,7 +323,7 @@ impl ThumbnailMetadata {
 
     /// Returns `Thumb::Mimetype` when present.
     #[must_use]
-    pub fn thumb_mimetype(&self) -> Option<&str> {
+    pub fn thumb_mime_type(&self) -> Option<&str> {
         self.get("Thumb::Mimetype")
     }
 }
@@ -701,7 +701,7 @@ fn compare_optional_mimetype(
     metadata: &ThumbnailMetadata,
     expected: Option<&str>,
 ) {
-    let Some(stored) = metadata.thumb_mimetype() else {
+    let Some(stored) = metadata.thumb_mime_type() else {
         return;
     };
     if validate_mime_type(stored).is_err() {

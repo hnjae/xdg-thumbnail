@@ -165,6 +165,10 @@ impl ReadableOriginalIdentity {
     /// This performs blocking filesystem I/O. Async applications should call it from a blocking
     /// adapter rather than directly on an async executor worker.
     ///
+    /// The cache URI identity is built from the caller-supplied absolute path bytes without
+    /// resolving symlinks. Readability, modification time, and size are taken from opening and
+    /// statting the referenced file target.
+    ///
     /// # Errors
     ///
     /// Returns an error when the path is not absolute, the original cannot be opened for reading,
@@ -177,6 +181,10 @@ impl ReadableOriginalIdentity {
     ///
     /// This performs blocking filesystem I/O. Async applications should call it from a blocking
     /// adapter rather than directly on an async executor worker.
+    ///
+    /// The cache URI identity is built from the caller-supplied absolute path bytes without
+    /// resolving symlinks. Readability, modification time, and size are taken from opening and
+    /// statting the referenced file target.
     ///
     /// # Errors
     ///
@@ -283,6 +291,6 @@ impl SharedRepositoryContext {
         self.repository_root
             .join(".sh_thumbnails")
             .join(size.directory_name())
-            .join(self.shared_uri.thumbnail_filename())
+            .join(self.shared_uri.thumbnail_file_name())
     }
 }

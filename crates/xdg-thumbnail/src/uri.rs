@@ -134,7 +134,7 @@ impl PersonalOriginalUri {
 
     /// Returns the Freedesktop thumbnail filename for this URI identity.
     #[must_use]
-    pub fn thumbnail_filename(&self) -> String {
+    pub fn thumbnail_file_name(&self) -> String {
         format!("{}.png", md5_stem(self.value.as_bytes()))
     }
 }
@@ -199,7 +199,7 @@ impl SharedRelativeOriginalUri {
 
     /// Returns the Freedesktop thumbnail filename for this URI identity.
     #[must_use]
-    pub fn thumbnail_filename(&self) -> String {
+    pub fn thumbnail_file_name(&self) -> String {
         format!("{}.png", md5_stem(self.value.as_bytes()))
     }
 }
