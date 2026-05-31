@@ -89,6 +89,7 @@ fn install_rejects_insecure_existing_cache_directories() {
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let target_dir = root.as_path().join("normal");
     std::fs::create_dir_all(&target_dir).unwrap();
+    std::fs::set_permissions(root.as_path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     std::fs::set_permissions(&target_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let error = root
@@ -116,6 +117,7 @@ fn install_rejects_symlinked_cache_directories() {
     let outside = temp.path().join("outside");
     std::fs::create_dir_all(&outside).unwrap();
     std::fs::create_dir_all(root.as_path()).unwrap();
+    std::fs::set_permissions(root.as_path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     symlink(&outside, root.as_path().join("normal")).unwrap();
 
     let error = root
@@ -142,6 +144,7 @@ fn install_rejects_cache_namespace_paths_that_are_not_directories() {
     let temp = TempDir::new().unwrap();
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     std::fs::create_dir_all(root.as_path()).unwrap();
+    std::fs::set_permissions(root.as_path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     let target_path = root.as_path().join("normal");
     std::fs::write(&target_path, b"not a directory").unwrap();
 

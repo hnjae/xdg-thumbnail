@@ -15,8 +15,9 @@ use crate::inspection::{
     thumbnail_timestamps, thumbnail_timestamps_from_metadata,
 };
 use crate::{
-    AccessTimePreservation, CacheEntryProblem, CacheNamespace, FailureNamespace,
-    OwnedRawThumbnailImage, ParsedThumbnailPng, PersonalValidationOutcome, RawThumbnailImage,
+    AccessTimePreservation, CacheDirectoryProblem, CacheEntryHandle, CacheEntryProblem,
+    CacheNamespace, CachePathProblem, CacheRootProblem, FailureNamespace, OwnedRawThumbnailImage,
+    ParsedThumbnailPng, PersonalValidationOutcome, RawThumbnailImage,
     ReadablePersonalOriginalIdentity, Result, SharedRelativeOriginalUri, SharedRepositoryContext,
     SharedValidationOutcome, ThumbnailError, ThumbnailMetadata, ThumbnailSize, ThumbnailTimestamps,
     UnixMtimeSeconds, decode_validated_thumbnail_png_to_rgba8, encode_rgba_png, metadata_problem,
@@ -40,9 +41,10 @@ impl PersonalCacheRoot {
     pub fn new(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         if !path.is_absolute() {
-            return Err(ThumbnailError::CacheRootUnavailable(
-                "thumbnail cache root must be absolute",
-            ));
+            return Err(ThumbnailError::InvalidCacheRoot {
+                path: path.to_owned(),
+                problem: CacheRootProblem::NotAbsolute,
+            });
         }
         Ok(Self {
             path: path.to_owned(),
@@ -83,18 +85,18 @@ impl PersonalCacheRoot {
         }
 
         let Some(home) = home else {
-            return Err(ThumbnailError::CacheRootUnavailable(
+            return Err(ThumbnailError::cache_root_unavailable(
                 "HOME is required when XDG_CACHE_HOME is unset, blank, or relative",
             ));
         };
         if home.as_bytes().is_empty() {
-            return Err(ThumbnailError::CacheRootUnavailable(
+            return Err(ThumbnailError::cache_root_unavailable(
                 "HOME is required when XDG_CACHE_HOME is unset, blank, or relative",
             ));
         }
         let home = PathBuf::from(home);
         if !home.is_absolute() {
-            return Err(ThumbnailError::CacheRootUnavailable(
+            return Err(ThumbnailError::cache_root_unavailable(
                 "HOME must be absolute",
             ));
         }
@@ -115,6 +117,24 @@ impl PersonalCacheRoot {
         namespace: &CacheNamespace,
     ) -> PathBuf {
         namespace.join_under(&self.path, &uri.thumbnail_file_name())
+    }
+
+    /// Returns a safe-removal handle for a computed personal-cache entry path.
+    ///
+    /// The handle uses the same pure path calculation as [`Self::cache_entry_path`] and does not
+    /// check whether the entry currently exists. Removal still performs containment, no-follow, and
+    /// regular-file checks at deletion time.
+    #[must_use]
+    pub fn cache_entry_handle(
+        &self,
+        uri: &PersonalOriginalUri,
+        namespace: &CacheNamespace,
+    ) -> CacheEntryHandle {
+        let cache_dir = match namespace {
+            CacheNamespace::Size(size) => self.path.join(size.directory_name()),
+            CacheNamespace::Failure(namespace) => self.path.join("fail").join(namespace.as_str()),
+        };
+        CacheEntryHandle::new(cache_dir, self.cache_entry_path(uri, namespace))
     }
 
     /// Returns a validated personal-cache path for integrations that must pass a filename.
@@ -374,37 +394,51 @@ impl PersonalCacheRoot {
         bytes: &[u8],
     ) -> Result<()> {
         self.ensure_namespace_dir(namespace)?;
-        let parent = path.parent().ok_or(ThumbnailError::CacheRootUnavailable(
-            "cache path has no parent directory",
-        ))?;
+        let parent = path
+            .parent()
+            .ok_or_else(|| ThumbnailError::InvalidCachePath {
+                path: path.to_owned(),
+                problem: CachePathProblem::MissingParentDirectory,
+            })?;
         let mut temp = tempfile::Builder::new()
             .prefix(".xdg-thumbnail-")
             .tempfile_in(parent)
-            .map_err(|source| ThumbnailError::Io {
-                context: "create thumbnail temporary file",
-                source,
+            .map_err(|source| {
+                ThumbnailError::io(
+                    "create thumbnail temporary file",
+                    Some(parent.to_owned()),
+                    source,
+                )
             })?;
-        temp.as_file_mut()
-            .write_all(bytes)
-            .map_err(|source| ThumbnailError::Io {
-                context: "write thumbnail temporary file",
+        temp.as_file_mut().write_all(bytes).map_err(|source| {
+            ThumbnailError::io(
+                "write thumbnail temporary file",
+                Some(temp.path().to_owned()),
                 source,
-            })?;
+            )
+        })?;
         temp.as_file_mut()
             .set_permissions(fs::Permissions::from_mode(0o600))
-            .map_err(|source| ThumbnailError::Io {
-                context: "set thumbnail temporary file permissions",
-                source,
+            .map_err(|source| {
+                ThumbnailError::io(
+                    "set thumbnail temporary file permissions",
+                    Some(temp.path().to_owned()),
+                    source,
+                )
             })?;
-        temp.as_file_mut()
-            .sync_all()
-            .map_err(|source| ThumbnailError::Io {
-                context: "sync thumbnail temporary file",
+        temp.as_file_mut().sync_all().map_err(|source| {
+            ThumbnailError::io(
+                "sync thumbnail temporary file",
+                Some(temp.path().to_owned()),
                 source,
-            })?;
-        fs::rename(temp.path(), path).map_err(|source| ThumbnailError::Io {
-            context: "publish thumbnail cache entry",
-            source,
+            )
+        })?;
+        fs::rename(temp.path(), path).map_err(|source| {
+            ThumbnailError::io(
+                "publish thumbnail cache entry",
+                Some(path.to_owned()),
+                source,
+            )
         })?;
         Ok(())
     }
@@ -1316,7 +1350,9 @@ fn read_cache_entry_no_follow(path: &Path, context: &'static str) -> Result<Cach
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Ok(CacheEntryRead::Missing);
         }
-        Err(source) => return Err(ThumbnailError::Io { context, source }),
+        Err(source) => {
+            return Err(ThumbnailError::io(context, Some(path.to_owned()), source));
+        }
     };
     if metadata.file_type().is_symlink() || !metadata.is_file() {
         return Ok(CacheEntryRead::Unreadable);
@@ -1333,16 +1369,16 @@ fn read_cache_entry_no_follow(path: &Path, context: &'static str) -> Result<Cach
             return Ok(CacheEntryRead::Unreadable);
         }
         Err(source) => {
-            return Err(ThumbnailError::Io {
+            return Err(ThumbnailError::io(
                 context,
-                source: std::io::Error::from(source),
-            });
+                Some(path.to_owned()),
+                std::io::Error::from(source),
+            ));
         }
     };
 
-    let stat = rustix::fs::fstat(&fd).map_err(|source| ThumbnailError::Io {
-        context,
-        source: std::io::Error::from(source),
+    let stat = rustix::fs::fstat(&fd).map_err(|source| {
+        ThumbnailError::io(context, Some(path.to_owned()), std::io::Error::from(source))
     })?;
     let file_type = rustix::fs::FileType::from_raw_mode(stat.st_mode);
     if !file_type.is_file() {
@@ -1352,7 +1388,7 @@ fn read_cache_entry_no_follow(path: &Path, context: &'static str) -> Result<Cach
     let mut file = File::from(fd);
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)
-        .map_err(|source| ThumbnailError::Io { context, source })?;
+        .map_err(|source| ThumbnailError::io(context, Some(path.to_owned()), source))?;
     Ok(CacheEntryRead::Bytes(bytes))
 }
 
@@ -1833,37 +1869,55 @@ pub struct InstalledThumbnailPngBytesParts {
 fn ensure_private_directory(path: &Path) -> Result<()> {
     match fs::symlink_metadata(path) {
         Ok(metadata) => {
-            if metadata.file_type().is_symlink()
-                || !metadata.is_dir()
-                || metadata.uid() != rustix::process::getuid().as_raw()
-                || metadata.permissions().mode() & 0o077 != 0
-            {
-                return Err(ThumbnailError::InsecureCacheDirectory(path.to_owned()));
+            let problem = if metadata.file_type().is_symlink() {
+                Some(CacheDirectoryProblem::Symlink)
+            } else if !metadata.is_dir() {
+                Some(CacheDirectoryProblem::NotDirectory)
+            } else if metadata.uid() != rustix::process::getuid().as_raw() {
+                Some(CacheDirectoryProblem::WrongOwner)
+            } else if metadata.permissions().mode() & 0o077 != 0 {
+                Some(CacheDirectoryProblem::GroupOrOtherAccessible)
+            } else {
+                None
+            };
+            if let Some(problem) = problem {
+                return Err(ThumbnailError::InsecureCacheDirectory {
+                    path: path.to_owned(),
+                    problem,
+                });
             }
             Ok(())
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).map_err(|source| ThumbnailError::Io {
-                    context: "create parent thumbnail cache directories",
-                    source,
+                fs::create_dir_all(parent).map_err(|source| {
+                    ThumbnailError::io(
+                        "create parent thumbnail cache directories",
+                        Some(parent.to_owned()),
+                        source,
+                    )
                 })?;
             }
-            fs::create_dir(path).map_err(|source| ThumbnailError::Io {
-                context: "create thumbnail cache directory",
-                source,
+            fs::create_dir(path).map_err(|source| {
+                ThumbnailError::io(
+                    "create thumbnail cache directory",
+                    Some(path.to_owned()),
+                    source,
+                )
             })?;
             fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(|source| {
-                ThumbnailError::Io {
-                    context: "set thumbnail cache directory permissions",
+                ThumbnailError::io(
+                    "set thumbnail cache directory permissions",
+                    Some(path.to_owned()),
                     source,
-                }
+                )
             })?;
             Ok(())
         }
-        Err(source) => Err(ThumbnailError::Io {
-            context: "inspect thumbnail cache directory",
+        Err(source) => Err(ThumbnailError::io(
+            "inspect thumbnail cache directory",
+            Some(path.to_owned()),
             source,
-        }),
+        )),
     }
 }

@@ -107,7 +107,9 @@ pub use cache::{
     ThumbnailRgba8LookupEntry, ThumbnailRgba8LookupEntryParts,
 };
 #[cfg(unix)]
-pub use error::{Result, ThumbnailError};
+pub use error::{
+    CacheDirectoryProblem, CachePathProblem, CacheRootProblem, Result, ThumbnailError,
+};
 #[cfg(unix)]
 pub use identity::{
     PersonalOriginalIdentity, ReadablePersonalOriginalIdentity, SharedRepositoryContext,
@@ -123,8 +125,8 @@ pub use namespace::{CacheNamespace, FailureNamespace, ThumbnailSize};
 #[cfg(unix)]
 pub use png::{
     CacheEntryProblem, OwnedRawThumbnailImage, OwnedRawThumbnailImageParts, ParsedThumbnailPng,
-    PersonalValidationOutcome, RawThumbnailImage, RawThumbnailPixelFormat, SharedValidationOutcome,
-    ThumbnailMetadata, ThumbnailMetadataKey, ThumbnailMetadataProblem,
+    ParsedThumbnailPngParts, PersonalValidationOutcome, RawThumbnailImage, RawThumbnailPixelFormat,
+    SharedValidationOutcome, ThumbnailMetadata, ThumbnailMetadataKey, ThumbnailMetadataProblem,
     ThumbnailMetadataProblemKind, ThumbnailPngBitDepth, ThumbnailPngColorType,
     validate_personal_failure_entry, validate_personal_thumbnail, validate_shared_thumbnail,
 };

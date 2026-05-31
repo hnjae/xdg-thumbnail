@@ -654,8 +654,8 @@ fn detect_mime_type(mime_db: &xdg_mime::SharedMimeInfo, path: &Path) -> Option<S
 
 fn original_error_reason(error: &ThumbnailError) -> &'static str {
     match error {
-        ThumbnailError::InvalidUriIdentity(_) => "uri-construction-failed",
-        ThumbnailError::InvalidMetadata(_) => "original-metadata-unavailable",
+        ThumbnailError::InvalidUriIdentity { .. } => "uri-construction-failed",
+        ThumbnailError::InvalidMetadata { .. } => "original-metadata-unavailable",
         ThumbnailError::Io {
             context: "open original for reading",
             ..
@@ -671,16 +671,16 @@ fn original_error_reason(error: &ThumbnailError) -> &'static str {
 
 fn installation_error_reason(error: &ThumbnailError) -> &'static str {
     match error {
-        ThumbnailError::UnsupportedRenderedThumbnail(message) => {
-            if message.contains("unsupported") || message.contains("animated") {
+        ThumbnailError::UnsupportedRenderedThumbnail { reason, .. } => {
+            if reason.contains("unsupported") || reason.contains("animated") {
                 "output-unsupported-png"
             } else {
                 "output-normalization-failed"
             }
         }
-        ThumbnailError::Png(_) => "output-normalization-failed",
-        ThumbnailError::InvalidMetadata(_) => "metadata-write-failed",
-        ThumbnailError::InsecureCacheDirectory(_) => "permission-setup-failed",
+        ThumbnailError::Png { .. } => "output-normalization-failed",
+        ThumbnailError::InvalidMetadata { .. } => "metadata-write-failed",
+        ThumbnailError::InsecureCacheDirectory { .. } => "permission-setup-failed",
         ThumbnailError::Io {
             context:
                 "create parent thumbnail cache directories"

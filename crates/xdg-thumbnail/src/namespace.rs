@@ -64,7 +64,7 @@ impl FailureNamespace {
     pub fn new(value: impl Into<String>) -> Result<Self> {
         let value = value.into();
         if value.is_empty() || value == "." || value == ".." {
-            return Err(ThumbnailError::InvalidNamespace(
+            return Err(ThumbnailError::invalid_namespace(
                 "failure namespace must be a non-empty direct name",
             ));
         }
@@ -72,7 +72,7 @@ impl FailureNamespace {
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'+' | b'-'))
         {
-            return Err(ThumbnailError::InvalidNamespace(
+            return Err(ThumbnailError::invalid_namespace(
                 "failure namespace contains an invalid character",
             ));
         }

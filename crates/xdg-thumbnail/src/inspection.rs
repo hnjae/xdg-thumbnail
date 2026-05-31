@@ -152,6 +152,10 @@ pub struct CacheEntryHandle {
 }
 
 impl CacheEntryHandle {
+    pub(crate) fn new(cache_dir: PathBuf, path: PathBuf) -> Self {
+        Self { cache_dir, path }
+    }
+
     /// Removes the handled entry after containment and symlink checks.
     ///
     /// # Errors
@@ -210,21 +214,28 @@ impl PersonalCacheRoot {
             Ok(entries) => entries,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(inspections),
             Err(source) => {
-                return Err(ThumbnailError::Io {
-                    context: "read failure thumbnail directory",
+                return Err(ThumbnailError::io(
+                    "read failure thumbnail directory",
+                    Some(fail_root.clone()),
                     source,
-                });
+                ));
             }
         };
 
         for entry in entries {
-            let entry = entry.map_err(|source| ThumbnailError::Io {
-                context: "read failure namespace directory entry",
-                source,
+            let entry = entry.map_err(|source| {
+                ThumbnailError::io(
+                    "read failure namespace directory entry",
+                    Some(fail_root.clone()),
+                    source,
+                )
             })?;
-            let file_type = entry.file_type().map_err(|source| ThumbnailError::Io {
-                context: "read failure namespace file type",
-                source,
+            let file_type = entry.file_type().map_err(|source| {
+                ThumbnailError::io(
+                    "read failure namespace file type",
+                    Some(entry.path()),
+                    source,
+                )
             })?;
             if file_type.is_symlink() || !file_type.is_dir() {
                 continue;
@@ -258,10 +269,11 @@ fn inspect_namespace_dir(
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(source) => {
-            return Err(ThumbnailError::Io {
-                context: "inspect thumbnail namespace directory",
+            return Err(ThumbnailError::io(
+                "inspect thumbnail namespace directory",
+                Some(dir.to_owned()),
                 source,
-            });
+            ));
         }
     };
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
@@ -271,17 +283,21 @@ fn inspect_namespace_dir(
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(source) => {
-            return Err(ThumbnailError::Io {
-                context: "read thumbnail namespace directory",
+            return Err(ThumbnailError::io(
+                "read thumbnail namespace directory",
+                Some(dir.to_owned()),
                 source,
-            });
+            ));
         }
     };
 
     for entry in entries {
-        let entry = entry.map_err(|source| ThumbnailError::Io {
-            context: "read thumbnail directory entry",
-            source,
+        let entry = entry.map_err(|source| {
+            ThumbnailError::io(
+                "read thumbnail directory entry",
+                Some(dir.to_owned()),
+                source,
+            )
         })?;
         let path = entry.path();
         let filename = entry.file_name();
@@ -374,7 +390,7 @@ fn inspect_cache_entry(
 
     let parsed = match ParsedThumbnailPng::parse(&bytes) {
         Ok(parsed) => parsed,
-        Err(ThumbnailError::ResourceLimitExceeded(_)) => {
+        Err(ThumbnailError::ResourceLimitExceeded { .. }) => {
             return CacheEntryInspection {
                 outcome: CacheEntryInspectionOutcome::Invalid(vec![
                     CacheEntryProblem::ResourceLimitExceeded,
@@ -625,14 +641,14 @@ fn remove_cache_entry_handle(handle: &CacheEntryHandle) -> Result<()> {
     let filename = handle
         .path
         .file_name()
-        .ok_or(ThumbnailError::UnsafeRemoval("entry has no filename"))?;
+        .ok_or_else(|| ThumbnailError::unsafe_removal("entry has no filename"))?;
     let filename_path = Path::new(filename);
     if filename_path.components().count() != 1
         || filename == OsStr::new(".")
         || filename == OsStr::new("..")
         || handle.path.parent() != Some(handle.cache_dir.as_path())
     {
-        return Err(ThumbnailError::UnsafeRemoval(
+        return Err(ThumbnailError::unsafe_removal(
             "entry is not a direct child of its cache directory",
         ));
     }
@@ -645,29 +661,38 @@ fn remove_cache_entry_handle(handle: &CacheEntryHandle) -> Result<()> {
             | rustix::fs::OFlags::NOFOLLOW,
         rustix::fs::Mode::empty(),
     )
-    .map_err(|source| ThumbnailError::Io {
-        context: "open cache directory before removal",
-        source: std::io::Error::from(source),
+    .map_err(|source| {
+        ThumbnailError::io(
+            "open cache directory before removal",
+            Some(handle.cache_dir.clone()),
+            std::io::Error::from(source),
+        )
     })?;
 
     let stat = rustix::fs::statat(&dir, filename, rustix::fs::AtFlags::SYMLINK_NOFOLLOW).map_err(
-        |source| ThumbnailError::Io {
-            context: "inspect cache entry before removal",
-            source: std::io::Error::from(source),
+        |source| {
+            ThumbnailError::io(
+                "inspect cache entry before removal",
+                Some(handle.path.clone()),
+                std::io::Error::from(source),
+            )
         },
     )?;
     let file_type = rustix::fs::FileType::from_raw_mode(stat.st_mode);
     if file_type.is_symlink() {
-        return Err(ThumbnailError::UnsafeRemoval("entry is a symlink"));
+        return Err(ThumbnailError::unsafe_removal("entry is a symlink"));
     }
     if !file_type.is_file() {
-        return Err(ThumbnailError::UnsafeRemoval("entry is not a regular file"));
+        return Err(ThumbnailError::unsafe_removal(
+            "entry is not a regular file",
+        ));
     }
 
     rustix::fs::unlinkat(&dir, filename, rustix::fs::AtFlags::empty()).map_err(|source| {
-        ThumbnailError::Io {
-            context: "remove cache entry",
-            source: std::io::Error::from(source),
-        }
+        ThumbnailError::io(
+            "remove cache entry",
+            Some(handle.path.clone()),
+            std::io::Error::from(source),
+        )
     })
 }

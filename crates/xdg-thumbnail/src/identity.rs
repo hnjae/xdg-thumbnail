@@ -10,8 +10,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::os::unix::ffi::OsStrExt;
 
 use crate::{
-    PersonalOriginalUri, Result, SharedRelativeOriginalUri, ThumbnailError, ThumbnailSize,
-    validate_mime_type,
+    CacheRootProblem, PersonalOriginalUri, Result, SharedRelativeOriginalUri, ThumbnailError,
+    ThumbnailSize, validate_mime_type,
 };
 
 /// Whole Unix epoch seconds used by `Thumb::MTime`.
@@ -34,7 +34,7 @@ impl UnixMtimeSeconds {
     /// Returns an error when `seconds` is negative.
     pub const fn try_from_i64(seconds: i64) -> Result<Self> {
         if seconds < 0 {
-            return Err(ThumbnailError::InvalidMetadata(
+            return Err(ThumbnailError::invalid_metadata(
                 "mtime is before the Unix epoch",
             ));
         }
@@ -51,7 +51,7 @@ impl UnixMtimeSeconds {
     pub fn from_system_time(time: SystemTime) -> Result<Self> {
         let duration = time
             .duration_since(UNIX_EPOCH)
-            .map_err(|_| ThumbnailError::InvalidMetadata("mtime is before the Unix epoch"))?;
+            .map_err(|_| ThumbnailError::invalid_metadata("mtime is before the Unix epoch"))?;
         Ok(Self {
             seconds: duration.as_secs(),
         })
@@ -201,20 +201,19 @@ impl ReadablePersonalOriginalIdentity {
         if !path.is_absolute() {
             return Err(ThumbnailError::invalid_uri("local path must be absolute"));
         }
-        let file = File::open(path).map_err(|source| ThumbnailError::Io {
-            context: "open original for reading",
-            source,
+        let file = File::open(path).map_err(|source| {
+            ThumbnailError::io("open original for reading", Some(path.to_owned()), source)
         })?;
-        let metadata = file.metadata().map_err(|source| ThumbnailError::Io {
-            context: "read original metadata",
-            source,
+        let metadata = file.metadata().map_err(|source| {
+            ThumbnailError::io("read original metadata", Some(path.to_owned()), source)
         })?;
         let uri = PersonalOriginalUri::from_absolute_path_bytes(path.as_os_str().as_bytes())?;
         let mtime = UnixMtimeSeconds::from_system_time(metadata.modified().map_err(|source| {
-            ThumbnailError::Io {
-                context: "read original modification time",
+            ThumbnailError::io(
+                "read original modification time",
+                Some(path.to_owned()),
                 source,
-            }
+            )
         })?)?;
         let identity =
             PersonalOriginalIdentity::new(uri, mtime).with_original_byte_size(metadata.len());
@@ -255,9 +254,10 @@ impl SharedRepositoryContext {
         let repository_root = repository_root.as_ref();
         let original_child_name = original_child_name.as_ref();
         if !repository_root.is_absolute() {
-            return Err(ThumbnailError::CacheRootUnavailable(
-                "shared repository root must be absolute",
-            ));
+            return Err(ThumbnailError::InvalidCacheRoot {
+                path: repository_root.to_owned(),
+                problem: CacheRootProblem::NotAbsolute,
+            });
         }
         let shared_uri =
             SharedRelativeOriginalUri::from_raw_child_name(original_child_name.as_bytes())?;
