@@ -249,6 +249,29 @@ fn validated_lookup_rejects_symlink_and_non_regular_entries() {
 }
 
 #[test]
+fn validated_lookup_reports_permission_denied_entries_as_unreadable() {
+    let temp = TempDir::new().unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = original_identity(42);
+    let path = root.cache_entry_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::Normal),
+    );
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, png_with_metadata(metadata("42"))).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+    assert_unreadable_lookup(
+        root.lookup_thumbnail_png_bytes(&original, ThumbnailSize::Normal)
+            .unwrap(),
+    );
+    assert_unreadable_lookup(
+        root.lookup_thumbnail_path(&original, ThumbnailSize::Normal)
+            .unwrap(),
+    );
+}
+
+#[test]
 fn display_lookup_uses_larger_personal_source_when_exact_is_missing() {
     let temp = TempDir::new().unwrap();
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();

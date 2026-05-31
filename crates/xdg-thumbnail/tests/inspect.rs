@@ -51,6 +51,12 @@ fn inspection_iterates_standard_entries_and_reports_facts() {
         default_entries[0].original_uri(),
         Some(OriginalUriIdentity::Personal(uri)) if uri.as_str() == "file:///home/alice/photo.png"
     ));
+    assert_eq!(
+        default_entries[0]
+            .metadata()
+            .and_then(|metadata| metadata.thumb_uri()),
+        Some("file:///home/alice/photo.png")
+    );
 
     let visible_entries = root
         .inspect_thumbnails(&[ThumbnailSize::Normal], NonstandardEntryPolicy::Include)
@@ -58,6 +64,7 @@ fn inspection_iterates_standard_entries_and_reports_facts() {
     assert_eq!(visible_entries.len(), 2);
     assert!(visible_entries.iter().any(|entry| {
         matches!(entry.outcome(), CacheEntryInspectionOutcome::Invalid(problems) if problems.contains(&CacheEntryProblem::NonstandardFilename))
+            && entry.metadata().is_none()
     }));
 }
 

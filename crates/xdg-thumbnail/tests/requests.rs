@@ -448,6 +448,13 @@ fn personal_inspection_request_owns_size_vector() {
     assert!(parts.timestamps.modified_at().is_some());
     assert_eq!(parts.namespace, CacheNamespace::Size(ThumbnailSize::Normal));
     assert_eq!(parts.path, installed.path());
+    assert_eq!(
+        parts
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.thumb_uri()),
+        Some(original.identity().uri().as_str())
+    );
     assert_eq!(parts.handle.path(), installed.path());
 }
 

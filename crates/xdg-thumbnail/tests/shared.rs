@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::symlink;
+use std::os::unix::fs::{PermissionsExt, symlink};
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
@@ -219,6 +219,32 @@ fn shared_validated_lookup_rejects_symlink_and_non_regular_entries() {
 
     std::fs::remove_file(&path).unwrap();
     std::fs::create_dir(&path).unwrap();
+    assert_unreadable_shared_lookup(
+        context
+            .lookup_thumbnail_path(require_complete_facts(), ThumbnailSize::Normal)
+            .unwrap(),
+    );
+}
+
+#[test]
+fn shared_validated_lookup_reports_permission_denied_entries_as_unreadable() {
+    let temp = TempDir::new().unwrap();
+    let context =
+        SharedRepositoryContext::new(temp.path(), OsStr::from_bytes(b"picture.png")).unwrap();
+    let path = context.cache_entry_path(ThumbnailSize::Normal);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &path,
+        shared_png(metadata("./picture.png", Some("42"), Some("12"))),
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+    assert_unreadable_shared_lookup(
+        context
+            .lookup_thumbnail_png_bytes(require_complete_facts(), ThumbnailSize::Normal)
+            .unwrap(),
+    );
     assert_unreadable_shared_lookup(
         context
             .lookup_thumbnail_path(require_complete_facts(), ThumbnailSize::Normal)
