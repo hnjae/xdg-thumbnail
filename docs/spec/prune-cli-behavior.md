@@ -16,8 +16,8 @@ Options:
 --older-than <DURATION>       Age threshold for remote, virtual, and removable entries under the selected age basis. Defaults to 30d. See Duration Syntax.
 --delete                      Apply deletion decisions. Without this option, prune only reports planned actions.
 --allow-stale-local-deletion  Allow stale local thumbnails to become deletion candidates. Actual deletion still requires --delete.
---allow-failure-deletion      Allow scanned failure entries to become deletion candidates. Actual deletion still requires --delete.
---size <SIZE>                 Restrict successful thumbnail scan to one size namespace: normal, large, x-large, or xx-large. Can be passed multiple times.
+--allow-failure-deletion      Allow scanned failure entries to become deletion candidates. Requires --scope failures or --scope all. Actual deletion still requires --delete.
+--size <SIZE>                 Restrict successful thumbnail scan to one size namespace: normal, large, x-large, or xx-large. Can be passed multiple times; duplicate values are ignored after their first occurrence.
 --scope <SCOPE>               Restrict scan scope: thumbnails, failures, or all. Defaults to thumbnails.
 --include-nonstandard-files   Include nonstandard filenames in reports as skipped entries.
 --removable-prefix <PATH>     Add a local path prefix that should use age-based cleanup. Can be passed multiple times.

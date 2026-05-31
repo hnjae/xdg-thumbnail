@@ -13,7 +13,7 @@ xdg-thumbnail-generate [OPTIONS] <PATH>...
 Options:
 
 ```text
---size <SIZE>                 Generate one size namespace: normal, large, x-large, or xx-large. Defaults to normal. Can be passed multiple times.
+--size <SIZE>                 Restrict generation to one size namespace: normal, large, x-large, or xx-large. Defaults to all supported sizes. Can be passed multiple times; duplicate values are ignored after their first occurrence.
 --force                       Regenerate even when a valid target thumbnail already exists.
 --dry-run                     Report planned thumbnailer selection, sandbox eligibility, and target paths without running thumbnailers or writing cache entries.
 --timeout <DURATION>          Maximum runtime for each thumbnailer invocation. Defaults to 30s. See Duration Syntax.
@@ -97,7 +97,7 @@ The default human output should report generated entries, kept valid entries, sk
 
 Each JSONL entry record must include at least `schema_version: 0`, `event: "entry"`, `input_path_display`, `input_path_bytes_b64`, `uri`, `thumbnailer_uri`, `mime_type`, `thumbnailer`, `sandbox_mode`, `sandbox_applied`, `sandbox_eligibility`, `namespace`, `cache_path_display`, `cache_path_bytes_b64`, `decision`, `applied`, `reason`, and `error`. The `uri` field is the canonical cache identity URI used for hashing and installed metadata. The `thumbnailer_uri` field is the `%u` value passed to the thumbnailer and is `null` when no thumbnailer command is planned or run. The `*_display` fields are human-oriented UTF-8 strings suitable for logs and may use escaping or replacement for non-UTF-8 path bytes. The `*_bytes_b64` fields use unpadded RFC 4648 standard base64 over the exact Unix path bytes and are the lossless machine-readable representation; they are `null` only when the corresponding path could not be computed. Nullable fields are represented as `null` rather than omitted when the value could not be computed. `error` is either `null` or an object with stable `kind` and human-oriented `message` fields. Summary records use `event: "summary"` with counters for requested, planned, generated, kept, skipped, failed, warnings, and `exit_code`. `planned` counts dry-run input-size pairs whose thumbnailer command plan was completed and would be run in a write run. `generated` counts only successful cache writes performed by the current process. Warning records use `event: "warning"` and do not replace per-entry records.
 
-The initial stable `reason` identifiers are `already-valid`, `created`, `dry-run`, `uri-construction-failed`, `unsupported-input`, `input-unreadable`, `original-metadata-unavailable`, `mime-unknown`, `no-matching-thumbnailer`, `thumbnailer-entry-invalid`, `sandbox-unavailable`, `sandbox-ineligible`, `thumbnailer-exit`, `thumbnailer-timeout`, `thumbnailer-output-missing`, `thumbnailer-output-unreadable`, `output-invalid-png`, `output-unsupported-png`, `output-normalization-failed`, `metadata-write-failed`, `permission-setup-failed`, and `cache-install-failed`. Additional reason identifiers require a spec update when they affect documented behavior or output compatibility.
+The initial stable `reason` identifiers are `already-valid`, `created`, `dry-run`, `uri-construction-failed`, `unsupported-input`, `input-unreadable`, `original-metadata-unavailable`, `cache-lookup-failed`, `mime-unknown`, `no-matching-thumbnailer`, `thumbnailer-entry-invalid`, `sandbox-unavailable`, `sandbox-ineligible`, `thumbnailer-exit`, `thumbnailer-timeout`, `thumbnailer-output-missing`, `thumbnailer-output-unreadable`, `output-invalid-png`, `output-unsupported-png`, `output-normalization-failed`, `metadata-write-failed`, `permission-setup-failed`, and `cache-install-failed`. Cache lookup failure means the CLI could confirm original readability but could not reliably inspect an existing target cache entry; that input-size pair is skipped and contributes to exit code `4`. Additional reason identifiers require a spec update when they affect documented behavior or output compatibility.
 
 Each reported human entry should include the input path, canonical cache identity URI when it could be constructed, thumbnailer input URI when it differs from the cache identity URI, MIME type when known, selected thumbnailer when one was selected, sandbox mode and whether sandbox isolation was applied, target namespace, target cache path when it could be computed, decision, whether the decision was applied, and reason.
 
@@ -126,6 +126,8 @@ keep normal/0123456789abcdef0123456789abcdef.png input=/home/alice/existing.png 
 skip /home/alice/archive.foo reason=no-matching-thumbnailer
 summary inputs=3 requested=3 planned=0 generated=1 kept=1 skipped=1 failed=0
 ```
+
+The example assumes `--size normal`; without an explicit `--size`, each input is requested for all supported size namespaces.
 
 ## Exit Codes
 
