@@ -92,7 +92,10 @@ struct Cli {
         help = "Output format: human or jsonl."
     )]
     format: FormatArg,
-    #[arg(long, help = "Print classification and timestamp details.")]
+    #[arg(
+        long,
+        help = "Include kept entries and timestamp details in human output."
+    )]
     verbose: bool,
     #[arg(
         long,
@@ -744,23 +747,39 @@ fn write_human(records: &[EntryRecord], summary: &Summary, age_basis: AgeBasisAr
         } else {
             record.decision
         };
-        println!(
-            "{action} {} uri={} class={} decision={} applied={} reason={} basis={} error={}",
-            record.thumbnail_path_display,
-            record.uri.as_deref().unwrap_or(""),
-            record.classification,
-            record.decision,
-            record.applied,
-            record.reason.unwrap_or("none"),
-            record.age_basis,
-            record
-                .error
-                .as_ref()
-                .map_or("none".to_owned(), |error| format!(
-                    "{}:{}",
-                    error.kind, error.message
-                ))
-        );
+        let error = record.error.as_ref().map_or("none".to_owned(), |error| {
+            format!("{}:{}", error.kind, error.message)
+        });
+        if verbose {
+            let timestamp = record
+                .timestamp
+                .map_or("none".to_owned(), |timestamp| timestamp.to_string());
+            println!(
+                "{action} {} uri={} class={} decision={} applied={} reason={} basis={} timestamp={} access-time-preservation={} error={}",
+                record.thumbnail_path_display,
+                record.uri.as_deref().unwrap_or(""),
+                record.classification,
+                record.decision,
+                record.applied,
+                record.reason.unwrap_or("none"),
+                record.age_basis,
+                timestamp,
+                record.access_time_preservation,
+                error
+            );
+        } else {
+            println!(
+                "{action} {} uri={} class={} decision={} applied={} reason={} basis={} error={}",
+                record.thumbnail_path_display,
+                record.uri.as_deref().unwrap_or(""),
+                record.classification,
+                record.decision,
+                record.applied,
+                record.reason.unwrap_or("none"),
+                record.age_basis,
+                error
+            );
+        }
     }
     println!(
         "summary scanned={} kept={} would-delete={} deleted={} skipped={} errors={} basis={} timestamp-unavailable={} timestamp-unreliable={} timestamp-preservation-unavailable={}",

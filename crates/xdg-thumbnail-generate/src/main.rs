@@ -72,11 +72,6 @@ struct Cli {
     format: FormatArg,
     #[arg(
         long,
-        help = "Print discovery, MIME, command, validation, and cache-write details."
-    )]
-    verbose: bool,
-    #[arg(
-        long,
         value_enum,
         value_name = "SHELL",
         conflicts_with = "generate_manpage",
