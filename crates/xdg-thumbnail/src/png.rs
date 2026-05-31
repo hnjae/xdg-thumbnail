@@ -829,8 +829,7 @@ fn compare_personal_metadata(
         ),
     }
 
-    compare_optional_size(problems, metadata, original.original_byte_size(), true);
-    compare_optional_mimetype(problems, metadata, original.mime_type());
+    compare_optional_size(problems, metadata, original.original_byte_size(), false);
 }
 
 fn compare_optional_size(
@@ -863,44 +862,6 @@ fn compare_optional_size(
                 ThumbnailMetadataProblemKind::InvalidSyntax,
             ),
         ),
-    }
-}
-
-fn compare_optional_mimetype(
-    problems: &mut Vec<CacheEntryProblem>,
-    metadata: &ThumbnailMetadata,
-    expected: Option<&str>,
-) {
-    let Some(stored) = metadata.thumb_mime_type() else {
-        if expected.is_some() {
-            push_problem(
-                problems,
-                metadata_problem(
-                    ThumbnailMetadataKey::MimeType,
-                    ThumbnailMetadataProblemKind::MissingRequired,
-                ),
-            );
-        }
-        return;
-    };
-    if validate_mime_type(stored).is_err() {
-        push_problem(
-            problems,
-            metadata_problem(
-                ThumbnailMetadataKey::MimeType,
-                ThumbnailMetadataProblemKind::InvalidSyntax,
-            ),
-        );
-    } else if let Some(expected) = expected {
-        if stored != expected {
-            push_problem(
-                problems,
-                metadata_problem(
-                    ThumbnailMetadataKey::MimeType,
-                    ThumbnailMetadataProblemKind::ValueMismatch,
-                ),
-            );
-        }
     }
 }
 
