@@ -163,6 +163,12 @@ impl ReadablePersonalOriginalIdentity {
         Self { identity }
     }
 
+    /// Consumes this readability wrapper and returns the underlying identity facts.
+    #[must_use]
+    pub fn into_identity(self) -> PersonalOriginalIdentity {
+        self.identity
+    }
+
     /// Opens a local original for reading and derives its identity facts.
     ///
     /// This performs blocking filesystem I/O. Async applications should call it from a blocking
