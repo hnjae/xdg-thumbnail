@@ -94,6 +94,7 @@ pub enum NonstandardEntryPolicy {
 pub struct CacheEntryInspection {
     outcome: CacheEntryInspectionOutcome,
     original_uri: Option<OriginalUriIdentity>,
+    metadata: Option<ThumbnailMetadata>,
     timestamps: ThumbnailTimestamps,
     namespace: CacheNamespace,
     path: PathBuf,
@@ -111,6 +112,12 @@ impl CacheEntryInspection {
     #[must_use]
     pub const fn original_uri(&self) -> Option<&OriginalUriIdentity> {
         self.original_uri.as_ref()
+    }
+
+    /// Returns parsed metadata when the entry was a readable PNG.
+    #[must_use]
+    pub const fn metadata(&self) -> Option<&ThumbnailMetadata> {
+        self.metadata.as_ref()
     }
 
     /// Returns timestamp facts.
@@ -149,6 +156,7 @@ impl CacheEntryInspection {
         CacheEntryInspectionParts {
             outcome: self.outcome,
             original_uri: self.original_uri,
+            metadata: self.metadata,
             timestamps: self.timestamps,
             namespace: self.namespace,
             path: self.path,
@@ -165,6 +173,8 @@ pub struct CacheEntryInspectionParts {
     pub outcome: CacheEntryInspectionOutcome,
     /// Original URI parsed from metadata when present and valid.
     pub original_uri: Option<OriginalUriIdentity>,
+    /// Parsed metadata when the entry was a readable PNG.
+    pub metadata: Option<ThumbnailMetadata>,
     /// Timestamp facts.
     pub timestamps: ThumbnailTimestamps,
     /// Cache namespace.
@@ -357,6 +367,7 @@ fn inspect_namespace_dir(
                     CacheEntryProblem::NonstandardFilename,
                 ]),
                 original_uri: None,
+                metadata: None,
                 timestamps,
                 namespace: namespace.clone(),
                 path,
@@ -382,6 +393,7 @@ fn inspect_cache_entry(
                     CacheEntryProblem::UnreadableEntry,
                 ]),
                 original_uri: None,
+                metadata: None,
                 timestamps,
                 namespace,
                 path,
@@ -394,6 +406,7 @@ fn inspect_cache_entry(
         return CacheEntryInspection {
             outcome: CacheEntryInspectionOutcome::Invalid(vec![CacheEntryProblem::UnreadableEntry]),
             original_uri: None,
+            metadata: None,
             timestamps,
             namespace,
             path,
@@ -411,6 +424,7 @@ fn inspect_cache_entry(
                     CacheEntryProblem::UnreadableEntry,
                 ]),
                 original_uri: None,
+                metadata: None,
                 timestamps,
                 namespace,
                 path,
@@ -427,6 +441,7 @@ fn inspect_cache_entry(
                     CacheEntryProblem::ResourceLimitExceeded,
                 ]),
                 original_uri: None,
+                metadata: None,
                 timestamps,
                 namespace,
                 path,
@@ -439,6 +454,7 @@ fn inspect_cache_entry(
                     CacheEntryProblem::InvalidPngStructure,
                 ]),
                 original_uri: None,
+                metadata: None,
                 timestamps,
                 namespace,
                 path,
@@ -462,6 +478,7 @@ fn inspect_cache_entry(
     CacheEntryInspection {
         outcome,
         original_uri,
+        metadata: Some(parsed.into_metadata()),
         timestamps,
         namespace,
         path,
