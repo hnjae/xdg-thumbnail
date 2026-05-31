@@ -150,13 +150,13 @@ pub struct SharedRelativeOriginalUri {
     value: String,
 }
 
-pub struct UnixMTimeSeconds {
+pub struct UnixMtimeSeconds {
     seconds: u64,
 }
 
 pub struct OriginalIdentity {
     uri: PersonalOriginalUri,
-    mtime: UnixMTimeSeconds,
+    mtime: UnixMtimeSeconds,
     original_byte_size: Option<u64>,
     mime_type: Option<String>,
 }
@@ -183,17 +183,20 @@ pub enum OriginalUriIdentity {
 
 #[non_exhaustive]
 pub enum CacheEntryProblem {
-    StaleMetadata,
+    Metadata(ThumbnailMetadataProblem),
     UnreadableEntry,
     UnverifiableOriginal,
-    MissingRequiredMetadata,
-    InvalidMetadataSyntax,
     InvalidPngStructure,
     NonconformingPngFormat,
     DimensionsExceedNamespace,
     ResourceLimitExceeded,
     NonstandardFilename,
     UriFilenameMismatch,
+}
+
+pub struct ThumbnailMetadataProblem {
+    key: ThumbnailMetadataKey,
+    kind: ThumbnailMetadataProblemKind,
 }
 
 #[non_exhaustive]
@@ -256,7 +259,7 @@ pub struct CacheEntryHandle {
 }
 ```
 
-`UnixMTimeSeconds` stores the whole Unix epoch seconds used in `Thumb::MTime`; constructors from filesystem metadata must define truncation, pre-epoch, and overflow handling before validation or writes depend on the value. `OriginalIdentity` stores the canonical personal URI plus freshness and write facts needed for validation and cache writes: modification time, optional original byte size, and optional MIME type. `PersonalOriginalUri` and `SharedRelativeOriginalUri` remain separate URI-only types so an absolute personal-cache URI cannot accidentally be reused as a shared-repository lookup key. `FailureNamespace` values must be validated direct directory names before use. The initial accepted character set is ASCII letters, digits, `.`, `_`, `+`, and `-`; empty values, `.`, `..`, path separators, NUL, and control characters are rejected.
+`UnixMtimeSeconds` stores the whole Unix epoch seconds used in `Thumb::MTime`; constructors from filesystem metadata must define truncation, pre-epoch, and overflow handling before validation or writes depend on the value. `OriginalIdentity` stores the canonical personal URI plus freshness and write facts needed for validation and cache writes: modification time, optional original byte size, and optional MIME type. `PersonalOriginalUri` and `SharedRelativeOriginalUri` remain separate URI-only types so an absolute personal-cache URI cannot accidentally be reused as a shared-repository lookup key. `FailureNamespace` values must be validated direct directory names before use. The initial accepted character set is ASCII letters, digits, `.`, `_`, `+`, and `-`; empty values, `.`, `..`, path separators, NUL, and control characters are rejected.
 
 The exact names can change during implementation, but the direction should remain: the library describes cache entries and filesystem facts with enough precision to avoid accidental cleanup policy, while the prune CLI classifies entries, decides which cleanup policy to run, and requests destructive changes only through library-provided cache entry handles.
 

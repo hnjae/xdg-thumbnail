@@ -12,7 +12,8 @@ use std::os::unix::fs::MetadataExt;
 use crate::{
     CacheEntryProblem, CacheNamespace, FailureNamespace, ParsedThumbnailPng, PersonalCacheRoot,
     PersonalOriginalUri, Result, SharedRelativeOriginalUri, ThumbnailError, ThumbnailMetadata,
-    ThumbnailSize, push_problem, validate_mime_type,
+    ThumbnailMetadataKey, ThumbnailMetadataProblemKind, ThumbnailSize, metadata_problem,
+    push_problem, validate_mime_type,
 };
 
 /// Original URI identity parsed from a cache entry.
@@ -89,7 +90,7 @@ pub enum NonstandardEntryPolicy {
 }
 
 /// Policy-neutral inspection facts for a cache entry.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct CacheEntryInspection {
     outcome: CacheEntryInspectionOutcome,
     original_uri: Option<OriginalUriIdentity>,
@@ -135,10 +136,16 @@ impl CacheEntryInspection {
     pub const fn handle(&self) -> &CacheEntryHandle {
         &self.handle
     }
+
+    /// Consumes this inspection and returns its removal handle.
+    #[must_use]
+    pub fn into_handle(self) -> CacheEntryHandle {
+        self.handle
+    }
 }
 
 /// A handle for a discovered cache entry.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct CacheEntryHandle {
     cache_dir: PathBuf,
     path: PathBuf,
@@ -151,8 +158,8 @@ impl CacheEntryHandle {
     ///
     /// Returns an error when the handled path no longer passes containment or symlink safety checks
     /// or when filesystem removal fails.
-    pub fn remove(&self) -> Result<()> {
-        remove_cache_entry_handle(self)
+    pub fn remove(self) -> Result<()> {
+        remove_cache_entry_handle(&self)
     }
 
     /// Returns the handled path.
@@ -423,26 +430,62 @@ fn inspect_required_metadata(
         Some(uri) => match PersonalOriginalUri::from_validated_absolute_uri(uri) {
             Ok(uri) => Some(OriginalUriIdentity::Personal(uri)),
             Err(_) => {
-                push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax);
+                push_problem(
+                    problems,
+                    metadata_problem(
+                        ThumbnailMetadataKey::Uri,
+                        ThumbnailMetadataProblemKind::InvalidSyntax,
+                    ),
+                );
                 None
             }
         },
         None => {
-            push_problem(problems, CacheEntryProblem::MissingRequiredMetadata);
+            push_problem(
+                problems,
+                metadata_problem(
+                    ThumbnailMetadataKey::Uri,
+                    ThumbnailMetadataProblemKind::MissingRequired,
+                ),
+            );
             None
         }
     };
     match metadata.thumb_mtime_result() {
         Ok(Some(_)) => {}
-        Ok(None) => push_problem(problems, CacheEntryProblem::MissingRequiredMetadata),
-        Err(_) => push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax),
+        Ok(None) => push_problem(
+            problems,
+            metadata_problem(
+                ThumbnailMetadataKey::Mtime,
+                ThumbnailMetadataProblemKind::MissingRequired,
+            ),
+        ),
+        Err(_) => push_problem(
+            problems,
+            metadata_problem(
+                ThumbnailMetadataKey::Mtime,
+                ThumbnailMetadataProblemKind::InvalidSyntax,
+            ),
+        ),
     }
     if metadata.thumb_size_result().is_err() {
-        push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax);
+        push_problem(
+            problems,
+            metadata_problem(
+                ThumbnailMetadataKey::Size,
+                ThumbnailMetadataProblemKind::InvalidSyntax,
+            ),
+        );
     }
     if let Some(mime_type) = metadata.thumb_mime_type() {
         if validate_mime_type(mime_type).is_err() {
-            push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax);
+            push_problem(
+                problems,
+                metadata_problem(
+                    ThumbnailMetadataKey::MimeType,
+                    ThumbnailMetadataProblemKind::InvalidSyntax,
+                ),
+            );
         }
     }
     original_uri

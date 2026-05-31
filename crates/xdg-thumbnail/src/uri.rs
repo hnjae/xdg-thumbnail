@@ -4,6 +4,7 @@
 use std::fmt;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
+use std::str::FromStr;
 
 use crate::{Result, ThumbnailError};
 
@@ -145,6 +146,12 @@ impl fmt::Display for PersonalOriginalUri {
     }
 }
 
+impl AsRef<str> for PersonalOriginalUri {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
 /// A canonical `./`-prefixed URI identity for direct children in shared repositories.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SharedRelativeOriginalUri {
@@ -207,6 +214,20 @@ impl SharedRelativeOriginalUri {
 impl fmt::Display for SharedRelativeOriginalUri {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.value)
+    }
+}
+
+impl AsRef<str> for SharedRelativeOriginalUri {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl FromStr for SharedRelativeOriginalUri {
+    type Err = ThumbnailError;
+
+    fn from_str(value: &str) -> Result<Self> {
+        Self::parse(value)
     }
 }
 

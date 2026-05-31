@@ -19,10 +19,11 @@ use crate::{
     OwnedRawThumbnailImage, ParsedThumbnailPng, PersonalValidationOutcome, RawThumbnailImage,
     ReadableOriginalIdentity, Result, SharedRelativeOriginalUri, SharedRepositoryContext,
     SharedValidationOutcome, ThumbnailError, ThumbnailMetadata, ThumbnailSize, ThumbnailTimestamps,
-    UnixMTimeSeconds, decode_validated_thumbnail_png_to_rgba8, encode_rgba_png,
-    normalized_personal_thumbnail_png, normalized_personal_thumbnail_raw_png,
+    UnixMtimeSeconds, decode_validated_thumbnail_png_to_rgba8, encode_rgba_png, metadata_problem,
+    normalized_personal_thumbnail_png, normalized_personal_thumbnail_raw_png, push_problem,
     thumbnail_metadata_pairs, validate_personal_thumbnail, validate_shared_thumbnail,
 };
+use crate::{ThumbnailMetadataKey, ThumbnailMetadataProblemKind};
 
 /// Root directory of the personal thumbnail cache, usually `$XDG_CACHE_HOME/thumbnails`.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -423,6 +424,12 @@ impl PersonalCacheRoot {
     }
 }
 
+impl AsRef<Path> for PersonalCacheRoot {
+    fn as_ref(&self) -> &Path {
+        self.as_path()
+    }
+}
+
 impl SharedRepositoryContext {
     /// Returns a validated shared-repository path for integrations that must pass a filename.
     ///
@@ -578,9 +585,10 @@ impl SharedRepositoryContext {
                 if original_facts.metadata_policy()
                     == SharedThumbnailMetadataPolicy::RequireComplete
                 {
-                    Ok(SharedThumbnailLookup::Invalid(vec![
-                        CacheEntryProblem::MissingRequiredMetadata,
-                    ]))
+                    let parsed = ParsedThumbnailPng::parse(&bytes)?;
+                    Ok(SharedThumbnailLookup::Invalid(
+                        missing_required_shared_metadata_problems(parsed.metadata()),
+                    ))
                 } else {
                     let parsed = ParsedThumbnailPng::parse(&bytes)?;
                     Ok(SharedThumbnailLookup::MetadataIncomplete(
@@ -668,6 +676,31 @@ impl SharedRepositoryContext {
             metadata: parsed.map(ParsedThumbnailPng::into_metadata),
         }))
     }
+}
+
+fn missing_required_shared_metadata_problems(
+    metadata: &ThumbnailMetadata,
+) -> Vec<CacheEntryProblem> {
+    let mut problems = Vec::new();
+    if metadata.thumb_uri().is_none() {
+        push_problem(
+            &mut problems,
+            metadata_problem(
+                ThumbnailMetadataKey::Uri,
+                ThumbnailMetadataProblemKind::MissingRequired,
+            ),
+        );
+    }
+    if matches!(metadata.thumb_mtime_result(), Ok(None)) {
+        push_problem(
+            &mut problems,
+            metadata_problem(
+                ThumbnailMetadataKey::Mtime,
+                ThumbnailMetadataProblemKind::MissingRequired,
+            ),
+        );
+    }
+    problems
 }
 
 /// Owned personal-cache lookup request for async or runtime-specific adapters.
@@ -1403,7 +1436,7 @@ pub enum SharedThumbnailMetadataPolicy {
 /// Policy-neutral original freshness facts for shared-repository validation and inspection.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct SharedOriginalMetadata {
-    mtime: Option<UnixMTimeSeconds>,
+    mtime: Option<UnixMtimeSeconds>,
     original_byte_size: Option<u64>,
 }
 
@@ -1419,7 +1452,7 @@ impl SharedOriginalMetadata {
 
     /// Adds a known original modification time.
     #[must_use]
-    pub const fn with_mtime(mut self, mtime: UnixMTimeSeconds) -> Self {
+    pub const fn with_mtime(mut self, mtime: UnixMtimeSeconds) -> Self {
         self.mtime = Some(mtime);
         self
     }
@@ -1433,7 +1466,7 @@ impl SharedOriginalMetadata {
 
     /// Returns the original modification time when known.
     #[must_use]
-    pub const fn mtime(&self) -> Option<UnixMTimeSeconds> {
+    pub const fn mtime(&self) -> Option<UnixMtimeSeconds> {
         self.mtime
     }
 
@@ -1472,7 +1505,7 @@ impl SharedOriginalFacts {
 
     /// Returns the original modification time when known.
     #[must_use]
-    pub const fn mtime(&self) -> Option<UnixMTimeSeconds> {
+    pub const fn mtime(&self) -> Option<UnixMtimeSeconds> {
         self.metadata.mtime()
     }
 
@@ -1744,6 +1777,12 @@ impl InstalledThumbnailPath {
     #[must_use]
     pub fn into_path_buf(self) -> PathBuf {
         self.path
+    }
+}
+
+impl AsRef<Path> for InstalledThumbnailPath {
+    fn as_ref(&self) -> &Path {
+        self.path()
     }
 }
 

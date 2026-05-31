@@ -8,7 +8,7 @@ use crate::uri::validate_absolute_uri_identity;
 use crate::{
     OriginalIdentity, ReadableOriginalIdentity, Result, SharedOriginalMetadata,
     SharedRelativeOriginalUri, SharedRepositoryContext, ThumbnailError, ThumbnailSize,
-    UnixMTimeSeconds,
+    UnixMtimeSeconds,
 };
 
 const MAX_RENDERED_PIXELS: u64 = 16_777_216;
@@ -210,16 +210,12 @@ pub struct OwnedRawThumbnailImageParts {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[non_exhaustive]
 pub enum CacheEntryProblem {
-    /// Metadata is well-formed but no longer matches the original.
-    StaleMetadata,
+    /// A standard thumbnail metadata key is missing, malformed, or does not match.
+    Metadata(ThumbnailMetadataProblem),
     /// The cache entry itself could not be read well enough to validate.
     UnreadableEntry,
     /// The original cannot be verified in this validation context.
     UnverifiableOriginal,
-    /// Required metadata is missing for this validation context.
-    MissingRequiredMetadata,
-    /// Present metadata has invalid syntax.
-    InvalidMetadataSyntax,
     /// PNG structure could not be decoded.
     InvalidPngStructure,
     /// PNG encoding does not conform to the successful-thumbnail requirements.
@@ -232,6 +228,59 @@ pub enum CacheEntryProblem {
     NonstandardFilename,
     /// The standard cache filename does not match the stored thumbnail URI identity.
     UriFilenameMismatch,
+}
+
+/// Standard thumbnail metadata key involved in a validation or inspection problem.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
+pub enum ThumbnailMetadataKey {
+    /// `Thumb::URI`.
+    Uri,
+    /// `Thumb::MTime`.
+    Mtime,
+    /// `Thumb::Size`.
+    Size,
+    /// `Thumb::Mimetype`.
+    MimeType,
+}
+
+/// Kind of problem found for a standard thumbnail metadata key.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
+pub enum ThumbnailMetadataProblemKind {
+    /// Required metadata is missing for this validation context.
+    MissingRequired,
+    /// Present metadata has invalid syntax.
+    InvalidSyntax,
+    /// Metadata is well-formed but does not match the expected value.
+    ValueMismatch,
+}
+
+/// Key-specific thumbnail metadata problem.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ThumbnailMetadataProblem {
+    key: ThumbnailMetadataKey,
+    kind: ThumbnailMetadataProblemKind,
+}
+
+impl ThumbnailMetadataProblem {
+    /// Creates a metadata problem from its key and kind.
+    #[must_use]
+    pub const fn new(key: ThumbnailMetadataKey, kind: ThumbnailMetadataProblemKind) -> Self {
+        Self { key, kind }
+    }
+
+    /// Returns the affected metadata key.
+    #[must_use]
+    pub const fn key(self) -> ThumbnailMetadataKey {
+        self.key
+    }
+
+    /// Returns the metadata problem kind.
+    #[must_use]
+    pub const fn kind(self) -> ThumbnailMetadataProblemKind {
+        self.kind
+    }
 }
 
 /// Validation confidence and validity for a personal-cache entry.
@@ -284,7 +333,7 @@ impl ThumbnailMetadata {
 
     /// Returns parsed `Thumb::MTime` when present and syntactically valid.
     #[must_use]
-    pub fn thumb_mtime(&self) -> Option<UnixMTimeSeconds> {
+    pub fn thumb_mtime(&self) -> Option<UnixMtimeSeconds> {
         self.try_thumb_mtime().ok().flatten()
     }
 
@@ -294,11 +343,11 @@ impl ThumbnailMetadata {
     ///
     /// Returns an error when `Thumb::MTime` is present but not a non-negative whole Unix epoch
     /// second value.
-    pub fn try_thumb_mtime(&self) -> Result<Option<UnixMTimeSeconds>> {
+    pub fn try_thumb_mtime(&self) -> Result<Option<UnixMtimeSeconds>> {
         self.get("Thumb::MTime").map(parse_thumb_mtime).transpose()
     }
 
-    pub(crate) fn thumb_mtime_result(&self) -> Result<Option<UnixMTimeSeconds>> {
+    pub(crate) fn thumb_mtime_result(&self) -> Result<Option<UnixMtimeSeconds>> {
         self.try_thumb_mtime()
     }
 
@@ -328,10 +377,10 @@ impl ThumbnailMetadata {
     }
 }
 
-fn parse_thumb_mtime(value: &str) -> Result<UnixMTimeSeconds> {
+fn parse_thumb_mtime(value: &str) -> Result<UnixMtimeSeconds> {
     value
         .parse::<u64>()
-        .map(UnixMTimeSeconds::new)
+        .map(UnixMtimeSeconds::new)
         .map_err(|_| ThumbnailError::InvalidMetadata("invalid Thumb::MTime"))
 }
 
@@ -633,21 +682,50 @@ pub fn validate_shared_thumbnail(
     match metadata.thumb_uri() {
         Some(uri) if uri == context.shared_uri().as_str() => {}
         Some(uri) if SharedRelativeOriginalUri::parse(uri).is_err() => {
-            push_problem(&mut problems, CacheEntryProblem::InvalidMetadataSyntax);
+            push_problem(
+                &mut problems,
+                metadata_problem(
+                    ThumbnailMetadataKey::Uri,
+                    ThumbnailMetadataProblemKind::InvalidSyntax,
+                ),
+            );
         }
-        Some(_) => push_problem(&mut problems, CacheEntryProblem::StaleMetadata),
+        Some(_) => push_problem(
+            &mut problems,
+            metadata_problem(
+                ThumbnailMetadataKey::Uri,
+                ThumbnailMetadataProblemKind::ValueMismatch,
+            ),
+        ),
         None => incomplete = true,
     }
 
     match (metadata.thumb_mtime_result(), original.mtime()) {
         (Ok(Some(stored)), Some(expected)) if stored == expected => {}
-        (Ok(Some(_)), Some(_)) => push_problem(&mut problems, CacheEntryProblem::StaleMetadata),
+        (Ok(Some(_)), Some(_)) => push_problem(
+            &mut problems,
+            metadata_problem(
+                ThumbnailMetadataKey::Mtime,
+                ThumbnailMetadataProblemKind::ValueMismatch,
+            ),
+        ),
         (Ok(Some(_)), None) => push_problem(&mut problems, CacheEntryProblem::UnverifiableOriginal),
         (Ok(None), _) => incomplete = true,
-        (Err(_), _) => push_problem(&mut problems, CacheEntryProblem::InvalidMetadataSyntax),
+        (Err(_), _) => push_problem(
+            &mut problems,
+            metadata_problem(
+                ThumbnailMetadataKey::Mtime,
+                ThumbnailMetadataProblemKind::InvalidSyntax,
+            ),
+        ),
     }
 
-    compare_optional_size(&mut problems, metadata, original.original_byte_size());
+    compare_optional_size(
+        &mut problems,
+        metadata,
+        original.original_byte_size(),
+        false,
+    );
 
     if !problems.is_empty() {
         SharedValidationOutcome::Invalid(problems)
@@ -666,20 +744,56 @@ fn compare_personal_metadata(
     match metadata.thumb_uri() {
         Some(uri) if uri == original.uri().as_str() => {}
         Some(uri) if validate_absolute_uri_identity(uri).is_err() => {
-            push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax);
+            push_problem(
+                problems,
+                metadata_problem(
+                    ThumbnailMetadataKey::Uri,
+                    ThumbnailMetadataProblemKind::InvalidSyntax,
+                ),
+            );
         }
-        Some(_) => push_problem(problems, CacheEntryProblem::StaleMetadata),
-        None => push_problem(problems, CacheEntryProblem::MissingRequiredMetadata),
+        Some(_) => push_problem(
+            problems,
+            metadata_problem(
+                ThumbnailMetadataKey::Uri,
+                ThumbnailMetadataProblemKind::ValueMismatch,
+            ),
+        ),
+        None => push_problem(
+            problems,
+            metadata_problem(
+                ThumbnailMetadataKey::Uri,
+                ThumbnailMetadataProblemKind::MissingRequired,
+            ),
+        ),
     }
 
     match metadata.thumb_mtime_result() {
         Ok(Some(mtime)) if mtime == original.mtime() => {}
-        Ok(Some(_)) => push_problem(problems, CacheEntryProblem::StaleMetadata),
-        Ok(None) => push_problem(problems, CacheEntryProblem::MissingRequiredMetadata),
-        Err(_) => push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax),
+        Ok(Some(_)) => push_problem(
+            problems,
+            metadata_problem(
+                ThumbnailMetadataKey::Mtime,
+                ThumbnailMetadataProblemKind::ValueMismatch,
+            ),
+        ),
+        Ok(None) => push_problem(
+            problems,
+            metadata_problem(
+                ThumbnailMetadataKey::Mtime,
+                ThumbnailMetadataProblemKind::MissingRequired,
+            ),
+        ),
+        Err(_) => push_problem(
+            problems,
+            metadata_problem(
+                ThumbnailMetadataKey::Mtime,
+                ThumbnailMetadataProblemKind::InvalidSyntax,
+            ),
+        ),
     }
 
-    compare_optional_size(problems, metadata, original.original_byte_size());
+    compare_optional_size(problems, metadata, original.original_byte_size(), true);
     compare_optional_mimetype(problems, metadata, original.mime_type());
 }
 
@@ -687,12 +801,32 @@ fn compare_optional_size(
     problems: &mut Vec<CacheEntryProblem>,
     metadata: &ThumbnailMetadata,
     expected: Option<u64>,
+    missing_is_problem: bool,
 ) {
     match (metadata.thumb_size_result(), expected) {
         (Ok(Some(stored)), Some(expected)) if stored == expected => {}
-        (Ok(Some(_)), Some(_)) => push_problem(problems, CacheEntryProblem::StaleMetadata),
+        (Ok(Some(_)), Some(_)) => push_problem(
+            problems,
+            metadata_problem(
+                ThumbnailMetadataKey::Size,
+                ThumbnailMetadataProblemKind::ValueMismatch,
+            ),
+        ),
+        (Ok(None), Some(_)) if missing_is_problem => push_problem(
+            problems,
+            metadata_problem(
+                ThumbnailMetadataKey::Size,
+                ThumbnailMetadataProblemKind::MissingRequired,
+            ),
+        ),
         (Ok(_), _) => {}
-        (Err(_), _) => push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax),
+        (Err(_), _) => push_problem(
+            problems,
+            metadata_problem(
+                ThumbnailMetadataKey::Size,
+                ThumbnailMetadataProblemKind::InvalidSyntax,
+            ),
+        ),
     }
 }
 
@@ -702,15 +836,43 @@ fn compare_optional_mimetype(
     expected: Option<&str>,
 ) {
     let Some(stored) = metadata.thumb_mime_type() else {
+        if expected.is_some() {
+            push_problem(
+                problems,
+                metadata_problem(
+                    ThumbnailMetadataKey::MimeType,
+                    ThumbnailMetadataProblemKind::MissingRequired,
+                ),
+            );
+        }
         return;
     };
     if validate_mime_type(stored).is_err() {
-        push_problem(problems, CacheEntryProblem::InvalidMetadataSyntax);
+        push_problem(
+            problems,
+            metadata_problem(
+                ThumbnailMetadataKey::MimeType,
+                ThumbnailMetadataProblemKind::InvalidSyntax,
+            ),
+        );
     } else if let Some(expected) = expected {
         if stored != expected {
-            push_problem(problems, CacheEntryProblem::StaleMetadata);
+            push_problem(
+                problems,
+                metadata_problem(
+                    ThumbnailMetadataKey::MimeType,
+                    ThumbnailMetadataProblemKind::ValueMismatch,
+                ),
+            );
         }
     }
+}
+
+pub(crate) const fn metadata_problem(
+    key: ThumbnailMetadataKey,
+    kind: ThumbnailMetadataProblemKind,
+) -> CacheEntryProblem {
+    CacheEntryProblem::Metadata(ThumbnailMetadataProblem::new(key, kind))
 }
 
 pub(crate) fn push_problem(problems: &mut Vec<CacheEntryProblem>, problem: CacheEntryProblem) {

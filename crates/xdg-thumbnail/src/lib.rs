@@ -110,7 +110,7 @@ pub use cache::{
 pub use error::{Result, ThumbnailError};
 #[cfg(unix)]
 pub use identity::{
-    OriginalIdentity, ReadableOriginalIdentity, SharedRepositoryContext, UnixMTimeSeconds,
+    OriginalIdentity, ReadableOriginalIdentity, SharedRepositoryContext, UnixMtimeSeconds,
 };
 #[cfg(unix)]
 pub use inspection::{
@@ -123,7 +123,8 @@ pub use namespace::{CacheNamespace, FailureNamespace, ThumbnailSize};
 pub use png::{
     CacheEntryProblem, OwnedRawThumbnailImage, OwnedRawThumbnailImageParts, ParsedThumbnailPng,
     PersonalValidationOutcome, RawThumbnailImage, RawThumbnailPixelFormat, SharedValidationOutcome,
-    ThumbnailMetadata, ThumbnailPngBitDepth, ThumbnailPngColorType,
+    ThumbnailMetadata, ThumbnailMetadataKey, ThumbnailMetadataProblem,
+    ThumbnailMetadataProblemKind, ThumbnailPngBitDepth, ThumbnailPngColorType,
     validate_personal_failure_entry, validate_personal_thumbnail, validate_shared_thumbnail,
 };
 #[cfg(unix)]
@@ -131,7 +132,7 @@ pub use uri::{PersonalOriginalUri, SharedRelativeOriginalUri};
 
 #[cfg(unix)]
 pub(crate) use png::{
-    decode_validated_thumbnail_png_to_rgba8, encode_rgba_png, normalized_personal_thumbnail_png,
-    normalized_personal_thumbnail_raw_png, push_problem, thumbnail_metadata_pairs,
-    validate_mime_type,
+    decode_validated_thumbnail_png_to_rgba8, encode_rgba_png, metadata_problem,
+    normalized_personal_thumbnail_png, normalized_personal_thumbnail_raw_png, push_problem,
+    thumbnail_metadata_pairs, validate_mime_type,
 };

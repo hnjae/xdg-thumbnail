@@ -14,7 +14,8 @@ use xdg_thumbnail::{
     AccessTimePreservation, CacheEntryInspection, CacheEntryInspectionOutcome, CacheEntryProblem,
     CacheNamespace, NonstandardEntryPolicy, OriginalUriIdentity, PersonalCacheRoot,
     PersonalOriginalUri, PersonalValidationOutcome, ReadableOriginalIdentity, ThumbnailError,
-    ThumbnailSize, validate_personal_failure_entry, validate_personal_thumbnail,
+    ThumbnailMetadataProblemKind, ThumbnailSize, validate_personal_failure_entry,
+    validate_personal_thumbnail,
 };
 
 #[cfg(unix)]
@@ -283,7 +284,7 @@ fn run(cli: Cli) -> std::result::Result<u8, String> {
     let mut summary = Summary::default();
     let mut records = Vec::new();
     for entry in entries {
-        let record = evaluate_entry(&root, &cli, &classifier, &entry, &mut summary);
+        let record = evaluate_entry(&root, &cli, &classifier, entry, &mut summary);
         records.push(record);
     }
 
@@ -305,16 +306,21 @@ fn evaluate_entry(
     _root: &PersonalCacheRoot,
     cli: &Cli,
     classifier: &Classifier,
-    entry: &CacheEntryInspection,
+    entry: CacheEntryInspection,
     summary: &mut Summary,
 ) -> EntryRecord {
     summary.scanned += 1;
-    let uri = personal_uri(entry).cloned();
+    let thumbnail_path_display = entry.path().display().to_string();
+    let thumbnail_path_bytes_b64 = path_bytes_b64(entry.path());
+    let namespace = entry.namespace().to_string();
+    let access_time_preservation =
+        access_preservation_name(entry.timestamps().access_time_preserved_during_inspection());
+    let uri = personal_uri(&entry).cloned();
     let uri_text = uri.as_ref().map(|uri| uri.as_str().to_owned());
     let classification = uri
         .as_ref()
         .map_or(UriClass::Unknown, |uri| classifier.classify(uri));
-    let timestamp = selected_timestamp(entry, cli.age_basis);
+    let timestamp = selected_timestamp(&entry, cli.age_basis);
     let mut decision = Decision::Keep;
     let mut reason = None;
     let mut error = None;
@@ -329,7 +335,7 @@ fn evaluate_entry(
                     UriClass::LocalStableFile => {
                         evaluate_local_file(
                             uri,
-                            entry,
+                            &entry,
                             cli,
                             &mut decision,
                             &mut reason,
@@ -341,7 +347,7 @@ fn evaluate_entry(
                     | UriClass::ArchiveOrVirtual
                     | UriClass::LocalRemovableOrPortal => {
                         evaluate_age_based(
-                            entry,
+                            &entry,
                             cli,
                             classification,
                             timestamp,
@@ -362,10 +368,10 @@ fn evaluate_entry(
         } else if problems.contains(&CacheEntryProblem::InvalidPngStructure) {
             decision = Decision::Delete;
             reason = Some("invalid-png-structure");
-        } else if problems.contains(&CacheEntryProblem::MissingRequiredMetadata) {
+        } else if has_metadata_kind(problems, ThumbnailMetadataProblemKind::MissingRequired) {
             decision = Decision::Delete;
             reason = Some("missing-required-metadata");
-        } else if problems.contains(&CacheEntryProblem::InvalidMetadataSyntax) {
+        } else if has_metadata_kind(problems, ThumbnailMetadataProblemKind::InvalidSyntax) {
             decision = Decision::Delete;
             reason = Some("invalid-metadata-syntax");
         } else if problems.contains(&CacheEntryProblem::UriFilenameMismatch) {
@@ -390,7 +396,7 @@ fn evaluate_entry(
             UriClass::LocalStableFile => {
                 evaluate_local_file(
                     uri,
-                    entry,
+                    &entry,
                     cli,
                     &mut decision,
                     &mut reason,
@@ -400,7 +406,7 @@ fn evaluate_entry(
             }
             UriClass::Remote | UriClass::ArchiveOrVirtual | UriClass::LocalRemovableOrPortal => {
                 evaluate_age_based(
-                    entry,
+                    &entry,
                     cli,
                     classification,
                     timestamp,
@@ -430,7 +436,7 @@ fn evaluate_entry(
     let mut applied = false;
     if decision == Decision::Delete {
         if cli.delete {
-            match entry.handle().remove() {
+            match entry.into_handle().remove() {
                 Ok(()) => {
                     applied = true;
                     summary.deleted += 1;
@@ -456,19 +462,17 @@ fn evaluate_entry(
     EntryRecord {
         schema_version: 0,
         event: "entry",
-        thumbnail_path_display: entry.path().display().to_string(),
-        thumbnail_path_bytes_b64: path_bytes_b64(entry.path()),
+        thumbnail_path_display,
+        thumbnail_path_bytes_b64,
         uri: uri_text,
-        namespace: entry.namespace().to_string(),
+        namespace,
         classification: classification.as_str(),
         decision: decision.as_str(),
         applied,
         reason,
         age_basis: age_basis_name(cli.age_basis),
         timestamp: timestamp.and_then(system_time_seconds),
-        access_time_preservation: access_preservation_name(
-            entry.timestamps().access_time_preserved_during_inspection(),
-        ),
+        access_time_preservation,
         error,
     }
 }
@@ -522,7 +526,7 @@ fn evaluate_local_file(
             *reason = None;
         }
         PersonalValidationOutcome::Invalid(problems)
-            if problems.contains(&CacheEntryProblem::StaleMetadata) =>
+            if has_metadata_kind(&problems, ThumbnailMetadataProblemKind::ValueMismatch) =>
         {
             if cli.delete_stale_local && cli.delete {
                 *decision = Decision::Delete;
@@ -533,13 +537,13 @@ fn evaluate_local_file(
             }
         }
         PersonalValidationOutcome::Invalid(problems)
-            if problems.contains(&CacheEntryProblem::InvalidMetadataSyntax) =>
+            if has_metadata_kind(&problems, ThumbnailMetadataProblemKind::InvalidSyntax) =>
         {
             *decision = Decision::Delete;
             *reason = Some("invalid-metadata-syntax");
         }
         PersonalValidationOutcome::Invalid(problems)
-            if problems.contains(&CacheEntryProblem::MissingRequiredMetadata) =>
+            if has_metadata_kind(&problems, ThumbnailMetadataProblemKind::MissingRequired) =>
         {
             *decision = Decision::Delete;
             *reason = Some("missing-required-metadata");
@@ -557,6 +561,12 @@ fn evaluate_local_file(
             *reason = Some("original-unverifiable");
         }
     }
+}
+
+fn has_metadata_kind(problems: &[CacheEntryProblem], kind: ThumbnailMetadataProblemKind) -> bool {
+    problems.iter().any(|problem| {
+        matches!(problem, CacheEntryProblem::Metadata(metadata) if metadata.kind() == kind)
+    })
 }
 
 fn only_nonconforming(problems: &[CacheEntryProblem]) -> bool {

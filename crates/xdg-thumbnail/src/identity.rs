@@ -16,11 +16,11 @@ use crate::{
 
 /// Whole Unix epoch seconds used by `Thumb::MTime`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct UnixMTimeSeconds {
+pub struct UnixMtimeSeconds {
     seconds: u64,
 }
 
-impl UnixMTimeSeconds {
+impl UnixMtimeSeconds {
     /// Creates a timestamp from non-negative whole Unix epoch seconds.
     #[must_use]
     pub const fn new(seconds: u64) -> Self {
@@ -64,7 +64,7 @@ impl UnixMTimeSeconds {
     }
 }
 
-impl TryFrom<i64> for UnixMTimeSeconds {
+impl TryFrom<i64> for UnixMtimeSeconds {
     type Error = ThumbnailError;
 
     fn try_from(seconds: i64) -> Result<Self> {
@@ -72,7 +72,7 @@ impl TryFrom<i64> for UnixMTimeSeconds {
     }
 }
 
-impl fmt::Display for UnixMTimeSeconds {
+impl fmt::Display for UnixMtimeSeconds {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.seconds)
     }
@@ -86,7 +86,7 @@ impl fmt::Display for UnixMTimeSeconds {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OriginalIdentity {
     uri: PersonalOriginalUri,
-    mtime: UnixMTimeSeconds,
+    mtime: UnixMtimeSeconds,
     original_byte_size: Option<u64>,
     mime_type: Option<String>,
 }
@@ -94,7 +94,7 @@ pub struct OriginalIdentity {
 impl OriginalIdentity {
     /// Creates an original identity from caller-confirmed facts without a MIME type.
     #[must_use]
-    pub fn new(uri: PersonalOriginalUri, mtime: UnixMTimeSeconds) -> Self {
+    pub fn new(uri: PersonalOriginalUri, mtime: UnixMtimeSeconds) -> Self {
         Self {
             uri,
             mtime,
@@ -130,7 +130,7 @@ impl OriginalIdentity {
 
     /// Returns the original modification time.
     #[must_use]
-    pub const fn mtime(&self) -> UnixMTimeSeconds {
+    pub const fn mtime(&self) -> UnixMtimeSeconds {
         self.mtime
     }
 
@@ -210,7 +210,7 @@ impl ReadableOriginalIdentity {
             source,
         })?;
         let uri = PersonalOriginalUri::from_absolute_path_bytes(path.as_os_str().as_bytes())?;
-        let mtime = UnixMTimeSeconds::from_system_time(metadata.modified().map_err(|source| {
+        let mtime = UnixMtimeSeconds::from_system_time(metadata.modified().map_err(|source| {
             ThumbnailError::Io {
                 context: "read original modification time",
                 source,

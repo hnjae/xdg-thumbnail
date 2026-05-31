@@ -3,6 +3,7 @@
 
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use crate::{Result, ThumbnailError};
 
@@ -88,6 +89,20 @@ impl FailureNamespace {
 impl fmt::Display for FailureNamespace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.value)
+    }
+}
+
+impl AsRef<str> for FailureNamespace {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl FromStr for FailureNamespace {
+    type Err = ThumbnailError;
+
+    fn from_str(value: &str) -> Result<Self> {
+        Self::new(value)
     }
 }
 
