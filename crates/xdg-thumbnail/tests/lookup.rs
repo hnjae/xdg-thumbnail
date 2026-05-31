@@ -107,7 +107,7 @@ fn lookup_thumbnail_rgba8_returns_decoded_pixels_and_metadata() {
             assert_eq!(valid.width(), 2);
             assert_eq!(valid.height(), 1);
             assert_eq!(valid.stride(), 8);
-            assert_eq!(valid.rgba8_pixels(), pixels.as_slice());
+            assert_eq!(valid.pixels(), pixels.as_slice());
             assert_eq!(valid.metadata().thumb_size(), Some(12));
 
             let parts = valid.into_parts();
@@ -151,7 +151,7 @@ fn lookup_thumbnail_rgba8_converts_grayscale_alpha_pixels() {
             assert_eq!(valid.width(), 2);
             assert_eq!(valid.height(), 1);
             assert_eq!(valid.stride(), 8);
-            assert_eq!(valid.rgba8_pixels(), &[10, 10, 10, 20, 30, 30, 30, 40]);
+            assert_eq!(valid.pixels(), &[10, 10, 10, 20, 30, 30, 30, 40]);
         }
         other => panic!("expected valid grayscale-alpha RGBA8 lookup, got {other:?}"),
     }

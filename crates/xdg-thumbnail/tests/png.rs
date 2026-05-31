@@ -208,7 +208,9 @@ fn shared_validation_allows_incomplete_freshness_metadata_explicitly() {
 }
 
 fn shared_original_metadata() -> SharedOriginalMetadata {
-    SharedOriginalMetadata::new(Some(UnixMTimeSeconds::new(42)), Some(12))
+    SharedOriginalMetadata::new()
+        .with_mtime(UnixMTimeSeconds::new(42))
+        .with_original_byte_size(12)
 }
 
 fn original_identity() -> OriginalIdentity {

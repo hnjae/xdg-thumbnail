@@ -142,7 +142,7 @@ fn personal_lookup_request_matches_borrowed_lookup() {
         PersonalThumbnailLookup::Valid(rgba8) => {
             assert_eq!(rgba8.path(), path.as_path());
             assert_eq!((rgba8.width(), rgba8.height(), rgba8.stride()), (2, 1, 8));
-            assert_eq!(rgba8.rgba8_pixels(), &[255; 8]);
+            assert_eq!(rgba8.pixels(), &[255; 8]);
             assert_eq!(rgba8.metadata().thumb_size(), Some(12));
         }
         other => panic!("expected valid personal RGBA8 lookup, got {other:?}"),
@@ -302,17 +302,17 @@ fn failure_entry_write_request_matches_borrowed_write() {
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let namespace = FailureNamespace::new("xdg-thumbnail-0.1.0").unwrap();
     let original = readable_original();
-    let request = FailureEntryWriteRequest::new(root.clone(), namespace.clone(), original.clone());
+    let request = FailureEntryWriteRequest::new(root.clone(), original.clone(), namespace.clone());
 
     let request_bytes = request.clone().write_png_bytes().unwrap();
     let borrowed_bytes = root
-        .write_failure_entry_png_bytes(&namespace, &original)
+        .write_failure_entry_png_bytes(&original, &namespace)
         .unwrap();
     assert_eq!(request_bytes, borrowed_bytes);
 
     let request_path = run_blocking_style(move || request.write_path()).unwrap();
     let borrowed_path = root
-        .write_failure_entry_path(&namespace, &original)
+        .write_failure_entry_path(&original, &namespace)
         .unwrap();
     assert_eq!(request_path, borrowed_path);
 
@@ -364,8 +364,10 @@ fn shared_lookup_and_inspection_requests_match_borrowed_api() {
     let context =
         SharedRepositoryContext::new(temp.path(), OsStr::from_bytes(b"picture.png")).unwrap();
     let path = context.thumbnail_path(ThumbnailSize::Normal);
-    let original_metadata = SharedOriginalMetadata::new(Some(UnixMTimeSeconds::new(42)), Some(12));
-    let require_complete = SharedOriginalFacts::from_metadata(
+    let original_metadata = SharedOriginalMetadata::new()
+        .with_mtime(UnixMTimeSeconds::new(42))
+        .with_original_byte_size(12);
+    let require_complete = SharedOriginalFacts::new(
         SharedThumbnailMetadataPolicy::RequireComplete,
         original_metadata,
     );

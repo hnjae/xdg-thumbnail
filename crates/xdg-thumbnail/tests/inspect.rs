@@ -120,7 +120,7 @@ fn failure_iteration_is_limited_to_one_real_namespace_level() {
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let namespace = FailureNamespace::new("app-1").unwrap();
-    root.write_failure_entry_png_bytes(&namespace, &original)
+    root.write_failure_entry_png_bytes(&original, &namespace)
         .unwrap();
 
     let nested = root.as_path().join("fail/app-1/nested");

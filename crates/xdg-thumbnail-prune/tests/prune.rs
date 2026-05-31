@@ -394,7 +394,7 @@ impl Fixture {
                 .unwrap(),
         );
         let namespace = FailureNamespace::new("app-1").unwrap();
-        root.write_failure_entry_png_bytes(&namespace, &original)
+        root.write_failure_entry_png_bytes(&original, &namespace)
             .unwrap();
         root.cache_entry_path(
             original.identity().uri(),
