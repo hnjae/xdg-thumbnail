@@ -52,7 +52,7 @@ struct Cli {
         long,
         value_enum,
         value_name = "SIZE",
-        help = "Restrict successful thumbnail scan to one size namespace: normal, large, x-large, or xx-large. Can be passed multiple times; duplicate values are ignored after their first occurrence."
+        help = "Restrict successful thumbnail scan to one size namespace: normal, large, x-large, or xx-large. Defaults to all successful thumbnail size namespaces. Can be passed multiple times; duplicate values are ignored after their first occurrence."
     )]
     size: Vec<SizeArg>,
     #[arg(
@@ -71,7 +71,7 @@ struct Cli {
     #[arg(
         long,
         value_name = "PATH",
-        help = "Add a local path prefix that should use age-based cleanup. Can be passed multiple times."
+        help = "Add an absolute local path prefix that should use age-based cleanup. Can be passed multiple times."
     )]
     removable_prefix: Vec<PathBuf>,
     #[arg(long, help = "Do not treat /media as removable by default.")]
@@ -272,6 +272,10 @@ fn main() -> ExitCode {
         }
     }
 
+    if let Err(message) = validate_removable_prefixes(&cli) {
+        eprintln!("{message}");
+        return ExitCode::from(2);
+    }
     if cli.allow_failure_deletion && matches!(cli.scope, ScopeArg::Thumbnails) {
         eprintln!("--allow-failure-deletion requires --scope failures or --scope all");
         return ExitCode::from(2);
@@ -309,6 +313,18 @@ fn emit_generated_artifact(cli: &Cli) -> std::result::Result<Option<ExitCode>, S
     }
 
     Ok(None)
+}
+
+fn validate_removable_prefixes(cli: &Cli) -> std::result::Result<(), String> {
+    for prefix in &cli.removable_prefix {
+        if !prefix.is_absolute() {
+            return Err(format!(
+                "--removable-prefix requires an absolute path: {}",
+                prefix.display()
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn run(cli: Cli) -> std::result::Result<u8, String> {
