@@ -119,6 +119,45 @@ fn inspection_reports_invalid_uri_metadata_and_filename_uri_mismatch() {
 }
 
 #[test]
+fn inspection_reports_invalid_optional_metadata_syntax() {
+    let temp = TempDir::new().unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let dir = root.as_path().join("normal");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let path = dir.join("abcdefabcdefabcdefabcdefabcdefab.png");
+    std::fs::write(
+        &path,
+        png_with_metadata(
+            2,
+            1,
+            BTreeMap::from([
+                ("Thumb::URI", "file:///home/alice/photo.png"),
+                ("Thumb::MTime", "42"),
+                ("Thumb::Size", "not-a-size"),
+                ("Thumb::Mimetype", "image/png\n"),
+            ]),
+        ),
+    )
+    .unwrap();
+
+    let entries = root
+        .inspect_thumbnails(&[ThumbnailSize::Normal], NonstandardEntryPolicy::Exclude)
+        .unwrap();
+
+    assert!(entries.iter().any(|entry| {
+        entry.path() == path.as_path()
+            && matches!(entry.outcome(), CacheEntryInspectionOutcome::Invalid(problems) if problems.contains(&metadata_problem(
+                ThumbnailMetadataKey::Size,
+                ThumbnailMetadataProblemKind::InvalidSyntax,
+            )) && problems.contains(&metadata_problem(
+                ThumbnailMetadataKey::MimeType,
+                ThumbnailMetadataProblemKind::InvalidSyntax,
+            )))
+    }));
+}
+
+#[test]
 fn failure_iteration_is_limited_to_one_real_namespace_level() {
     let temp = TempDir::new().unwrap();
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();

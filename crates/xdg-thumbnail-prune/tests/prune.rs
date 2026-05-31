@@ -248,6 +248,32 @@ fn verbose_human_output_includes_kept_entries() {
 }
 
 #[test]
+fn keeps_local_thumbnail_without_optional_metadata() {
+    let fixture = Fixture::new();
+    let thumbnail = fixture.install_valid_local_thumbnail_without_optional_metadata();
+
+    let output = Command::cargo_bin("xdg-thumbnail-prune")
+        .unwrap()
+        .env("XDG_CACHE_HOME", fixture.cache_home.path())
+        .env("HOME", fixture.home.path())
+        .args(["--format", "jsonl", "--age-basis", "modification-time"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let lines = String::from_utf8(output).unwrap();
+    let records = lines
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+
+    assert!(thumbnail.exists());
+    assert_eq!(records[0]["decision"], "keep");
+    assert_eq!(records[0]["reason"], Value::Null);
+}
+
+#[test]
 fn nonconforming_entries_still_apply_missing_original_policy() {
     let fixture = Fixture::new();
     let thumbnail = fixture.install_nonconforming_for_missing_original();
@@ -485,6 +511,24 @@ impl Fixture {
             original.identity().uri(),
             &CacheNamespace::Size(ThumbnailSize::Normal),
         )
+    }
+
+    fn install_valid_local_thumbnail_without_optional_metadata(&self) -> std::path::PathBuf {
+        let original_path = self.home.path().join("original-without-optional.png");
+        std::fs::write(&original_path, b"original").unwrap();
+        let metadata = std::fs::metadata(&original_path).unwrap();
+        let uri = PersonalOriginalUri::from_absolute_path_bytes(
+            original_path.as_os_str().as_encoded_bytes(),
+        )
+        .unwrap();
+        let mtime = UnixMtimeSeconds::from_system_time(metadata.modified().unwrap()).unwrap();
+        let original = PersonalOriginalIdentity::new(uri, mtime);
+        let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
+        let path =
+            root.cache_entry_path(original.uri(), &CacheNamespace::Size(ThumbnailSize::Normal));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, png_with_metadata(2, 1, &original)).unwrap();
+        path
     }
 }
 

@@ -45,6 +45,22 @@ fn lookup_thumbnail_path_distinguishes_valid_missing_and_invalid_entries() {
         other => panic!("expected valid path lookup, got {other:?}"),
     }
 
+    let mut missing_optional_metadata = metadata("42");
+    missing_optional_metadata.remove("Thumb::Size");
+    missing_optional_metadata.remove("Thumb::Mimetype");
+    std::fs::write(&path, png_with_metadata(missing_optional_metadata)).unwrap();
+    match root
+        .lookup_thumbnail_path(&original, ThumbnailSize::Normal)
+        .unwrap()
+    {
+        PersonalThumbnailLookup::Valid(valid) => {
+            assert_eq!(valid.path(), path.as_path());
+            assert_eq!(valid.metadata().thumb_size_lossy(), None);
+            assert_eq!(valid.metadata().thumb_mime_type(), None);
+        }
+        other => panic!("expected valid path lookup without optional metadata, got {other:?}"),
+    }
+
     std::fs::write(&path, png_with_metadata(metadata("41"))).unwrap();
     match root
         .lookup_thumbnail_path(&original, ThumbnailSize::Normal)

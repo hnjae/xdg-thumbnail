@@ -164,16 +164,13 @@ fn validates_personal_thumbnail_metadata_and_conformance() {
 
     let mut missing_size = metadata();
     missing_size.remove("Thumb::Size");
-    assert_personal_invalid_contains(
+    assert_eq!(
         validate_personal_thumbnail(
             &png_with_metadata(2, 1, png::ColorType::Rgba, missing_size),
             &original,
             ThumbnailSize::Normal,
         ),
-        metadata_problem(
-            ThumbnailMetadataKey::Size,
-            ThumbnailMetadataProblemKind::MissingRequired,
-        ),
+        PersonalValidationOutcome::FullyVerified
     );
 
     let mut invalid_size = metadata();
@@ -206,44 +203,35 @@ fn validates_personal_thumbnail_metadata_and_conformance() {
 
     let mut missing_mimetype = metadata();
     missing_mimetype.remove("Thumb::Mimetype");
-    assert_personal_invalid_contains(
+    assert_eq!(
         validate_personal_thumbnail(
             &png_with_metadata(2, 1, png::ColorType::Rgba, missing_mimetype),
             &original,
             ThumbnailSize::Normal,
         ),
-        metadata_problem(
-            ThumbnailMetadataKey::MimeType,
-            ThumbnailMetadataProblemKind::MissingRequired,
-        ),
+        PersonalValidationOutcome::FullyVerified
     );
 
     let mut invalid_mimetype = metadata();
     invalid_mimetype.insert("Thumb::Mimetype", "image/png\n");
-    assert_personal_invalid_contains(
+    assert_eq!(
         validate_personal_thumbnail(
             &png_with_metadata(2, 1, png::ColorType::Rgba, invalid_mimetype),
             &original,
             ThumbnailSize::Normal,
         ),
-        metadata_problem(
-            ThumbnailMetadataKey::MimeType,
-            ThumbnailMetadataProblemKind::InvalidSyntax,
-        ),
+        PersonalValidationOutcome::FullyVerified
     );
 
     let mut mismatched_mimetype = metadata();
     mismatched_mimetype.insert("Thumb::Mimetype", "image/jpeg");
-    assert_personal_invalid_contains(
+    assert_eq!(
         validate_personal_thumbnail(
             &png_with_metadata(2, 1, png::ColorType::Rgba, mismatched_mimetype),
             &original,
             ThumbnailSize::Normal,
         ),
-        metadata_problem(
-            ThumbnailMetadataKey::MimeType,
-            ThumbnailMetadataProblemKind::ValueMismatch,
-        ),
+        PersonalValidationOutcome::FullyVerified
     );
 
     assert_personal_invalid_contains(

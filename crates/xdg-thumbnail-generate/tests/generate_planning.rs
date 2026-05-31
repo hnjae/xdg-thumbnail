@@ -3,6 +3,7 @@
 
 use assert_cmd::Command;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use tempfile::TempDir;
 use xdg_thumbnail::{
@@ -70,6 +71,26 @@ fn dry_run_keeps_existing_valid_thumbnail_unless_forced() {
     let fixture = Fixture::new();
     let input = fixture.write_png_input("existing.png");
     fixture.install_existing_thumbnail(&input);
+    fixture.write_thumbnailer("test.thumbnailer", "true %i %o %s", "image/png;");
+
+    let records = fixture.run_jsonl([
+        "--dry-run",
+        "--sandbox",
+        "off",
+        "--format",
+        "jsonl",
+        input.to_str().unwrap(),
+    ]);
+
+    assert_eq!(records[0]["decision"], "keep");
+    assert_eq!(records[0]["reason"], "already-valid");
+}
+
+#[test]
+fn dry_run_keeps_existing_valid_thumbnail_without_optional_metadata() {
+    let fixture = Fixture::new();
+    let input = fixture.write_png_input("existing.png");
+    fixture.install_existing_thumbnail_without_optional_metadata(&input);
     fixture.write_thumbnailer("test.thumbnailer", "true %i %o %s", "image/png;");
 
     let records = fixture.run_jsonl([
@@ -447,6 +468,28 @@ impl Fixture {
             )
             .unwrap();
     }
+
+    fn install_existing_thumbnail_without_optional_metadata(&self, input: &std::path::Path) {
+        let metadata = std::fs::metadata(input).unwrap();
+        let mtime = UnixMtimeSeconds::from_system_time(metadata.modified().unwrap()).unwrap();
+        let uri =
+            PersonalOriginalUri::from_absolute_path_bytes(input.as_os_str().as_encoded_bytes())
+                .unwrap();
+        let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
+        let path = root.cache_entry_path(
+            &uri,
+            &xdg_thumbnail::CacheNamespace::Size(ThumbnailSize::Normal),
+        );
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            path,
+            cache_png_with_metadata(BTreeMap::from([
+                ("Thumb::URI", uri.as_str().to_owned()),
+                ("Thumb::MTime", mtime.to_string()),
+            ])),
+        )
+        .unwrap();
+    }
 }
 
 fn parse_jsonl(output: Vec<u8>) -> Vec<Value> {
@@ -463,6 +506,21 @@ fn rendered_png() -> Vec<u8> {
         let mut encoder = png::Encoder::new(&mut output, 2, 1);
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_image_data(&[255; 8]).unwrap();
+    }
+    output
+}
+
+fn cache_png_with_metadata(metadata: BTreeMap<&str, String>) -> Vec<u8> {
+    let mut output = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut output, 2, 1);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        for (key, value) in metadata {
+            encoder.add_text_chunk(key.to_owned(), value).unwrap();
+        }
         let mut writer = encoder.write_header().unwrap();
         writer.write_image_data(&[255; 8]).unwrap();
     }
