@@ -194,7 +194,7 @@ fn shared_repository_context_computes_contextual_cache_paths() {
 
     assert_eq!(context.shared_uri().as_str(), "./picture.png");
     assert_eq!(
-        context.thumbnail_path(ThumbnailSize::Normal),
+        context.cache_entry_path(ThumbnailSize::Normal),
         Path::new("/srv/photos/.sh_thumbnails/normal/7fd0e41c1612f860427a76c4100745a3.png")
     );
 

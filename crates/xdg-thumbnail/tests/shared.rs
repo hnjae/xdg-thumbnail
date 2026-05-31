@@ -42,7 +42,7 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
         SharedThumbnailLookup::Missing
     );
 
-    let path = context.thumbnail_path(ThumbnailSize::Normal);
+    let path = context.cache_entry_path(ThumbnailSize::Normal);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let verified = shared_png(metadata("./picture.png", Some("42"), Some("12")));
     std::fs::write(&path, &verified).unwrap();
@@ -167,7 +167,7 @@ fn shared_inspection_reports_read_only_facts_without_removal_handle() {
     let temp = TempDir::new().unwrap();
     let context =
         SharedRepositoryContext::new(temp.path(), OsStr::from_bytes(b"picture.png")).unwrap();
-    let path = context.thumbnail_path(ThumbnailSize::Normal);
+    let path = context.cache_entry_path(ThumbnailSize::Normal);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(
         &path,
@@ -200,7 +200,7 @@ fn shared_validated_lookup_rejects_symlink_and_non_regular_entries() {
     let temp = TempDir::new().unwrap();
     let context =
         SharedRepositoryContext::new(temp.path(), OsStr::from_bytes(b"picture.png")).unwrap();
-    let path = context.thumbnail_path(ThumbnailSize::Normal);
+    let path = context.cache_entry_path(ThumbnailSize::Normal);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let outside = temp.path().join("outside.png");
     std::fs::write(

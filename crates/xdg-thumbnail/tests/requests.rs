@@ -367,7 +367,7 @@ fn shared_lookup_and_inspection_requests_match_borrowed_api() {
     let temp = TempDir::new().unwrap();
     let context =
         SharedRepositoryContext::new(temp.path(), OsStr::from_bytes(b"picture.png")).unwrap();
-    let path = context.thumbnail_path(ThumbnailSize::Normal);
+    let path = context.cache_entry_path(ThumbnailSize::Normal);
     let original_metadata = SharedOriginalMetadata::new()
         .with_mtime(UnixMtimeSeconds::new(42))
         .with_original_byte_size(12);

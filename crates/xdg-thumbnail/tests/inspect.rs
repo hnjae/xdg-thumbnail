@@ -38,7 +38,7 @@ fn inspection_iterates_standard_entries_and_reports_facts() {
     );
     assert_eq!(
         default_entries[0].outcome(),
-        &CacheEntryInspectionOutcome::Unchecked
+        &CacheEntryInspectionOutcome::Unvalidated
     );
     assert!(default_entries[0].timestamps().modified_at().is_some());
     assert_eq!(
