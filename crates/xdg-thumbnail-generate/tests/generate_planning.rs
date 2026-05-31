@@ -29,6 +29,9 @@ fn help_and_version_are_successful_metadata_modes() {
         .stdout(predicate::str::contains(
             "Report planned thumbnailer selection",
         ))
+        .stdout(predicate::str::contains("Required for generation"))
+        .stdout(predicate::str::contains("--generate-completion"))
+        .stdout(predicate::str::contains("--generate-manpage"))
         .stdout(predicate::str::contains("without PATH operands"));
 
     Command::cargo_bin("xdg-thumbnail-generate")
@@ -56,8 +59,20 @@ fn generates_manpage_without_inputs() {
         .arg("--generate-manpage")
         .assert()
         .success()
-        .stdout(predicates::str::contains(
+        .stdout(predicate::str::contains(
             "Generate Freedesktop thumbnail cache entries",
+        ))
+        .stdout(predicate::str::contains("Required for generation"));
+}
+
+#[test]
+fn generation_requires_input_path() {
+    Command::cargo_bin("xdg-thumbnail-generate")
+        .unwrap()
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "required arguments were not provided",
         ));
 }
 
