@@ -180,6 +180,7 @@ fn original_identity_preserves_required_freshness_facts() {
     assert_eq!(identity.original_byte_size(), Some(12));
     assert_eq!(identity.mime_type(), Some("image/png"));
     assert_eq!(readable.identity().uri(), &uri);
+    assert_eq!(readable.into_identity(), identity);
 }
 
 #[test]

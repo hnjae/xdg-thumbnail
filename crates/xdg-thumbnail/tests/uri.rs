@@ -101,9 +101,7 @@ fn textual_local_file_uri_normalizes_localhost_only() {
 
 #[test]
 fn caller_provided_absolute_uri_is_validated_and_preserved() {
-    let uri =
-        PersonalOriginalUri::from_caller_selected_absolute_uri("smb://server/share/My%20Photo.png")
-            .unwrap();
+    let uri = PersonalOriginalUri::from_non_file_uri("smb://server/share/My%20Photo.png").unwrap();
 
     assert_eq!(uri.as_str(), "smb://server/share/My%20Photo.png");
     assert_eq!(
@@ -111,38 +109,21 @@ fn caller_provided_absolute_uri_is_validated_and_preserved() {
         "9225e92d750e899fbcc3b764c3085162.png"
     );
 
+    assert!(PersonalOriginalUri::from_non_file_uri("file:///home/alice/photo.png").is_err());
     assert!(
-        PersonalOriginalUri::from_caller_selected_absolute_uri("file:///home/alice/photo.png")
-            .is_err()
+        PersonalOriginalUri::from_non_file_uri("file://localhost/home/alice/photo.png").is_err()
     );
+    assert!(PersonalOriginalUri::from_non_file_uri("relative/path.png").is_err());
+    assert!(PersonalOriginalUri::from_non_file_uri("http://example.test/My Photo.png").is_err());
     assert!(
-        PersonalOriginalUri::from_caller_selected_absolute_uri(
-            "file://localhost/home/alice/photo.png"
-        )
-        .is_err()
+        PersonalOriginalUri::from_non_file_uri("http://example.test/snowman-\u{2603}.png").is_err()
     );
-    assert!(PersonalOriginalUri::from_caller_selected_absolute_uri("relative/path.png").is_err());
-    assert!(
-        PersonalOriginalUri::from_caller_selected_absolute_uri("http://example.test/My Photo.png")
-            .is_err()
-    );
-    assert!(
-        PersonalOriginalUri::from_caller_selected_absolute_uri(
-            "http://example.test/snowman-\u{2603}.png"
-        )
-        .is_err()
-    );
-    assert!(
-        PersonalOriginalUri::from_caller_selected_absolute_uri("http://example.test/a\nb.png")
-            .is_err()
-    );
+    assert!(PersonalOriginalUri::from_non_file_uri("http://example.test/a\nb.png").is_err());
 }
 
 #[test]
 fn uri_newtypes_expose_unambiguous_string_traits() {
-    let personal =
-        PersonalOriginalUri::from_caller_selected_absolute_uri("smb://server/share/photo.png")
-            .unwrap();
+    let personal = PersonalOriginalUri::from_non_file_uri("smb://server/share/photo.png").unwrap();
     let shared = SharedRelativeOriginalUri::from_str("./picture.png").unwrap();
 
     assert_eq!(personal.as_ref(), "smb://server/share/photo.png");
