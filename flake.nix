@@ -114,9 +114,43 @@
               '';
             }
           );
+
+          packagedPruneSystemdUserUnits =
+            pkgs.runCommand "xdg-thumbnail-prune-systemd-user-units"
+              {
+                nativeBuildInputs = [
+                  pkgs.systemd
+                ];
+              }
+              ''
+                service="${package}/share/systemd/user/xdg-thumbnail-prune.service"
+                timer="${package}/share/systemd/user/xdg-thumbnail-prune.timer"
+
+                test -f "$service"
+                test -f "$timer"
+
+                grep -Fx "Type=oneshot" "$service"
+                grep -Fx "ExecStart=${package}/bin/xdg-thumbnail-prune --delete" "$service"
+
+                grep -Fx "Unit=xdg-thumbnail-prune.service" "$timer"
+                grep -Fx "OnCalendar=daily" "$timer"
+                grep -Fx "Persistent=true" "$timer"
+                grep -Fx "RandomizedDelaySec=1h" "$timer"
+                grep -Fx "WantedBy=timers.target" "$timer"
+
+                SYSTEMD_UNIT_PATH="${package}/share/systemd/user:${pkgs.systemd}/example/systemd/user" \
+                  systemd-analyze --user verify "$service" "$timer"
+
+                mkdir -p "$out"
+              '';
         in
         {
-          checks.default = package;
+          checks = {
+            default = package;
+          }
+          // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+            inherit packagedPruneSystemdUserUnits;
+          };
           packages = {
             default = package;
             xdg-thumbnail = package;
