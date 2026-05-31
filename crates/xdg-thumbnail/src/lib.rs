@@ -9,12 +9,12 @@
 //!
 //! ```no_run
 //! use xdg_thumbnail::{
-//!     PersonalCacheRoot, PersonalThumbnailLookup, ReadableOriginalIdentity, ThumbnailSize,
+//!     PersonalCacheRoot, PersonalThumbnailLookup, ReadablePersonalOriginalIdentity, ThumbnailSize,
 //! };
 //!
 //! fn main() -> xdg_thumbnail::Result<()> {
 //!     let root = PersonalCacheRoot::resolve_from_env()?;
-//!     let original = ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
+//!     let original = ReadablePersonalOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
 //!
 //!     match root.lookup_thumbnail_png_bytes(&original, ThumbnailSize::Normal)? {
 //!         PersonalThumbnailLookup::Valid(entry) => {
@@ -35,7 +35,7 @@
 //!
 //! ```no_run
 //! use xdg_thumbnail::{
-//!     PersonalCacheRoot, PersonalThumbnailInstallRequest, ReadableOriginalIdentity, ThumbnailSize,
+//!     PersonalCacheRoot, PersonalThumbnailInstallRequest, ReadablePersonalOriginalIdentity, ThumbnailSize,
 //! };
 //!
 //! fn spawn_blocking<F, R>(operation: F) -> R
@@ -56,7 +56,7 @@
 //!
 //!     let installed = spawn_blocking(move || {
 //!         let original =
-//!             ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
+//!             ReadablePersonalOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
 //!         let request = PersonalThumbnailInstallRequest::new(
 //!             root,
 //!             original,
@@ -110,7 +110,8 @@ pub use cache::{
 pub use error::{Result, ThumbnailError};
 #[cfg(unix)]
 pub use identity::{
-    OriginalIdentity, ReadableOriginalIdentity, SharedRepositoryContext, UnixMtimeSeconds,
+    PersonalOriginalIdentity, ReadablePersonalOriginalIdentity, SharedRepositoryContext,
+    UnixMtimeSeconds,
 };
 #[cfg(unix)]
 pub use inspection::{

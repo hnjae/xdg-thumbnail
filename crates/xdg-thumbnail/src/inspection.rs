@@ -133,7 +133,7 @@ impl CacheEntryInspection {
 
     /// Returns a handle that can safely remove this cache entry.
     #[must_use]
-    pub const fn handle(&self) -> &CacheEntryHandle {
+    pub const fn removal_handle(&self) -> &CacheEntryHandle {
         &self.handle
     }
 

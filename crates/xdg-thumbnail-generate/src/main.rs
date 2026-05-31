@@ -14,7 +14,7 @@ use clap::{CommandFactory, Parser, ValueEnum};
 use serde::Serialize;
 use xdg_thumbnail::{
     CacheNamespace, PersonalCacheRoot, PersonalOriginalUri, PersonalThumbnailLookup,
-    ReadableOriginalIdentity, ThumbnailError, ThumbnailSize,
+    ReadablePersonalOriginalIdentity, ThumbnailError, ThumbnailSize,
 };
 
 #[cfg(unix)]
@@ -622,11 +622,11 @@ fn is_recursive_input(root: &PersonalCacheRoot, path: &Path) -> bool {
 fn readable_original_for_path(
     path: &Path,
     mime_type: Option<&str>,
-) -> xdg_thumbnail::Result<ReadableOriginalIdentity> {
+) -> xdg_thumbnail::Result<ReadablePersonalOriginalIdentity> {
     if let Some(mime_type) = mime_type {
-        ReadableOriginalIdentity::from_local_path_with_mime_type(path, mime_type)
+        ReadablePersonalOriginalIdentity::from_local_path_with_mime_type(path, mime_type)
     } else {
-        ReadableOriginalIdentity::from_local_path(path)
+        ReadablePersonalOriginalIdentity::from_local_path(path)
     }
 }
 
@@ -634,7 +634,7 @@ fn readable_original_for_path(
 fn readable_original_for_path(
     _path: &Path,
     _mime_type: Option<&str>,
-) -> xdg_thumbnail::Result<ReadableOriginalIdentity> {
+) -> xdg_thumbnail::Result<ReadablePersonalOriginalIdentity> {
     unreachable!("xdg-thumbnail rejects non-Unix targets at compile time")
 }
 
@@ -917,7 +917,7 @@ fn execute_thumbnailer(
     cli: &Cli,
     root: &PersonalCacheRoot,
     thumbnailer: &Thumbnailer,
-    original: &ReadableOriginalIdentity,
+    original: &ReadablePersonalOriginalIdentity,
     input_path: &Path,
     size: ThumbnailSize,
 ) -> Result<(), ExecutionError> {

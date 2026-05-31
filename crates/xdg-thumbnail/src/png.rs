@@ -6,7 +6,7 @@ use std::io::Cursor;
 
 use crate::uri::validate_absolute_uri_identity;
 use crate::{
-    OriginalIdentity, ReadableOriginalIdentity, Result, SharedOriginalMetadata,
+    PersonalOriginalIdentity, ReadablePersonalOriginalIdentity, Result, SharedOriginalMetadata,
     SharedRelativeOriginalUri, SharedRepositoryContext, ThumbnailError, ThumbnailSize,
     UnixMtimeSeconds,
 };
@@ -597,7 +597,7 @@ fn parse_thumbnail_for_validation(
 #[must_use]
 pub fn validate_personal_thumbnail(
     bytes: &[u8],
-    original: &ReadableOriginalIdentity,
+    original: &ReadablePersonalOriginalIdentity,
     size: ThumbnailSize,
 ) -> PersonalValidationOutcome {
     validate_personal_thumbnail_identity(bytes, original.identity(), size)
@@ -605,7 +605,7 @@ pub fn validate_personal_thumbnail(
 
 pub(crate) fn validate_personal_thumbnail_identity(
     bytes: &[u8],
-    original: &OriginalIdentity,
+    original: &PersonalOriginalIdentity,
     size: ThumbnailSize,
 ) -> PersonalValidationOutcome {
     let parsed = match parse_thumbnail_for_validation(bytes) {
@@ -633,14 +633,14 @@ pub(crate) fn validate_personal_thumbnail_identity(
 #[must_use]
 pub fn validate_personal_failure_entry(
     bytes: &[u8],
-    original: &ReadableOriginalIdentity,
+    original: &ReadablePersonalOriginalIdentity,
 ) -> PersonalValidationOutcome {
     validate_personal_failure_entry_identity(bytes, original.identity())
 }
 
 pub(crate) fn validate_personal_failure_entry_identity(
     bytes: &[u8],
-    original: &OriginalIdentity,
+    original: &PersonalOriginalIdentity,
 ) -> PersonalValidationOutcome {
     let parsed = match parse_thumbnail_for_validation(bytes) {
         Ok(parsed) => parsed,
@@ -739,7 +739,7 @@ pub fn validate_shared_thumbnail(
 fn compare_personal_metadata(
     problems: &mut Vec<CacheEntryProblem>,
     metadata: &ThumbnailMetadata,
-    original: &OriginalIdentity,
+    original: &PersonalOriginalIdentity,
 ) {
     match metadata.thumb_uri() {
         Some(uri) if uri == original.uri().as_str() => {}
@@ -896,7 +896,7 @@ pub(crate) struct DecodedThumbnailRgba8 {
 
 pub(crate) fn normalized_personal_thumbnail_png(
     rendered_png: &[u8],
-    original: &OriginalIdentity,
+    original: &PersonalOriginalIdentity,
     size: ThumbnailSize,
 ) -> Result<Vec<u8>> {
     let image = decode_rendered_png_to_rgba8(rendered_png)?;
@@ -905,7 +905,7 @@ pub(crate) fn normalized_personal_thumbnail_png(
 
 pub(crate) fn normalized_personal_thumbnail_raw_png(
     image: RawThumbnailImage<'_>,
-    original: &OriginalIdentity,
+    original: &PersonalOriginalIdentity,
     size: ThumbnailSize,
 ) -> Result<Vec<u8>> {
     let image = raw_thumbnail_to_rgba8(image)?;
@@ -914,7 +914,7 @@ pub(crate) fn normalized_personal_thumbnail_raw_png(
 
 fn normalized_personal_thumbnail_rgba_png(
     image: RgbaImage,
-    original: &OriginalIdentity,
+    original: &PersonalOriginalIdentity,
     size: ThumbnailSize,
 ) -> Result<Vec<u8>> {
     let image = downscale_to_namespace(image, size)?;
@@ -944,7 +944,9 @@ fn rendered_validation_error(problems: &[CacheEntryProblem]) -> &'static str {
     }
 }
 
-pub(crate) fn thumbnail_metadata_pairs(original: &OriginalIdentity) -> Vec<(String, String)> {
+pub(crate) fn thumbnail_metadata_pairs(
+    original: &PersonalOriginalIdentity,
+) -> Vec<(String, String)> {
     let mut metadata = vec![
         ("Thumb::URI".to_owned(), original.uri().as_str().to_owned()),
         ("Thumb::MTime".to_owned(), original.mtime().to_string()),

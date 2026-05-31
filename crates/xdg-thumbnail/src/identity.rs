@@ -84,14 +84,14 @@ impl fmt::Display for UnixMtimeSeconds {
 /// modification time required for freshness checks and optional original size and MIME facts used
 /// when writing thumbnail metadata.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OriginalIdentity {
+pub struct PersonalOriginalIdentity {
     uri: PersonalOriginalUri,
     mtime: UnixMtimeSeconds,
     original_byte_size: Option<u64>,
     mime_type: Option<String>,
 }
 
-impl OriginalIdentity {
+impl PersonalOriginalIdentity {
     /// Creates an original identity from caller-confirmed facts without a MIME type.
     #[must_use]
     pub fn new(uri: PersonalOriginalUri, mtime: UnixMtimeSeconds) -> Self {
@@ -149,14 +149,14 @@ impl OriginalIdentity {
 
 /// An original identity whose source has been confirmed readable by the caller.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ReadableOriginalIdentity {
-    identity: OriginalIdentity,
+pub struct ReadablePersonalOriginalIdentity {
+    identity: PersonalOriginalIdentity,
 }
 
-impl ReadableOriginalIdentity {
+impl ReadablePersonalOriginalIdentity {
     /// Marks caller-confirmed original identity facts as readable.
     #[must_use]
-    pub fn from_confirmed_readable_identity(identity: OriginalIdentity) -> Self {
+    pub fn from_confirmed_readable_identity(identity: PersonalOriginalIdentity) -> Self {
         Self { identity }
     }
 
@@ -216,7 +216,8 @@ impl ReadableOriginalIdentity {
                 source,
             }
         })?)?;
-        let identity = OriginalIdentity::new(uri, mtime).with_original_byte_size(metadata.len());
+        let identity =
+            PersonalOriginalIdentity::new(uri, mtime).with_original_byte_size(metadata.len());
         let identity = if let Some(mime_type) = mime_type {
             identity.with_mime_type(mime_type)?
         } else {
@@ -227,7 +228,7 @@ impl ReadableOriginalIdentity {
 
     /// Returns the readable identity facts.
     #[must_use]
-    pub const fn identity(&self) -> &OriginalIdentity {
+    pub const fn identity(&self) -> &PersonalOriginalIdentity {
         &self.identity
     }
 }

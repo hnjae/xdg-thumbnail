@@ -83,7 +83,7 @@ Age-based cleanup policy belongs to the prune CLI, while the library reports tim
 A thumbnail consumer that only wants to reuse existing thumbnails should be able to use the library through a flow equivalent to:
 
 ```rust
-let identity = ReadableOriginalIdentity::from_local_path(path)?;
+let identity = ReadablePersonalOriginalIdentity::from_local_path(path)?;
 let personal_uri: &PersonalOriginalUri = identity.identity().uri();
 let computed_path = cache.cache_entry_path(personal_uri, &CacheNamespace::Size(ThumbnailSize::Normal));
 

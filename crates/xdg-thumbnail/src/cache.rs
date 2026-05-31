@@ -17,7 +17,7 @@ use crate::inspection::{
 use crate::{
     AccessTimePreservation, CacheEntryProblem, CacheNamespace, FailureNamespace,
     OwnedRawThumbnailImage, ParsedThumbnailPng, PersonalValidationOutcome, RawThumbnailImage,
-    ReadableOriginalIdentity, Result, SharedRelativeOriginalUri, SharedRepositoryContext,
+    ReadablePersonalOriginalIdentity, Result, SharedRelativeOriginalUri, SharedRepositoryContext,
     SharedValidationOutcome, ThumbnailError, ThumbnailMetadata, ThumbnailSize, ThumbnailTimestamps,
     UnixMtimeSeconds, decode_validated_thumbnail_png_to_rgba8, encode_rgba_png, metadata_problem,
     normalized_personal_thumbnail_png, normalized_personal_thumbnail_raw_png, push_problem,
@@ -129,7 +129,7 @@ impl PersonalCacheRoot {
     /// metadata parse failures after validation succeeds.
     pub fn lookup_thumbnail_path(
         &self,
-        original: &ReadableOriginalIdentity,
+        original: &ReadablePersonalOriginalIdentity,
         size: ThumbnailSize,
     ) -> Result<PersonalThumbnailLookup<ThumbnailPathLookupEntry>> {
         match self.lookup_thumbnail_entry(original, size)? {
@@ -156,7 +156,7 @@ impl PersonalCacheRoot {
     /// metadata parse failures after validation succeeds.
     pub fn lookup_thumbnail_png_bytes(
         &self,
-        original: &ReadableOriginalIdentity,
+        original: &ReadablePersonalOriginalIdentity,
         size: ThumbnailSize,
     ) -> Result<PersonalThumbnailLookup<ThumbnailPngBytesLookupEntry>> {
         match self.lookup_thumbnail_entry(original, size)? {
@@ -185,7 +185,7 @@ impl PersonalCacheRoot {
     /// decoding failures after validation succeeds.
     pub fn lookup_thumbnail_rgba8(
         &self,
-        original: &ReadableOriginalIdentity,
+        original: &ReadablePersonalOriginalIdentity,
         size: ThumbnailSize,
     ) -> Result<PersonalThumbnailLookup<ThumbnailRgba8LookupEntry>> {
         match self.lookup_thumbnail_entry(original, size)? {
@@ -207,7 +207,7 @@ impl PersonalCacheRoot {
     /// cache directories are unavailable or insecure, or atomic installation fails.
     pub fn install_thumbnail_path(
         &self,
-        original: &ReadableOriginalIdentity,
+        original: &ReadablePersonalOriginalIdentity,
         size: ThumbnailSize,
         rendered_png: &[u8],
     ) -> Result<InstalledThumbnailPath> {
@@ -223,7 +223,7 @@ impl PersonalCacheRoot {
     /// cache directories are unavailable or insecure, or atomic installation fails.
     pub fn install_thumbnail_png_bytes(
         &self,
-        original: &ReadableOriginalIdentity,
+        original: &ReadablePersonalOriginalIdentity,
         size: ThumbnailSize,
         rendered_png: &[u8],
     ) -> Result<InstalledThumbnailPngBytes> {
@@ -239,7 +239,7 @@ impl PersonalCacheRoot {
     /// fails, cache directories are unavailable or insecure, or atomic installation fails.
     pub fn install_thumbnail_raw_path(
         &self,
-        original: &ReadableOriginalIdentity,
+        original: &ReadablePersonalOriginalIdentity,
         size: ThumbnailSize,
         image: RawThumbnailImage<'_>,
     ) -> Result<InstalledThumbnailPath> {
@@ -255,7 +255,7 @@ impl PersonalCacheRoot {
     /// fails, cache directories are unavailable or insecure, or atomic installation fails.
     pub fn install_thumbnail_raw_png_bytes(
         &self,
-        original: &ReadableOriginalIdentity,
+        original: &ReadablePersonalOriginalIdentity,
         size: ThumbnailSize,
         image: RawThumbnailImage<'_>,
     ) -> Result<InstalledThumbnailPngBytes> {
@@ -265,7 +265,7 @@ impl PersonalCacheRoot {
 
     fn install_thumbnail_entry(
         &self,
-        original: &ReadableOriginalIdentity,
+        original: &ReadablePersonalOriginalIdentity,
         size: ThumbnailSize,
         rendered_png: &[u8],
     ) -> Result<(PathBuf, Vec<u8>)> {
@@ -278,7 +278,7 @@ impl PersonalCacheRoot {
 
     fn install_thumbnail_raw_entry(
         &self,
-        original: &ReadableOriginalIdentity,
+        original: &ReadablePersonalOriginalIdentity,
         size: ThumbnailSize,
         image: RawThumbnailImage<'_>,
     ) -> Result<(PathBuf, Vec<u8>)> {
@@ -297,7 +297,7 @@ impl PersonalCacheRoot {
     /// insecure, or atomic installation fails.
     pub fn write_failure_entry_path(
         &self,
-        original: &ReadableOriginalIdentity,
+        original: &ReadablePersonalOriginalIdentity,
         namespace: &FailureNamespace,
     ) -> Result<InstalledThumbnailPath> {
         let (path, _) = self.write_failure_entry_png_bytes_inner(original, namespace)?;
@@ -312,7 +312,7 @@ impl PersonalCacheRoot {
     /// insecure, or atomic installation fails.
     pub fn write_failure_entry_png_bytes(
         &self,
-        original: &ReadableOriginalIdentity,
+        original: &ReadablePersonalOriginalIdentity,
         namespace: &FailureNamespace,
     ) -> Result<InstalledThumbnailPngBytes> {
         let (path, bytes) = self.write_failure_entry_png_bytes_inner(original, namespace)?;
@@ -321,7 +321,7 @@ impl PersonalCacheRoot {
 
     fn write_failure_entry_png_bytes_inner(
         &self,
-        original: &ReadableOriginalIdentity,
+        original: &ReadablePersonalOriginalIdentity,
         namespace: &FailureNamespace,
     ) -> Result<(PathBuf, Vec<u8>)> {
         let namespace = CacheNamespace::Failure(namespace.clone());
@@ -338,7 +338,7 @@ impl PersonalCacheRoot {
 
     fn lookup_thumbnail_entry(
         &self,
-        original: &ReadableOriginalIdentity,
+        original: &ReadablePersonalOriginalIdentity,
         size: ThumbnailSize,
     ) -> Result<PersonalThumbnailLookup<ValidatedPersonalEntry>> {
         let path = self.cache_entry_path(original.identity().uri(), &CacheNamespace::Size(size));
@@ -710,7 +710,7 @@ fn missing_required_shared_metadata_problems(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PersonalThumbnailLookupRequest {
     root: PersonalCacheRoot,
-    original: ReadableOriginalIdentity,
+    original: ReadablePersonalOriginalIdentity,
     size: ThumbnailSize,
 }
 
@@ -719,7 +719,7 @@ impl PersonalThumbnailLookupRequest {
     #[must_use]
     pub fn new(
         root: PersonalCacheRoot,
-        original: ReadableOriginalIdentity,
+        original: ReadablePersonalOriginalIdentity,
         size: ThumbnailSize,
     ) -> Self {
         Self {
@@ -789,7 +789,7 @@ pub struct PersonalThumbnailLookupRequestParts {
     /// Personal thumbnail cache root.
     pub root: PersonalCacheRoot,
     /// Readability-confirmed original identity.
-    pub original: ReadableOriginalIdentity,
+    pub original: ReadablePersonalOriginalIdentity,
     /// Requested thumbnail size.
     pub size: ThumbnailSize,
 }
@@ -798,12 +798,12 @@ pub struct PersonalThumbnailLookupRequestParts {
 ///
 /// Constructing this request does not perform filesystem I/O. Normalization and installation happen
 /// only when [`Self::install_path`] or [`Self::install_png_bytes`] is called. Constructing a
-/// [`ReadableOriginalIdentity`] from a local path performs blocking filesystem I/O, so async callers
+/// [`ReadablePersonalOriginalIdentity`] from a local path performs blocking filesystem I/O, so async callers
 /// should do that inside their runtime's blocking adapter too.
 ///
 /// ```no_run
 /// use xdg_thumbnail::{
-///     PersonalCacheRoot, PersonalThumbnailInstallRequest, ReadableOriginalIdentity, ThumbnailSize,
+///     PersonalCacheRoot, PersonalThumbnailInstallRequest, ReadablePersonalOriginalIdentity, ThumbnailSize,
 /// };
 ///
 /// fn spawn_blocking<F, R>(operation: F) -> R
@@ -824,7 +824,7 @@ pub struct PersonalThumbnailLookupRequestParts {
 ///
 ///     let installed = spawn_blocking(move || {
 ///         let original =
-///             ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
+///             ReadablePersonalOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
 ///         let request = PersonalThumbnailInstallRequest::new(
 ///             root,
 ///             original,
@@ -840,7 +840,7 @@ pub struct PersonalThumbnailLookupRequestParts {
 #[derive(Debug, Eq, PartialEq)]
 pub struct PersonalThumbnailInstallRequest {
     root: PersonalCacheRoot,
-    original: ReadableOriginalIdentity,
+    original: ReadablePersonalOriginalIdentity,
     size: ThumbnailSize,
     rendered_png: Vec<u8>,
 }
@@ -850,7 +850,7 @@ impl PersonalThumbnailInstallRequest {
     #[must_use]
     pub fn new(
         root: PersonalCacheRoot,
-        original: ReadableOriginalIdentity,
+        original: ReadablePersonalOriginalIdentity,
         size: ThumbnailSize,
         rendered_png: Vec<u8>,
     ) -> Self {
@@ -911,7 +911,7 @@ pub struct PersonalThumbnailInstallRequestParts {
     /// Personal thumbnail cache root.
     pub root: PersonalCacheRoot,
     /// Readability-confirmed original identity.
-    pub original: ReadableOriginalIdentity,
+    pub original: ReadablePersonalOriginalIdentity,
     /// Requested thumbnail size.
     pub size: ThumbnailSize,
     /// Caller-rendered PNG bytes.
@@ -925,7 +925,7 @@ pub struct PersonalThumbnailInstallRequestParts {
 #[derive(Debug, Eq, PartialEq)]
 pub struct PersonalThumbnailRawInstallRequest {
     root: PersonalCacheRoot,
-    original: ReadableOriginalIdentity,
+    original: ReadablePersonalOriginalIdentity,
     size: ThumbnailSize,
     image: OwnedRawThumbnailImage,
 }
@@ -935,7 +935,7 @@ impl PersonalThumbnailRawInstallRequest {
     #[must_use]
     pub fn new(
         root: PersonalCacheRoot,
-        original: ReadableOriginalIdentity,
+        original: ReadablePersonalOriginalIdentity,
         size: ThumbnailSize,
         image: OwnedRawThumbnailImage,
     ) -> Self {
@@ -996,7 +996,7 @@ pub struct PersonalThumbnailRawInstallRequestParts {
     /// Personal thumbnail cache root.
     pub root: PersonalCacheRoot,
     /// Readability-confirmed original identity.
-    pub original: ReadableOriginalIdentity,
+    pub original: ReadablePersonalOriginalIdentity,
     /// Requested thumbnail size.
     pub size: ThumbnailSize,
     /// Validated raw thumbnail image.
@@ -1010,7 +1010,7 @@ pub struct PersonalThumbnailRawInstallRequestParts {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FailureEntryWriteRequest {
     root: PersonalCacheRoot,
-    original: ReadableOriginalIdentity,
+    original: ReadablePersonalOriginalIdentity,
     namespace: FailureNamespace,
 }
 
@@ -1019,7 +1019,7 @@ impl FailureEntryWriteRequest {
     #[must_use]
     pub fn new(
         root: PersonalCacheRoot,
-        original: ReadableOriginalIdentity,
+        original: ReadablePersonalOriginalIdentity,
         namespace: FailureNamespace,
     ) -> Self {
         Self {
@@ -1075,7 +1075,7 @@ pub struct FailureEntryWriteRequestParts {
     /// Personal thumbnail cache root.
     pub root: PersonalCacheRoot,
     /// Readability-confirmed original identity.
-    pub original: ReadableOriginalIdentity,
+    pub original: ReadablePersonalOriginalIdentity,
     /// Failure-entry namespace.
     pub namespace: FailureNamespace,
 }
