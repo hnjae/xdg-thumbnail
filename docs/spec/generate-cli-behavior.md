@@ -42,7 +42,7 @@ The initial sandbox eligibility model is intentionally narrow. The generate CLI 
 
 ## Input Scope
 
-The initial generate CLI accepts local filesystem paths only. Relative input paths are resolved against the current working directory into absolute paths before URI construction, but the generate CLI must not perform hidden symlink canonicalization as a URI normalization step. The resulting absolute path bytes are encoded into the canonical personal-cache `file:` URI described in `docs/spec/uri-canonicalization.md`.
+The initial generate CLI accepts local filesystem paths only. Relative input paths are resolved against the current working directory into absolute paths before URI construction, but the generate CLI must not perform hidden symlink canonicalization as a URI normalization step. Dot segments in relative and absolute inputs are removed by lexical path normalization, and the normalized absolute path is used for readability checks, MIME detection, thumbnailer `%i` and `%u` expansion, reports, recursive-cache rejection, and cache URI calculation. The resulting absolute path bytes are encoded into the canonical personal-cache `file:` URI described in `docs/spec/uri-canonicalization.md`.
 
 Inputs located inside the resolved personal thumbnail cache or a shared `.sh_thumbnails` repository are rejected with reason `unsupported-input`. This prevents recursive thumbnail generation and keeps generated cache entries tied to original user content rather than cache artifacts.
 
