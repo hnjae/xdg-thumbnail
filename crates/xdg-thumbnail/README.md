@@ -40,12 +40,12 @@ The crate does not decode original source formats, select thumbnailer helpers, e
 
 ```rust
 use xdg_thumbnail::{
-    PersonalCacheRoot, PersonalThumbnailLookup, ReadableOriginalIdentity, ThumbnailSize,
+    PersonalCacheRoot, PersonalThumbnailLookup, ReadablePersonalOriginalIdentity, ThumbnailSize,
 };
 
 fn main() -> xdg_thumbnail::Result<()> {
     let root = PersonalCacheRoot::resolve_from_env()?;
-    let original = ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
+    let original = ReadablePersonalOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
 
     match root.lookup_thumbnail_png_bytes(&original, ThumbnailSize::Normal)? {
         PersonalThumbnailLookup::Valid(entry) => {
@@ -62,11 +62,11 @@ fn main() -> xdg_thumbnail::Result<()> {
 ## Install Example
 
 ```rust
-use xdg_thumbnail::{PersonalCacheRoot, ReadableOriginalIdentity, ThumbnailSize};
+use xdg_thumbnail::{PersonalCacheRoot, ReadablePersonalOriginalIdentity, ThumbnailSize};
 
 fn main() -> xdg_thumbnail::Result<()> {
     let root = PersonalCacheRoot::resolve_from_env()?;
-    let original = ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
+    let original = ReadablePersonalOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
     let rendered_png = render_thumbnail_png();
     let installed = root.install_thumbnail_png_bytes(
         &original,
@@ -90,7 +90,7 @@ Owned request constructors only assemble values and perform no filesystem I/O. L
 
 ```rust
 use xdg_thumbnail::{
-    PersonalCacheRoot, PersonalThumbnailInstallRequest, ReadableOriginalIdentity, ThumbnailSize,
+    PersonalCacheRoot, PersonalThumbnailInstallRequest, ReadablePersonalOriginalIdentity, ThumbnailSize,
 };
 
 fn spawn_blocking<F, R>(operation: F) -> R
@@ -106,7 +106,7 @@ fn main() -> xdg_thumbnail::Result<()> {
     let rendered_png = render_thumbnail_png();
 
     let installed = spawn_blocking(move || {
-        let original = ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
+        let original = ReadablePersonalOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
         let request = PersonalThumbnailInstallRequest::new(
             root,
             original,
