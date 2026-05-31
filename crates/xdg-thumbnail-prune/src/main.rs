@@ -89,9 +89,9 @@ enum ScopeArg {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum AgeBasisArg {
-    #[value(name = "access-time")]
+    #[value(name = "atime")]
     AccessTime,
-    #[value(name = "modification-time")]
+    #[value(name = "mtime")]
     ModificationTime,
 }
 
@@ -695,7 +695,7 @@ fn write_human(records: &[EntryRecord], summary: &Summary, age_basis: AgeBasisAr
             || summary.timestamp_preservation_unavailable > 0)
     {
         println!(
-            "hint: modification-time cleanup is more portable and more aggressive; for example: xdg-thumbnail-prune --older-than 30d --age-basis modification-time"
+            "hint: mtime cleanup is more portable and more aggressive; for example: xdg-thumbnail-prune --older-than 30d --age-basis mtime"
         );
     }
 }
@@ -810,8 +810,8 @@ fn selected_timestamp(entry: &CacheEntryInspection, basis: AgeBasisArg) -> Optio
 
 fn age_basis_name(age_basis: AgeBasisArg) -> &'static str {
     match age_basis {
-        AgeBasisArg::AccessTime => "access-time",
-        AgeBasisArg::ModificationTime => "modification-time",
+        AgeBasisArg::AccessTime => "atime",
+        AgeBasisArg::ModificationTime => "mtime",
     }
 }
 

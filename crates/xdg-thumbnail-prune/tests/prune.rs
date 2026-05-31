@@ -35,6 +35,19 @@ fn generates_manpage_before_delete_option_validation() {
 }
 
 #[test]
+fn default_age_basis_is_reported_as_atime() {
+    let fixture = Fixture::new();
+
+    Command::cargo_bin("xdg-thumbnail-prune")
+        .unwrap()
+        .env("XDG_CACHE_HOME", fixture.cache_home.path())
+        .env("HOME", fixture.home.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("basis=atime"));
+}
+
+#[test]
 fn reports_missing_local_originals_without_deleting_by_default() {
     let fixture = Fixture::new();
     let thumbnail = fixture.install_for_missing_original();
@@ -79,8 +92,10 @@ fn deletes_missing_local_originals_with_jsonl_report_when_requested() {
     assert_eq!(records[0]["decision"], "delete");
     assert_eq!(records[0]["applied"], true);
     assert_eq!(records[0]["reason"], "original-missing");
+    assert_eq!(records[0]["age_basis"], "mtime");
     assert_eq!(records.last().unwrap()["event"], "summary");
     assert_eq!(records.last().unwrap()["deleted"], 1);
+    assert_eq!(records.last().unwrap()["age_basis"], "mtime");
 }
 
 #[test]
