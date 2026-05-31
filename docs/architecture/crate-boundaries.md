@@ -166,7 +166,7 @@ pub struct ReadablePersonalOriginalIdentity {
 }
 
 impl ReadablePersonalOriginalIdentity {
-    pub fn from_confirmed_readable_identity(identity: PersonalOriginalIdentity) -> Self;
+    pub fn assume_readable(identity: PersonalOriginalIdentity) -> Self;
 }
 
 pub struct SharedRepositoryContext {
