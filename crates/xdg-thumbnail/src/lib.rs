@@ -21,7 +21,6 @@
 //!             let _png_bytes = entry.png_bytes();
 //!         }
 //!         PersonalThumbnailLookup::Missing | PersonalThumbnailLookup::Invalid(_) => {}
-//!         _ => {}
 //!     }
 //!
 //!     Ok(())

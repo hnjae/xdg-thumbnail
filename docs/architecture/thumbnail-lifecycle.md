@@ -90,7 +90,6 @@ let computed_path = cache.cache_entry_path(personal_uri, &CacheNamespace::Size(T
 match cache.lookup_thumbnail_png_bytes(&identity, ThumbnailSize::Normal)? {
     PersonalThumbnailLookup::Valid(thumbnail) => return Ok(Some(thumbnail)),
     PersonalThumbnailLookup::Missing | PersonalThumbnailLookup::Invalid(_) => {}
-    _ => {}
 }
 
 let repository_root = path.parent().expect("absolute original path has a parent");
