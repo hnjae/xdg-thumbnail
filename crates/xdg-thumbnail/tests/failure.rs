@@ -43,7 +43,7 @@ fn writes_deterministic_failure_namespace_entries() {
         Some(UnixMTimeSeconds::new(42))
     );
     assert_eq!(parsed.metadata().thumb_size(), Some(12));
-    assert_eq!(parsed.metadata().thumb_mimetype(), Some("image/png"));
+    assert_eq!(parsed.metadata().thumb_mime_type(), Some("image/png"));
     assert_eq!(
         validate_personal_failure_entry(first.png_bytes(), &original),
         PersonalValidationOutcome::FullyVerified

@@ -3,9 +3,11 @@
 
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::time::{Duration, UNIX_EPOCH};
 
+use tempfile::TempDir;
 use xdg_thumbnail::{
     CacheNamespace, FailureNamespace, OriginalIdentity, PersonalCacheRoot, PersonalOriginalUri,
     ReadableOriginalIdentity, SharedRepositoryContext, ThumbnailSize, UnixMTimeSeconds,
@@ -125,6 +127,31 @@ fn readable_local_identity_rejects_relative_path_before_opening() {
     let error = ReadableOriginalIdentity::from_local_path(Path::new("relative-file")).unwrap_err();
 
     assert!(error.to_string().contains("local path must be absolute"));
+}
+
+#[test]
+fn readable_local_identity_preserves_symlink_path_as_uri_and_stats_target() {
+    let temp = TempDir::new().unwrap();
+    let target = temp.path().join("target.bin");
+    let link = temp.path().join("link.bin");
+    std::fs::write(&target, b"abc").unwrap();
+    symlink(&target, &link).unwrap();
+
+    let readable = ReadableOriginalIdentity::from_local_path(&link).unwrap();
+    let expected_uri = PersonalOriginalUri::from_absolute_path(&link).unwrap();
+    let target_metadata = std::fs::metadata(&target).unwrap();
+    let link_metadata = std::fs::symlink_metadata(&link).unwrap();
+
+    assert_eq!(readable.identity().uri(), &expected_uri);
+    assert_eq!(
+        readable.identity().mtime(),
+        UnixMTimeSeconds::from_system_time(target_metadata.modified().unwrap()).unwrap()
+    );
+    assert_eq!(
+        readable.identity().original_byte_size(),
+        Some(target_metadata.len())
+    );
+    assert_ne!(target_metadata.len(), link_metadata.len());
 }
 
 #[test]

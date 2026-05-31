@@ -378,12 +378,16 @@ fn shared_lookup_and_inspection_requests_match_borrowed_api() {
     assert_eq!(require_complete.metadata(), original_metadata);
 
     let lookup_request =
-        SharedThumbnailLookupRequest::new(context.clone(), ThumbnailSize::Normal, require_complete);
+        SharedThumbnailLookupRequest::new(context.clone(), require_complete, ThumbnailSize::Normal);
+    let parts = lookup_request.clone().into_parts();
+    assert_eq!(parts.context, context);
+    assert_eq!(parts.original_facts, require_complete);
+    assert_eq!(parts.size, ThumbnailSize::Normal);
 
     assert_eq!(
         lookup_request.clone().lookup_path().unwrap(),
         context
-            .lookup_thumbnail_path(ThumbnailSize::Normal, require_complete)
+            .lookup_thumbnail_path(require_complete, ThumbnailSize::Normal)
             .unwrap()
     );
     assert_eq!(
@@ -396,19 +400,19 @@ fn shared_lookup_and_inspection_requests_match_borrowed_api() {
     std::fs::write(&path, &shared_bytes).unwrap();
 
     let lookup_request =
-        SharedThumbnailLookupRequest::new(context.clone(), ThumbnailSize::Normal, require_complete);
+        SharedThumbnailLookupRequest::new(context.clone(), require_complete, ThumbnailSize::Normal);
     assert_eq!(
         run_blocking_style(move || lookup_request.lookup_png_bytes()).unwrap(),
         context
-            .lookup_thumbnail_png_bytes(ThumbnailSize::Normal, require_complete)
+            .lookup_thumbnail_png_bytes(require_complete, ThumbnailSize::Normal)
             .unwrap()
     );
     let lookup_request =
-        SharedThumbnailLookupRequest::new(context.clone(), ThumbnailSize::Normal, require_complete);
+        SharedThumbnailLookupRequest::new(context.clone(), require_complete, ThumbnailSize::Normal);
     assert_eq!(
         run_blocking_style(move || lookup_request.lookup_rgba8()).unwrap(),
         context
-            .lookup_thumbnail_rgba8(ThumbnailSize::Normal, require_complete)
+            .lookup_thumbnail_rgba8(require_complete, ThumbnailSize::Normal)
             .unwrap()
     );
 

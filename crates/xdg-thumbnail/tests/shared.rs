@@ -20,7 +20,7 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
         SharedRepositoryContext::new(temp.path(), OsStr::from_bytes(b"picture.png")).unwrap();
     assert_eq!(
         context
-            .lookup_thumbnail_path(ThumbnailSize::Normal, require_complete_facts())
+            .lookup_thumbnail_path(require_complete_facts(), ThumbnailSize::Normal)
             .unwrap(),
         SharedThumbnailLookup::Missing
     );
@@ -30,7 +30,7 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
     let verified = shared_png(metadata("./picture.png", Some("42"), Some("12")));
     std::fs::write(&path, &verified).unwrap();
     match context
-        .lookup_thumbnail_png_bytes(ThumbnailSize::Normal, require_complete_facts())
+        .lookup_thumbnail_png_bytes(require_complete_facts(), ThumbnailSize::Normal)
         .unwrap()
     {
         SharedThumbnailLookup::FullyVerified(bytes) => {
@@ -40,7 +40,7 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
         other => panic!("expected fully verified shared bytes, got {other:?}"),
     }
     match context
-        .lookup_thumbnail_rgba8(ThumbnailSize::Normal, require_complete_facts())
+        .lookup_thumbnail_rgba8(require_complete_facts(), ThumbnailSize::Normal)
         .unwrap()
     {
         SharedThumbnailLookup::FullyVerified(rgba8) => {
@@ -53,7 +53,7 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
         other => panic!("expected fully verified shared RGBA8, got {other:?}"),
     }
     match context
-        .lookup_thumbnail_path(ThumbnailSize::Normal, allow_incomplete_facts())
+        .lookup_thumbnail_path(allow_incomplete_facts(), ThumbnailSize::Normal)
         .unwrap()
     {
         SharedThumbnailLookup::FullyVerified(entry) => {
@@ -64,7 +64,7 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
 
     std::fs::write(&path, shared_png(BTreeMap::new())).unwrap();
     match context
-        .lookup_thumbnail_path(ThumbnailSize::Normal, allow_incomplete_facts())
+        .lookup_thumbnail_path(allow_incomplete_facts(), ThumbnailSize::Normal)
         .unwrap()
     {
         SharedThumbnailLookup::MetadataIncomplete(entry) => {
@@ -73,7 +73,7 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
         other => panic!("expected metadata-incomplete shared path, got {other:?}"),
     }
     match context
-        .lookup_thumbnail_rgba8(ThumbnailSize::Normal, allow_incomplete_facts())
+        .lookup_thumbnail_rgba8(allow_incomplete_facts(), ThumbnailSize::Normal)
         .unwrap()
     {
         SharedThumbnailLookup::MetadataIncomplete(entry) => {
@@ -84,7 +84,7 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
         other => panic!("expected metadata-incomplete shared RGBA8, got {other:?}"),
     }
     match context
-        .lookup_thumbnail_path(ThumbnailSize::Normal, require_complete_facts())
+        .lookup_thumbnail_path(require_complete_facts(), ThumbnailSize::Normal)
         .unwrap()
     {
         SharedThumbnailLookup::Invalid(problems) => {
@@ -99,7 +99,7 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
     )
     .unwrap();
     match context
-        .lookup_thumbnail_path(ThumbnailSize::Normal, require_complete_facts())
+        .lookup_thumbnail_path(require_complete_facts(), ThumbnailSize::Normal)
         .unwrap()
     {
         SharedThumbnailLookup::Invalid(problems) => {
@@ -115,12 +115,12 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
     .unwrap();
     match context
         .lookup_thumbnail_path(
-            ThumbnailSize::Normal,
             SharedOriginalFacts::new(
                 SharedThumbnailMetadataPolicy::AllowIncomplete,
                 None,
                 Some(12),
             ),
+            ThumbnailSize::Normal,
         )
         .unwrap()
     {
@@ -181,7 +181,7 @@ fn shared_validated_lookup_rejects_symlink_and_non_regular_entries() {
 
     assert_unreadable_shared_lookup(
         context
-            .lookup_thumbnail_png_bytes(ThumbnailSize::Normal, require_complete_facts())
+            .lookup_thumbnail_png_bytes(require_complete_facts(), ThumbnailSize::Normal)
             .unwrap(),
     );
 
@@ -189,7 +189,7 @@ fn shared_validated_lookup_rejects_symlink_and_non_regular_entries() {
     std::fs::create_dir(&path).unwrap();
     assert_unreadable_shared_lookup(
         context
-            .lookup_thumbnail_path(ThumbnailSize::Normal, require_complete_facts())
+            .lookup_thumbnail_path(require_complete_facts(), ThumbnailSize::Normal)
             .unwrap(),
     );
 }

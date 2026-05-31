@@ -58,7 +58,7 @@ fn local_path_vectors_match_freedesktop_compatibility_hashes() {
             PersonalOriginalUri::from_absolute_path(Path::new(OsStr::from_bytes(path))).unwrap();
         assert_eq!(uri.as_str(), *expected_uri);
         assert_eq!(uri_from_path, uri);
-        assert_eq!(uri.thumbnail_filename(), format!("{expected_stem}.png"));
+        assert_eq!(uri.thumbnail_file_name(), format!("{expected_stem}.png"));
     }
 }
 
@@ -74,7 +74,7 @@ fn textual_local_file_uri_normalizes_localhost_only() {
 
     assert_eq!(uri.as_str(), "file:///home/alice/photo.png");
     assert_eq!(
-        uri.thumbnail_filename(),
+        uri.thumbnail_file_name(),
         "82346fd12242a0f50d9cf25786189951.png"
     );
 
@@ -86,7 +86,7 @@ fn textual_local_file_uri_normalizes_localhost_only() {
         PersonalOriginalUri::from_local_file_uri("file:///home/alice/My%20Photo.png").unwrap();
     assert_eq!(encoded_space.as_str(), "file:///home/alice/My%20Photo.png");
     assert_eq!(
-        encoded_space.thumbnail_filename(),
+        encoded_space.thumbnail_file_name(),
         "a760eeee894f58795a5fb0ce8e4235f5.png"
     );
 
@@ -106,7 +106,7 @@ fn caller_provided_absolute_uri_is_validated_and_preserved() {
 
     assert_eq!(uri.as_str(), "smb://server/share/My%20Photo.png");
     assert_eq!(
-        uri.thumbnail_filename(),
+        uri.thumbnail_file_name(),
         "9225e92d750e899fbcc3b764c3085162.png"
     );
 
@@ -170,7 +170,7 @@ fn shared_child_vectors_match_compatibility_hashes() {
     for (name, expected_uri, expected_stem) in cases {
         let uri = SharedRelativeOriginalUri::from_raw_child_name(name).unwrap();
         assert_eq!(uri.as_str(), *expected_uri);
-        assert_eq!(uri.thumbnail_filename(), format!("{expected_stem}.png"));
+        assert_eq!(uri.thumbnail_file_name(), format!("{expected_stem}.png"));
     }
 }
 

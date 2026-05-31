@@ -38,7 +38,7 @@ fn parses_standard_thumbnail_metadata() {
     );
     assert_eq!(parsed.metadata().thumb_size(), Some(12));
     assert_eq!(parsed.metadata().try_thumb_size().unwrap(), Some(12));
-    assert_eq!(parsed.metadata().thumb_mimetype(), Some("image/png"));
+    assert_eq!(parsed.metadata().thumb_mime_type(), Some("image/png"));
     assert_eq!(
         parsed.metadata().iter().collect::<BTreeMap<_, _>>(),
         BTreeMap::from([

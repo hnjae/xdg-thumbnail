@@ -35,7 +35,7 @@ fn sandbox_off_executes_thumbnailer_and_installs_output() {
     let bytes = std::fs::read(cache_path).unwrap();
     let parsed = ParsedThumbnailPng::parse(&bytes).unwrap();
     assert_eq!(parsed.metadata().thumb_uri(), records[0]["uri"].as_str());
-    assert_eq!(parsed.metadata().thumb_mimetype(), Some("image/png"));
+    assert_eq!(parsed.metadata().thumb_mime_type(), Some("image/png"));
 }
 
 #[test]

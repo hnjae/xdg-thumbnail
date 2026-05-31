@@ -85,7 +85,7 @@ fn inspection_reports_invalid_uri_metadata_and_filename_uri_mismatch() {
         PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap();
     let wrong_uri = PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/other.png")
         .unwrap()
-        .thumbnail_filename();
+        .thumbnail_file_name();
     let mismatched_path = dir.join(wrong_uri);
     std::fs::write(
         &mismatched_path,

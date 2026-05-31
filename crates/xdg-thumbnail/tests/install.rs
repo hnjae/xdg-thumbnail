@@ -47,7 +47,7 @@ fn installs_normalized_downscaled_personal_thumbnail_atomically() {
         Some(UnixMTimeSeconds::new(42))
     );
     assert_eq!(parsed.metadata().thumb_size(), Some(12));
-    assert_eq!(parsed.metadata().thumb_mimetype(), Some("image/png"));
+    assert_eq!(parsed.metadata().thumb_mime_type(), Some("image/png"));
 
     let dir_mode = std::fs::metadata(expected_path.parent().unwrap())
         .unwrap()
