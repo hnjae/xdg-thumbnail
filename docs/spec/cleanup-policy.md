@@ -6,14 +6,14 @@ The `xdg-thumbnail-prune` cleanup tool removes thumbnails that are no longer use
 
 - Stable local `file:` URI: delete the thumbnail when a direct local filesystem check confirms that the original path no longer exists.
 - Stable local `file:` URI with matching original metadata: keep the thumbnail.
-- Stable local `file:` URI with changed original metadata: report it as stale and invalid for lookup by default; when `--delete-stale-local` is passed, report it as a deletion candidate, and delete it only when `--delete` is also passed.
+- Stable local `file:` URI with changed original metadata: report it as stale and invalid for lookup by default; when `--allow-stale-local-deletion` is passed, report it as a deletion candidate, and delete it only when `--delete` is also passed.
 - Stable local `file:` URI whose original cannot be checked reliably because of permissions, transient I/O errors, unsupported authorities, or unsupported path conversion: report it as unverifiable and skip deletion.
 - Remote URI such as `http:`, `https:`, `ftp:`, `sftp:`, `smb:`, or `dav:`: delete the thumbnail when it is older than the configured threshold under the selected age basis and `--delete` is passed.
 - Archive or virtual URI such as `zip:`, `tar:`, `trash:`, `recent:`, `mtp:`, or KIO-style virtual schemes: delete the thumbnail when it is older than the configured threshold under the selected age basis and `--delete` is passed.
 - Local file under a removable, portal, or desktop-fuse path: treat it like a remote or virtual URI and use age-based cleanup instead of a missing-file check.
 - Personal-cache entries with unreadable PNG structure, metadata required for their personal-cache context missing, metadata with invalid syntax, or a standard filename that does not match the MD5 of the stored canonical `Thumb::URI`: delete the thumbnail when `--delete` is passed. Well-formed metadata that no longer matches an existing original is stale metadata, not invalid metadata syntax.
 - Nonconforming successful-thumbnail PNGs that can still be parsed, such as entries without full alpha support, interlaced entries, or entries whose dimensions exceed the namespace limit: report them as invalid for application lookup, but do not delete them by default solely for format nonconformance.
-- Failure entries: skip by default because they are application-specific retry state; when the user scans them with `--scope failures` or `--scope all`, apply the same URI classification, metadata checks, and age evaluation as successful thumbnails, except successful-thumbnail dimension checks do not apply. Failure entries may become deletion candidates only when `--allow-delete-failures` is passed, and actual deletion still requires `--delete`.
+- Failure entries: skip by default because they are application-specific retry state; when the user scans them with `--scope failures` or `--scope all`, apply the same URI classification, metadata checks, and age evaluation as successful thumbnails, except successful-thumbnail dimension checks do not apply. Failure entries may become deletion candidates only when `--allow-failure-deletion` is passed, and actual deletion still requires `--delete`.
 - Nonstandard filenames in thumbnail cache directories: skip by default; include them in reports when `--include-nonstandard-files` is passed; do not delete them in the initial prune CLI. A future nonstandard-file cleanup feature must define a narrower, reviewed deletion target before it is exposed.
 
 The default age threshold is 30 days.
@@ -34,7 +34,7 @@ The prune CLI should classify local `file:` paths under these prefixes as remova
 - `/run/user/$UID/gvfs`
 - `/run/user/$UID/kio-fuse`
 
-Users should be able to disable the `/media` default with `--ignore-fhs-media`. `/mnt` is not classified as removable by default because FHS defines its contents as a local administrative matter. Users who use `/mnt` for temporary or removable mounts can opt in with repeated `--removable-prefix` options.
+Users should be able to disable the `/media` default with `--ignore-media-prefix`. `/mnt` is not classified as removable by default because FHS defines its contents as a local administrative matter. Users who use `/mnt` for temporary or removable mounts can opt in with repeated `--removable-prefix` options.
 
 Users should be able to add additional prefixes through repeated CLI options. The initial prune CLI has no persistent configuration file; if configuration is added later, its location, precedence, and merge behavior must be documented in `docs/spec/` before the feature is exposed.
 
