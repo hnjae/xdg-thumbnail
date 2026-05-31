@@ -44,7 +44,7 @@ fn reports_missing_local_originals_without_deleting_by_default() {
         .env("XDG_CACHE_HOME", fixture.cache_home.path())
         .env("HOME", fixture.home.path())
         .arg("--age-basis")
-        .arg("modification-time")
+        .arg("mtime")
         .assert()
         .success()
         .stdout(predicates::str::contains("would-delete"))
@@ -62,13 +62,7 @@ fn deletes_missing_local_originals_with_jsonl_report_when_requested() {
         .unwrap()
         .env("XDG_CACHE_HOME", fixture.cache_home.path())
         .env("HOME", fixture.home.path())
-        .args([
-            "--delete",
-            "--format",
-            "jsonl",
-            "--age-basis",
-            "modification-time",
-        ])
+        .args(["--delete", "--format", "jsonl", "--age-basis", "mtime"])
         .assert()
         .success()
         .get_output()
@@ -117,7 +111,7 @@ fn deletes_stale_local_failure_entries_when_both_stale_and_failure_deletion_are_
             "--format",
             "jsonl",
             "--age-basis",
-            "modification-time",
+            "mtime",
         ])
         .assert()
         .success()
@@ -151,7 +145,7 @@ fn reports_stale_local_thumbnails_with_stale_decision_until_delete_is_enabled() 
             "--format",
             "jsonl",
             "--age-basis",
-            "modification-time",
+            "mtime",
         ])
         .assert()
         .success()
@@ -179,7 +173,7 @@ fn reports_stale_local_thumbnails_with_stale_decision_until_delete_is_enabled() 
             "--format",
             "jsonl",
             "--age-basis",
-            "modification-time",
+            "mtime",
         ])
         .assert()
         .success()
@@ -207,13 +201,7 @@ fn deletes_entries_whose_filename_does_not_match_stored_uri() {
         .unwrap()
         .env("XDG_CACHE_HOME", fixture.cache_home.path())
         .env("HOME", fixture.home.path())
-        .args([
-            "--delete",
-            "--format",
-            "jsonl",
-            "--age-basis",
-            "modification-time",
-        ])
+        .args(["--delete", "--format", "jsonl", "--age-basis", "mtime"])
         .assert()
         .success()
         .get_output()
@@ -240,7 +228,7 @@ fn verbose_human_output_includes_kept_entries() {
         .unwrap()
         .env("XDG_CACHE_HOME", fixture.cache_home.path())
         .env("HOME", fixture.home.path())
-        .args(["--verbose", "--age-basis", "modification-time"])
+        .args(["--verbose", "--age-basis", "mtime"])
         .assert()
         .success()
         .stdout(predicates::str::contains("keep"))
@@ -256,7 +244,7 @@ fn keeps_local_thumbnail_without_optional_metadata() {
         .unwrap()
         .env("XDG_CACHE_HOME", fixture.cache_home.path())
         .env("HOME", fixture.home.path())
-        .args(["--format", "jsonl", "--age-basis", "modification-time"])
+        .args(["--format", "jsonl", "--age-basis", "mtime"])
         .assert()
         .success()
         .get_output()
@@ -282,7 +270,7 @@ fn nonconforming_entries_still_apply_missing_original_policy() {
         .unwrap()
         .env("XDG_CACHE_HOME", fixture.cache_home.path())
         .env("HOME", fixture.home.path())
-        .args(["--format", "jsonl", "--age-basis", "modification-time"])
+        .args(["--format", "jsonl", "--age-basis", "mtime"])
         .assert()
         .success()
         .get_output()
@@ -314,7 +302,7 @@ fn human_output_reports_delete_failures_as_errors() {
         .unwrap()
         .env("XDG_CACHE_HOME", fixture.cache_home.path())
         .env("HOME", fixture.home.path())
-        .args(["--delete", "--age-basis", "modification-time"])
+        .args(["--delete", "--age-basis", "mtime"])
         .assert()
         .code(1)
         .stdout(predicates::str::contains("delete-failed"))
@@ -338,7 +326,7 @@ fn nonfatal_inspection_errors_are_counted_in_summary_errors() {
         .unwrap()
         .env("XDG_CACHE_HOME", fixture.cache_home.path())
         .env("HOME", fixture.home.path())
-        .args(["--format", "jsonl", "--age-basis", "modification-time"])
+        .args(["--format", "jsonl", "--age-basis", "mtime"])
         .assert()
         .code(4)
         .get_output()
