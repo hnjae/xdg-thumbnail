@@ -6,9 +6,10 @@ use std::os::unix::fs::symlink;
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    CacheNamespace, OriginalIdentity, ParsedThumbnailPng, PersonalCacheRoot, PersonalOriginalUri,
-    RawThumbnailImage, RawThumbnailPixelFormat, ReadableOriginalIdentity, ThumbnailError,
-    ThumbnailPngBitDepth, ThumbnailPngColorType, ThumbnailSize, UnixMtimeSeconds,
+    CacheNamespace, ParsedThumbnailPng, PersonalCacheRoot, PersonalOriginalIdentity,
+    PersonalOriginalUri, RawThumbnailImage, RawThumbnailPixelFormat,
+    ReadablePersonalOriginalIdentity, ThumbnailError, ThumbnailPngBitDepth, ThumbnailPngColorType,
+    ThumbnailSize, UnixMtimeSeconds,
 };
 
 #[test]
@@ -246,9 +247,9 @@ fn raw_thumbnail_rejects_short_buffer() {
     ));
 }
 
-fn readable_original() -> ReadableOriginalIdentity {
-    ReadableOriginalIdentity::from_confirmed_readable_identity(
-        OriginalIdentity::new(
+fn readable_original() -> ReadablePersonalOriginalIdentity {
+    ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+        PersonalOriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             UnixMtimeSeconds::new(42),
         )

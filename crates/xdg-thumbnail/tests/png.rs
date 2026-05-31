@@ -7,8 +7,8 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
 use xdg_thumbnail::{
-    CacheEntryProblem, OriginalIdentity, ParsedThumbnailPng, PersonalOriginalUri,
-    PersonalValidationOutcome, ReadableOriginalIdentity, SharedOriginalMetadata,
+    CacheEntryProblem, ParsedThumbnailPng, PersonalOriginalIdentity, PersonalOriginalUri,
+    PersonalValidationOutcome, ReadablePersonalOriginalIdentity, SharedOriginalMetadata,
     SharedRepositoryContext, SharedValidationOutcome, ThumbnailError, ThumbnailMetadataKey,
     ThumbnailMetadataProblem, ThumbnailMetadataProblemKind, ThumbnailPngBitDepth,
     ThumbnailPngColorType, ThumbnailSize, UnixMtimeSeconds, validate_personal_thumbnail,
@@ -67,7 +67,8 @@ fn metadata_typed_accessors_distinguish_invalid_syntax() {
 
 #[test]
 fn validates_personal_thumbnail_metadata_and_conformance() {
-    let original = ReadableOriginalIdentity::from_confirmed_readable_identity(original_identity());
+    let original =
+        ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(original_identity());
     let valid = png_with_metadata(2, 1, png::ColorType::Rgba, metadata());
     assert_eq!(
         validate_personal_thumbnail(&valid, &original, ThumbnailSize::Normal),
@@ -322,8 +323,8 @@ fn shared_original_metadata() -> SharedOriginalMetadata {
         .with_original_byte_size(12)
 }
 
-fn original_identity() -> OriginalIdentity {
-    OriginalIdentity::new(
+fn original_identity() -> PersonalOriginalIdentity {
+    PersonalOriginalIdentity::new(
         PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
         UnixMtimeSeconds::new(42),
     )
@@ -350,7 +351,8 @@ fn parser_and_validation_reject_png_resource_limits() {
         Err(ThumbnailError::ResourceLimitExceeded(_))
     ));
 
-    let original = ReadableOriginalIdentity::from_confirmed_readable_identity(original_identity());
+    let original =
+        ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(original_identity());
     assert_personal_invalid_contains(
         validate_personal_thumbnail(&png, &original, ThumbnailSize::Normal),
         CacheEntryProblem::ResourceLimitExceeded,

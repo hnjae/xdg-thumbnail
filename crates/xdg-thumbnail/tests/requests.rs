@@ -9,14 +9,14 @@ use tempfile::TempDir;
 use xdg_thumbnail::{
     CacheEntryInspection, CacheNamespace, FailureEntryWriteRequest, FailureEntryWriteRequestParts,
     FailureNamespace, InstalledThumbnailPath, InstalledThumbnailPngBytes,
-    InstalledThumbnailPngBytesParts, NonstandardEntryPolicy, OriginalIdentity,
-    OwnedRawThumbnailImage, OwnedRawThumbnailImageParts, ParsedThumbnailPng, PersonalCacheRoot,
+    InstalledThumbnailPngBytesParts, NonstandardEntryPolicy, OwnedRawThumbnailImage,
+    OwnedRawThumbnailImageParts, ParsedThumbnailPng, PersonalCacheRoot, PersonalOriginalIdentity,
     PersonalOriginalUri, PersonalThumbnailInspectionRequest,
     PersonalThumbnailInspectionRequestParts, PersonalThumbnailInstallRequest,
     PersonalThumbnailInstallRequestParts, PersonalThumbnailLookup, PersonalThumbnailLookupRequest,
     PersonalThumbnailLookupRequestParts, PersonalThumbnailRawInstallRequest,
     PersonalThumbnailRawInstallRequestParts, RawThumbnailImage, RawThumbnailPixelFormat,
-    ReadableOriginalIdentity, SharedCacheEntryInspection, SharedCacheEntryOutcome,
+    ReadablePersonalOriginalIdentity, SharedCacheEntryInspection, SharedCacheEntryOutcome,
     SharedOriginalFacts, SharedOriginalMetadata, SharedRepositoryContext,
     SharedThumbnailInspectionRequest, SharedThumbnailInspectionRequestParts, SharedThumbnailLookup,
     SharedThumbnailLookupRequest, SharedThumbnailLookupRequestParts, SharedThumbnailMetadataPolicy,
@@ -436,9 +436,9 @@ fn shared_lookup_and_inspection_requests_match_borrowed_api() {
     assert_eq!(inspections[0].path(), path.as_path());
 }
 
-fn readable_original() -> ReadableOriginalIdentity {
-    ReadableOriginalIdentity::from_confirmed_readable_identity(
-        OriginalIdentity::new(
+fn readable_original() -> ReadablePersonalOriginalIdentity {
+    ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+        PersonalOriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             UnixMtimeSeconds::new(42),
         )

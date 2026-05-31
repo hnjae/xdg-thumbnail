@@ -10,8 +10,9 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    CacheNamespace, FailureNamespace, OriginalIdentity, PersonalCacheRoot, PersonalOriginalUri,
-    ReadableOriginalIdentity, SharedRepositoryContext, ThumbnailSize, UnixMtimeSeconds,
+    CacheNamespace, FailureNamespace, PersonalCacheRoot, PersonalOriginalIdentity,
+    PersonalOriginalUri, ReadablePersonalOriginalIdentity, SharedRepositoryContext, ThumbnailSize,
+    UnixMtimeSeconds,
 };
 
 #[test]
@@ -86,8 +87,8 @@ fn failure_namespaces_are_direct_ascii_directory_names() {
 fn path_newtypes_expose_unambiguous_path_traits() {
     let temp = TempDir::new().unwrap();
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
-    let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
-        OriginalIdentity::new(
+    let original = ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+        PersonalOriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             UnixMtimeSeconds::new(42),
         )
@@ -112,11 +113,12 @@ fn path_newtypes_expose_unambiguous_path_traits() {
 fn original_identity_preserves_required_freshness_facts() {
     let uri = PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap();
     let mtime = UnixMtimeSeconds::new(42);
-    let identity = OriginalIdentity::new(uri.clone(), mtime)
+    let identity = PersonalOriginalIdentity::new(uri.clone(), mtime)
         .with_original_byte_size(12)
         .with_mime_type("image/png")
         .unwrap();
-    let readable = ReadableOriginalIdentity::from_confirmed_readable_identity(identity.clone());
+    let readable =
+        ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(identity.clone());
 
     assert_eq!(identity.uri(), &uri);
     assert_eq!(identity.mtime().as_u64(), 42);
@@ -128,8 +130,8 @@ fn original_identity_preserves_required_freshness_facts() {
 #[test]
 fn original_identity_without_mime_type_needs_no_type_hint() {
     let uri = PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap();
-    let identity =
-        OriginalIdentity::new(uri.clone(), UnixMtimeSeconds::new(42)).with_original_byte_size(12);
+    let identity = PersonalOriginalIdentity::new(uri.clone(), UnixMtimeSeconds::new(42))
+        .with_original_byte_size(12);
 
     assert_eq!(identity.uri(), &uri);
     assert_eq!(identity.mime_type(), None);
@@ -153,7 +155,8 @@ fn unix_mtime_seconds_rejects_pre_epoch_times() {
 
 #[test]
 fn readable_local_identity_rejects_relative_path_before_opening() {
-    let error = ReadableOriginalIdentity::from_local_path(Path::new("relative-file")).unwrap_err();
+    let error =
+        ReadablePersonalOriginalIdentity::from_local_path(Path::new("relative-file")).unwrap_err();
 
     assert!(error.to_string().contains("local path must be absolute"));
 }
@@ -166,7 +169,7 @@ fn readable_local_identity_preserves_symlink_path_as_uri_and_stats_target() {
     std::fs::write(&target, b"abc").unwrap();
     symlink(&target, &link).unwrap();
 
-    let readable = ReadableOriginalIdentity::from_local_path(&link).unwrap();
+    let readable = ReadablePersonalOriginalIdentity::from_local_path(&link).unwrap();
     let expected_uri = PersonalOriginalUri::from_absolute_path(&link).unwrap();
     let target_metadata = std::fs::metadata(&target).unwrap();
     let link_metadata = std::fs::symlink_metadata(&link).unwrap();

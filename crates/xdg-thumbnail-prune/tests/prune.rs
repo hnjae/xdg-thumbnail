@@ -5,8 +5,8 @@ use assert_cmd::Command;
 use serde_json::Value;
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    CacheNamespace, FailureNamespace, OriginalIdentity, PersonalCacheRoot, PersonalOriginalUri,
-    ReadableOriginalIdentity, ThumbnailSize, UnixMtimeSeconds,
+    CacheNamespace, FailureNamespace, PersonalCacheRoot, PersonalOriginalIdentity,
+    PersonalOriginalUri, ReadablePersonalOriginalIdentity, ThumbnailSize, UnixMtimeSeconds,
 };
 
 #[cfg(unix)]
@@ -344,8 +344,8 @@ impl Fixture {
 
     fn install_for_missing_original(&self) -> std::path::PathBuf {
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
-        let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
-            OriginalIdentity::new(
+        let original = ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+            PersonalOriginalIdentity::new(
                 PersonalOriginalUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-missing.png")
                     .unwrap(),
                 UnixMtimeSeconds::new(42),
@@ -364,7 +364,7 @@ impl Fixture {
 
     fn install_nonconforming_for_missing_original(&self) -> std::path::PathBuf {
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
-        let original = OriginalIdentity::new(
+        let original = PersonalOriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-huge-missing.png")
                 .unwrap(),
             UnixMtimeSeconds::new(42),
@@ -387,8 +387,8 @@ impl Fixture {
         )
         .unwrap();
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
-        let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
-            OriginalIdentity::new(uri, UnixMtimeSeconds::new(1))
+        let original = ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+            PersonalOriginalIdentity::new(uri, UnixMtimeSeconds::new(1))
                 .with_original_byte_size(1)
                 .with_mime_type("image/png")
                 .unwrap(),
@@ -404,8 +404,8 @@ impl Fixture {
 
     fn install_uri_filename_mismatch(&self) -> std::path::PathBuf {
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
-        let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
-            OriginalIdentity::new(
+        let original = ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+            PersonalOriginalIdentity::new(
                 PersonalOriginalUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-photo.png")
                     .unwrap(),
                 UnixMtimeSeconds::new(42),
@@ -432,8 +432,8 @@ impl Fixture {
             original_path.as_os_str().as_encoded_bytes(),
         )
         .unwrap();
-        let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
-            OriginalIdentity::new(uri, UnixMtimeSeconds::new(1))
+        let original = ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+            PersonalOriginalIdentity::new(uri, UnixMtimeSeconds::new(1))
                 .with_original_byte_size(1)
                 .with_mime_type("image/png")
                 .unwrap(),
@@ -456,8 +456,8 @@ impl Fixture {
         )
         .unwrap();
         let mtime = UnixMtimeSeconds::from_system_time(metadata.modified().unwrap()).unwrap();
-        let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
-            OriginalIdentity::new(uri, mtime)
+        let original = ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+            PersonalOriginalIdentity::new(uri, mtime)
                 .with_original_byte_size(metadata.len())
                 .with_mime_type("image/png")
                 .unwrap(),
@@ -484,7 +484,7 @@ fn rendered_png() -> Vec<u8> {
     output
 }
 
-fn png_with_metadata(width: u32, height: u32, original: &OriginalIdentity) -> Vec<u8> {
+fn png_with_metadata(width: u32, height: u32, original: &PersonalOriginalIdentity) -> Vec<u8> {
     let mut output = Vec::new();
     {
         let mut encoder = png::Encoder::new(&mut output, width, height);

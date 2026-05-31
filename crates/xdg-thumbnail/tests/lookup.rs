@@ -6,9 +6,10 @@ use std::os::unix::fs::symlink;
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    CacheEntryProblem, CacheNamespace, OriginalIdentity, PersonalCacheRoot, PersonalOriginalUri,
-    PersonalThumbnailLookup, ReadableOriginalIdentity, ThumbnailMetadataKey,
-    ThumbnailMetadataProblem, ThumbnailMetadataProblemKind, ThumbnailSize, UnixMtimeSeconds,
+    CacheEntryProblem, CacheNamespace, PersonalCacheRoot, PersonalOriginalIdentity,
+    PersonalOriginalUri, PersonalThumbnailLookup, ReadablePersonalOriginalIdentity,
+    ThumbnailMetadataKey, ThumbnailMetadataProblem, ThumbnailMetadataProblemKind, ThumbnailSize,
+    UnixMtimeSeconds,
 };
 
 #[test]
@@ -231,9 +232,9 @@ fn metadata_problem(
     CacheEntryProblem::Metadata(ThumbnailMetadataProblem::new(key, kind))
 }
 
-fn original_identity(mtime: u64) -> ReadableOriginalIdentity {
-    ReadableOriginalIdentity::from_confirmed_readable_identity(
-        OriginalIdentity::new(
+fn original_identity(mtime: u64) -> ReadablePersonalOriginalIdentity {
+    ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+        PersonalOriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             UnixMtimeSeconds::new(mtime),
         )

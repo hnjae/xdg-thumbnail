@@ -6,8 +6,8 @@ use serde_json::Value;
 use std::ffi::OsString;
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    OriginalIdentity, PersonalCacheRoot, PersonalOriginalUri, ReadableOriginalIdentity,
-    ThumbnailSize, UnixMtimeSeconds,
+    PersonalCacheRoot, PersonalOriginalIdentity, PersonalOriginalUri,
+    ReadablePersonalOriginalIdentity, ThumbnailSize, UnixMtimeSeconds,
 };
 
 #[cfg(unix)]
@@ -432,8 +432,8 @@ impl Fixture {
         let uri =
             PersonalOriginalUri::from_absolute_path_bytes(input.as_os_str().as_encoded_bytes())
                 .unwrap();
-        let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
-            OriginalIdentity::new(uri, mtime)
+        let original = ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+            PersonalOriginalIdentity::new(uri, mtime)
                 .with_original_byte_size(metadata.len())
                 .with_mime_type("image/png")
                 .unwrap(),

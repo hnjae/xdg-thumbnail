@@ -3,10 +3,11 @@
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    CacheEntryProblem, CacheNamespace, FailureNamespace, OriginalIdentity, ParsedThumbnailPng,
-    PersonalCacheRoot, PersonalOriginalUri, PersonalValidationOutcome, ReadableOriginalIdentity,
-    ThumbnailMetadataKey, ThumbnailMetadataProblem, ThumbnailMetadataProblemKind,
-    ThumbnailPngColorType, UnixMtimeSeconds, validate_personal_failure_entry,
+    CacheEntryProblem, CacheNamespace, FailureNamespace, ParsedThumbnailPng, PersonalCacheRoot,
+    PersonalOriginalIdentity, PersonalOriginalUri, PersonalValidationOutcome,
+    ReadablePersonalOriginalIdentity, ThumbnailMetadataKey, ThumbnailMetadataProblem,
+    ThumbnailMetadataProblemKind, ThumbnailPngColorType, UnixMtimeSeconds,
+    validate_personal_failure_entry,
 };
 
 #[test]
@@ -85,8 +86,8 @@ fn validates_failure_entry_metadata_without_successful_thumbnail_size_limits() {
 fn reports_stale_failure_entry_metadata() {
     let original = readable_original();
     let bytes = failure_png_with_metadata(1, 1, original.identity());
-    let stale_original = ReadableOriginalIdentity::from_confirmed_readable_identity(
-        OriginalIdentity::new(original.identity().uri().clone(), UnixMtimeSeconds::new(43))
+    let stale_original = ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+        PersonalOriginalIdentity::new(original.identity().uri().clone(), UnixMtimeSeconds::new(43))
             .with_original_byte_size(12)
             .with_mime_type("image/png")
             .unwrap(),
@@ -108,9 +109,9 @@ fn metadata_problem(
     CacheEntryProblem::Metadata(ThumbnailMetadataProblem::new(key, kind))
 }
 
-fn readable_original() -> ReadableOriginalIdentity {
-    ReadableOriginalIdentity::from_confirmed_readable_identity(
-        OriginalIdentity::new(
+fn readable_original() -> ReadablePersonalOriginalIdentity {
+    ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+        PersonalOriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             UnixMtimeSeconds::new(42),
         )
@@ -120,7 +121,11 @@ fn readable_original() -> ReadableOriginalIdentity {
     )
 }
 
-fn failure_png_with_metadata(width: u32, height: u32, original: &OriginalIdentity) -> Vec<u8> {
+fn failure_png_with_metadata(
+    width: u32,
+    height: u32,
+    original: &PersonalOriginalIdentity,
+) -> Vec<u8> {
     let mut output = Vec::new();
     {
         let mut encoder = png::Encoder::new(&mut output, width, height);
