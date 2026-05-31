@@ -603,11 +603,34 @@ fn needs_sandbox_requirement(records: &[EntryRecord]) -> bool {
 }
 
 fn resolve_input_path(cwd: &Path, input: &Path) -> PathBuf {
-    if input.is_absolute() {
+    let path = if input.is_absolute() {
         input.to_owned()
     } else {
         cwd.join(input)
+    };
+    normalize_path_lexically(&path)
+}
+
+fn normalize_path_lexically(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if normalized
+                    .components()
+                    .next_back()
+                    .is_some_and(|previous| matches!(previous, Component::Normal(_)))
+                {
+                    normalized.pop();
+                }
+            }
+            Component::Normal(name) => normalized.push(name),
+        }
     }
+    normalized
 }
 
 fn is_recursive_input(root: &PersonalCacheRoot, path: &Path) -> bool {
