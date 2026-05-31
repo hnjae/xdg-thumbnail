@@ -190,6 +190,22 @@ fn lookup_thumbnail_rgba8_keeps_rgb_without_alpha_invalid() {
 }
 
 #[test]
+fn personal_thumbnail_lookup_matches_exhaustively() {
+    let lookup: PersonalThumbnailLookup<()> = PersonalThumbnailLookup::Missing;
+
+    let outcome = match lookup {
+        PersonalThumbnailLookup::Valid(()) => "valid",
+        PersonalThumbnailLookup::Missing => "missing",
+        PersonalThumbnailLookup::Invalid(problems) => {
+            assert!(problems.is_empty());
+            "invalid"
+        }
+    };
+
+    assert_eq!(outcome, "missing");
+}
+
+#[test]
 fn validated_lookup_rejects_symlink_and_non_regular_entries() {
     let temp = TempDir::new().unwrap();
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();

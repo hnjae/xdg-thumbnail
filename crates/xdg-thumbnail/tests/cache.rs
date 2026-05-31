@@ -151,7 +151,7 @@ fn path_newtypes_expose_unambiguous_path_traits() {
         .with_original_byte_size(12),
     );
     let installed = root
-        .install_thumbnail_path(&original, ThumbnailSize::Normal, &png_without_metadata())
+        .install_thumbnail_returning_path(&original, ThumbnailSize::Normal, &png_without_metadata())
         .unwrap();
 
     assert_eq!(root.as_ref(), temp.path().join("thumbnails").as_path());
@@ -207,6 +207,19 @@ fn unix_mtime_seconds_rejects_pre_epoch_times() {
         UnixMtimeSeconds::new(7)
     );
     assert!(UnixMtimeSeconds::try_from_i64(-1).is_err());
+}
+
+#[test]
+fn unix_mtime_seconds_supports_conventional_conversions() {
+    let mtime = UnixMtimeSeconds::from(7_u64);
+
+    assert_eq!(mtime, UnixMtimeSeconds::new(7));
+    assert_eq!(u64::from(mtime), 7);
+    assert_eq!(
+        UnixMtimeSeconds::try_from(UNIX_EPOCH + Duration::from_secs(11)).unwrap(),
+        UnixMtimeSeconds::new(11)
+    );
+    assert!(UnixMtimeSeconds::try_from(UNIX_EPOCH - Duration::from_secs(1)).is_err());
 }
 
 #[test]

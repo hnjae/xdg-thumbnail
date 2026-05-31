@@ -20,7 +20,7 @@ fn installs_normalized_downscaled_personal_thumbnail_atomically() {
     let rendered = png_without_metadata(300, 150, png::ColorType::Rgb);
 
     let installed = root
-        .install_thumbnail_png_bytes(&original, ThumbnailSize::Normal, &rendered)
+        .install_thumbnail_returning_png_bytes(&original, ThumbnailSize::Normal, &rendered)
         .unwrap();
 
     let expected_path = root.cache_entry_path(
@@ -72,7 +72,7 @@ fn path_install_variant_returns_only_installed_path() {
     let rendered = png_without_metadata(2, 1, png::ColorType::Rgba);
 
     let installed = root
-        .install_thumbnail_path(&original, ThumbnailSize::Normal, &rendered)
+        .install_thumbnail_returning_path(&original, ThumbnailSize::Normal, &rendered)
         .unwrap();
 
     let expected_path = root.cache_entry_path(
@@ -93,7 +93,7 @@ fn install_rejects_insecure_existing_cache_directories() {
     std::fs::set_permissions(&target_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let error = root
-        .install_thumbnail_png_bytes(
+        .install_thumbnail_returning_png_bytes(
             &readable_original(),
             ThumbnailSize::Normal,
             &png_without_metadata(2, 1, png::ColorType::Rgba),
@@ -121,7 +121,7 @@ fn install_rejects_symlinked_cache_directories() {
     symlink(&outside, root.as_path().join("normal")).unwrap();
 
     let error = root
-        .install_thumbnail_png_bytes(
+        .install_thumbnail_returning_png_bytes(
             &readable_original(),
             ThumbnailSize::Normal,
             &png_without_metadata(2, 1, png::ColorType::Rgba),
@@ -149,7 +149,7 @@ fn install_rejects_cache_namespace_paths_that_are_not_directories() {
     std::fs::write(&target_path, b"not a directory").unwrap();
 
     let error = root
-        .install_thumbnail_png_bytes(
+        .install_thumbnail_returning_png_bytes(
             &readable_original(),
             ThumbnailSize::Normal,
             &png_without_metadata(2, 1, png::ColorType::Rgba),
@@ -175,7 +175,7 @@ fn installs_rgb8_raw_thumbnail_with_opaque_alpha() {
     let image = RawThumbnailImage::new(2, 1, 6, RawThumbnailPixelFormat::Rgb8, &pixels).unwrap();
 
     let installed = root
-        .install_thumbnail_raw_png_bytes(&original, ThumbnailSize::Normal, image)
+        .install_raw_thumbnail_returning_png_bytes(&original, ThumbnailSize::Normal, image)
         .unwrap();
 
     let expected_path = root.cache_entry_path(
@@ -208,7 +208,7 @@ fn installs_rgba8_raw_thumbnail_preserving_alpha() {
     let image = RawThumbnailImage::new(2, 1, 8, RawThumbnailPixelFormat::Rgba8, &pixels).unwrap();
 
     let installed = root
-        .install_thumbnail_raw_png_bytes(&original, ThumbnailSize::Normal, image)
+        .install_raw_thumbnail_returning_png_bytes(&original, ThumbnailSize::Normal, image)
         .unwrap();
 
     let (width, height, rgba) = decode_rgba(installed.png_bytes());
@@ -225,7 +225,7 @@ fn raw_thumbnail_stride_padding_is_skipped() {
     let image = RawThumbnailImage::new(2, 2, 8, RawThumbnailPixelFormat::Rgb8, &pixels).unwrap();
 
     let installed = root
-        .install_thumbnail_raw_png_bytes(&original, ThumbnailSize::Normal, image)
+        .install_raw_thumbnail_returning_png_bytes(&original, ThumbnailSize::Normal, image)
         .unwrap();
 
     let (width, height, rgba) = decode_rgba(installed.png_bytes());
@@ -255,7 +255,7 @@ fn raw_thumbnail_oversized_input_is_downscaled() {
     .unwrap();
 
     let installed = root
-        .install_thumbnail_raw_png_bytes(&original, ThumbnailSize::Normal, image)
+        .install_raw_thumbnail_returning_png_bytes(&original, ThumbnailSize::Normal, image)
         .unwrap();
 
     let parsed = ParsedThumbnailPng::parse(installed.png_bytes()).unwrap();

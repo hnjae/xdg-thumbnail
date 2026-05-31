@@ -18,7 +18,7 @@ fn inspection_iterates_standard_entries_and_reports_facts() {
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let installed = root
-        .install_thumbnail_png_bytes(
+        .install_thumbnail_returning_png_bytes(
             &original,
             ThumbnailSize::Normal,
             &png_without_metadata(2, 1),
@@ -124,7 +124,7 @@ fn failure_iteration_is_limited_to_one_real_namespace_level() {
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let namespace = FailureNamespace::new("app-1").unwrap();
-    root.write_failure_entry_png_bytes(&original, &namespace)
+    root.write_failure_entry_returning_png_bytes(&original, &namespace)
         .unwrap();
 
     let nested = root.as_path().join("fail/app-1/nested");
@@ -176,7 +176,7 @@ fn cache_entry_handles_remove_files_without_following_symlinks() {
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let installed = root
-        .install_thumbnail_png_bytes(
+        .install_thumbnail_returning_png_bytes(
             &original,
             ThumbnailSize::Normal,
             &png_without_metadata(2, 1),
@@ -214,7 +214,7 @@ fn explicit_personal_cache_entry_handles_remove_computed_entries() {
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
     let original = readable_original();
     let installed = root
-        .install_thumbnail_png_bytes(
+        .install_thumbnail_returning_png_bytes(
             &original,
             ThumbnailSize::Normal,
             &png_without_metadata(2, 1),

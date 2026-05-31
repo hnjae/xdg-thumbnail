@@ -18,10 +18,10 @@ fn writes_deterministic_failure_namespace_entries() {
     let original = readable_original();
 
     let first = root
-        .write_failure_entry_png_bytes(&original, &namespace)
+        .write_failure_entry_returning_png_bytes(&original, &namespace)
         .unwrap();
     let second = root
-        .write_failure_entry_png_bytes(&original, &namespace)
+        .write_failure_entry_returning_png_bytes(&original, &namespace)
         .unwrap();
 
     let expected_path = root.cache_entry_path(
@@ -60,7 +60,7 @@ fn failure_path_variant_returns_only_installed_path() {
     let original = readable_original();
 
     let installed = root
-        .write_failure_entry_path(&original, &namespace)
+        .write_failure_entry_returning_path(&original, &namespace)
         .unwrap();
     let expected_path = root.cache_entry_path(
         original.identity().uri(),
