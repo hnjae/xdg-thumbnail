@@ -5,7 +5,8 @@ use tempfile::TempDir;
 use xdg_thumbnail::{
     CacheEntryProblem, CacheNamespace, FailureNamespace, OriginalIdentity, ParsedThumbnailPng,
     PersonalCacheRoot, PersonalOriginalUri, PersonalValidationOutcome, ReadableOriginalIdentity,
-    ThumbnailPngColorType, UnixMTimeSeconds, validate_personal_failure_entry,
+    ThumbnailMetadataKey, ThumbnailMetadataProblem, ThumbnailMetadataProblemKind,
+    ThumbnailPngColorType, UnixMtimeSeconds, validate_personal_failure_entry,
 };
 
 #[test]
@@ -40,7 +41,7 @@ fn writes_deterministic_failure_namespace_entries() {
     );
     assert_eq!(
         parsed.metadata().thumb_mtime(),
-        Some(UnixMTimeSeconds::new(42))
+        Some(UnixMtimeSeconds::new(42))
     );
     assert_eq!(parsed.metadata().thumb_size(), Some(12));
     assert_eq!(parsed.metadata().thumb_mime_type(), Some("image/png"));
@@ -85,7 +86,7 @@ fn reports_stale_failure_entry_metadata() {
     let original = readable_original();
     let bytes = failure_png_with_metadata(1, 1, original.identity());
     let stale_original = ReadableOriginalIdentity::from_confirmed_readable_identity(
-        OriginalIdentity::new(original.identity().uri().clone(), UnixMTimeSeconds::new(43))
+        OriginalIdentity::new(original.identity().uri().clone(), UnixMtimeSeconds::new(43))
             .with_original_byte_size(12)
             .with_mime_type("image/png")
             .unwrap(),
@@ -93,15 +94,25 @@ fn reports_stale_failure_entry_metadata() {
 
     assert_eq!(
         validate_personal_failure_entry(&bytes, &stale_original),
-        PersonalValidationOutcome::Invalid(vec![CacheEntryProblem::StaleMetadata])
+        PersonalValidationOutcome::Invalid(vec![metadata_problem(
+            ThumbnailMetadataKey::Mtime,
+            ThumbnailMetadataProblemKind::ValueMismatch,
+        )])
     );
+}
+
+fn metadata_problem(
+    key: ThumbnailMetadataKey,
+    kind: ThumbnailMetadataProblemKind,
+) -> CacheEntryProblem {
+    CacheEntryProblem::Metadata(ThumbnailMetadataProblem::new(key, kind))
 }
 
 fn readable_original() -> ReadableOriginalIdentity {
     ReadableOriginalIdentity::from_confirmed_readable_identity(
         OriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
-            UnixMTimeSeconds::new(42),
+            UnixMtimeSeconds::new(42),
         )
         .with_original_byte_size(12)
         .with_mime_type("image/png")

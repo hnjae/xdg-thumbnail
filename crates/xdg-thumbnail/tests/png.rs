@@ -9,8 +9,9 @@ use std::path::Path;
 use xdg_thumbnail::{
     CacheEntryProblem, OriginalIdentity, ParsedThumbnailPng, PersonalOriginalUri,
     PersonalValidationOutcome, ReadableOriginalIdentity, SharedOriginalMetadata,
-    SharedRepositoryContext, SharedValidationOutcome, ThumbnailError, ThumbnailPngBitDepth,
-    ThumbnailPngColorType, ThumbnailSize, UnixMTimeSeconds, validate_personal_thumbnail,
+    SharedRepositoryContext, SharedValidationOutcome, ThumbnailError, ThumbnailMetadataKey,
+    ThumbnailMetadataProblem, ThumbnailMetadataProblemKind, ThumbnailPngBitDepth,
+    ThumbnailPngColorType, ThumbnailSize, UnixMtimeSeconds, validate_personal_thumbnail,
     validate_shared_thumbnail,
 };
 
@@ -30,11 +31,11 @@ fn parses_standard_thumbnail_metadata() {
     );
     assert_eq!(
         parsed.metadata().thumb_mtime(),
-        Some(UnixMTimeSeconds::new(42))
+        Some(UnixMtimeSeconds::new(42))
     );
     assert_eq!(
         parsed.metadata().try_thumb_mtime().unwrap(),
-        Some(UnixMTimeSeconds::new(42))
+        Some(UnixMtimeSeconds::new(42))
     );
     assert_eq!(parsed.metadata().thumb_size(), Some(12));
     assert_eq!(parsed.metadata().try_thumb_size().unwrap(), Some(12));
@@ -81,7 +82,10 @@ fn validates_personal_thumbnail_metadata_and_conformance() {
             &original,
             ThumbnailSize::Normal,
         ),
-        CacheEntryProblem::MissingRequiredMetadata,
+        metadata_problem(
+            ThumbnailMetadataKey::Uri,
+            ThumbnailMetadataProblemKind::MissingRequired,
+        ),
     );
 
     let mut bad_mtime = metadata();
@@ -92,7 +96,10 @@ fn validates_personal_thumbnail_metadata_and_conformance() {
             &original,
             ThumbnailSize::Normal,
         ),
-        CacheEntryProblem::InvalidMetadataSyntax,
+        metadata_problem(
+            ThumbnailMetadataKey::Mtime,
+            ThumbnailMetadataProblemKind::InvalidSyntax,
+        ),
     );
 
     let mut negative_mtime = metadata();
@@ -103,7 +110,10 @@ fn validates_personal_thumbnail_metadata_and_conformance() {
             &original,
             ThumbnailSize::Normal,
         ),
-        CacheEntryProblem::InvalidMetadataSyntax,
+        metadata_problem(
+            ThumbnailMetadataKey::Mtime,
+            ThumbnailMetadataProblemKind::InvalidSyntax,
+        ),
     );
 
     let mut stale = metadata();
@@ -114,7 +124,10 @@ fn validates_personal_thumbnail_metadata_and_conformance() {
             &original,
             ThumbnailSize::Normal,
         ),
-        CacheEntryProblem::StaleMetadata,
+        metadata_problem(
+            ThumbnailMetadataKey::Mtime,
+            ThumbnailMetadataProblemKind::ValueMismatch,
+        ),
     );
 
     let mut invalid_uri = metadata();
@@ -125,7 +138,94 @@ fn validates_personal_thumbnail_metadata_and_conformance() {
             &original,
             ThumbnailSize::Normal,
         ),
-        CacheEntryProblem::InvalidMetadataSyntax,
+        metadata_problem(
+            ThumbnailMetadataKey::Uri,
+            ThumbnailMetadataProblemKind::InvalidSyntax,
+        ),
+    );
+
+    let mut missing_size = metadata();
+    missing_size.remove("Thumb::Size");
+    assert_personal_invalid_contains(
+        validate_personal_thumbnail(
+            &png_with_metadata(2, 1, png::ColorType::Rgba, missing_size),
+            &original,
+            ThumbnailSize::Normal,
+        ),
+        metadata_problem(
+            ThumbnailMetadataKey::Size,
+            ThumbnailMetadataProblemKind::MissingRequired,
+        ),
+    );
+
+    let mut invalid_size = metadata();
+    invalid_size.insert("Thumb::Size", "not-a-size");
+    assert_personal_invalid_contains(
+        validate_personal_thumbnail(
+            &png_with_metadata(2, 1, png::ColorType::Rgba, invalid_size),
+            &original,
+            ThumbnailSize::Normal,
+        ),
+        metadata_problem(
+            ThumbnailMetadataKey::Size,
+            ThumbnailMetadataProblemKind::InvalidSyntax,
+        ),
+    );
+
+    let mut mismatched_size = metadata();
+    mismatched_size.insert("Thumb::Size", "11");
+    assert_personal_invalid_contains(
+        validate_personal_thumbnail(
+            &png_with_metadata(2, 1, png::ColorType::Rgba, mismatched_size),
+            &original,
+            ThumbnailSize::Normal,
+        ),
+        metadata_problem(
+            ThumbnailMetadataKey::Size,
+            ThumbnailMetadataProblemKind::ValueMismatch,
+        ),
+    );
+
+    let mut missing_mimetype = metadata();
+    missing_mimetype.remove("Thumb::Mimetype");
+    assert_personal_invalid_contains(
+        validate_personal_thumbnail(
+            &png_with_metadata(2, 1, png::ColorType::Rgba, missing_mimetype),
+            &original,
+            ThumbnailSize::Normal,
+        ),
+        metadata_problem(
+            ThumbnailMetadataKey::MimeType,
+            ThumbnailMetadataProblemKind::MissingRequired,
+        ),
+    );
+
+    let mut invalid_mimetype = metadata();
+    invalid_mimetype.insert("Thumb::Mimetype", "image/png\n");
+    assert_personal_invalid_contains(
+        validate_personal_thumbnail(
+            &png_with_metadata(2, 1, png::ColorType::Rgba, invalid_mimetype),
+            &original,
+            ThumbnailSize::Normal,
+        ),
+        metadata_problem(
+            ThumbnailMetadataKey::MimeType,
+            ThumbnailMetadataProblemKind::InvalidSyntax,
+        ),
+    );
+
+    let mut mismatched_mimetype = metadata();
+    mismatched_mimetype.insert("Thumb::Mimetype", "image/jpeg");
+    assert_personal_invalid_contains(
+        validate_personal_thumbnail(
+            &png_with_metadata(2, 1, png::ColorType::Rgba, mismatched_mimetype),
+            &original,
+            ThumbnailSize::Normal,
+        ),
+        metadata_problem(
+            ThumbnailMetadataKey::MimeType,
+            ThumbnailMetadataProblemKind::ValueMismatch,
+        ),
     );
 
     assert_personal_invalid_contains(
@@ -178,7 +278,10 @@ fn shared_validation_allows_incomplete_freshness_metadata_explicitly() {
             shared_original_metadata(),
             ThumbnailSize::Normal,
         ),
-        CacheEntryProblem::StaleMetadata,
+        metadata_problem(
+            ThumbnailMetadataKey::Uri,
+            ThumbnailMetadataProblemKind::ValueMismatch,
+        ),
     );
 
     let mut invalid_uri = BTreeMap::new();
@@ -190,7 +293,10 @@ fn shared_validation_allows_incomplete_freshness_metadata_explicitly() {
             shared_original_metadata(),
             ThumbnailSize::Normal,
         ),
-        CacheEntryProblem::InvalidMetadataSyntax,
+        metadata_problem(
+            ThumbnailMetadataKey::Uri,
+            ThumbnailMetadataProblemKind::InvalidSyntax,
+        ),
     );
 
     let mut negative_mtime = BTreeMap::new();
@@ -203,20 +309,23 @@ fn shared_validation_allows_incomplete_freshness_metadata_explicitly() {
             shared_original_metadata(),
             ThumbnailSize::Normal,
         ),
-        CacheEntryProblem::InvalidMetadataSyntax,
+        metadata_problem(
+            ThumbnailMetadataKey::Mtime,
+            ThumbnailMetadataProblemKind::InvalidSyntax,
+        ),
     );
 }
 
 fn shared_original_metadata() -> SharedOriginalMetadata {
     SharedOriginalMetadata::new()
-        .with_mtime(UnixMTimeSeconds::new(42))
+        .with_mtime(UnixMtimeSeconds::new(42))
         .with_original_byte_size(12)
 }
 
 fn original_identity() -> OriginalIdentity {
     OriginalIdentity::new(
         PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
-        UnixMTimeSeconds::new(42),
+        UnixMtimeSeconds::new(42),
     )
     .with_original_byte_size(12)
     .with_mime_type("image/png")
@@ -267,6 +376,13 @@ fn assert_shared_invalid_contains(outcome: SharedValidationOutcome, problem: Cac
         }
         other => panic!("expected invalid outcome, got {other:?}"),
     }
+}
+
+fn metadata_problem(
+    key: ThumbnailMetadataKey,
+    kind: ThumbnailMetadataProblemKind,
+) -> CacheEntryProblem {
+    CacheEntryProblem::Metadata(ThumbnailMetadataProblem::new(key, kind))
 }
 
 fn png_with_metadata(

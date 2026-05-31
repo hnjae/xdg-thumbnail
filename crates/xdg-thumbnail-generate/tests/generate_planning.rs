@@ -7,7 +7,7 @@ use std::ffi::OsString;
 use tempfile::TempDir;
 use xdg_thumbnail::{
     OriginalIdentity, PersonalCacheRoot, PersonalOriginalUri, ReadableOriginalIdentity,
-    ThumbnailSize, UnixMTimeSeconds,
+    ThumbnailSize, UnixMtimeSeconds,
 };
 
 #[cfg(unix)]
@@ -428,7 +428,7 @@ impl Fixture {
 
     fn install_existing_thumbnail(&self, input: &std::path::Path) {
         let metadata = std::fs::metadata(input).unwrap();
-        let mtime = UnixMTimeSeconds::from_system_time(metadata.modified().unwrap()).unwrap();
+        let mtime = UnixMtimeSeconds::from_system_time(metadata.modified().unwrap()).unwrap();
         let uri =
             PersonalOriginalUri::from_absolute_path_bytes(input.as_os_str().as_encoded_bytes())
                 .unwrap();

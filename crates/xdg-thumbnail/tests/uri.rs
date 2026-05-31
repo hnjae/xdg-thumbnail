@@ -4,6 +4,7 @@
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
+use std::str::FromStr;
 
 use xdg_thumbnail::{PersonalOriginalUri, SharedRelativeOriginalUri};
 
@@ -134,6 +135,21 @@ fn caller_provided_absolute_uri_is_validated_and_preserved() {
     assert!(
         PersonalOriginalUri::from_caller_selected_absolute_uri("http://example.test/a\nb.png")
             .is_err()
+    );
+}
+
+#[test]
+fn uri_newtypes_expose_unambiguous_string_traits() {
+    let personal =
+        PersonalOriginalUri::from_caller_selected_absolute_uri("smb://server/share/photo.png")
+            .unwrap();
+    let shared = SharedRelativeOriginalUri::from_str("./picture.png").unwrap();
+
+    assert_eq!(personal.as_ref(), "smb://server/share/photo.png");
+    assert_eq!(shared.as_ref(), "./picture.png");
+    assert_eq!(
+        shared,
+        SharedRelativeOriginalUri::parse("./picture.png").unwrap()
     );
 }
 

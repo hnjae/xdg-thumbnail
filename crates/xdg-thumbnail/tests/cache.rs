@@ -5,12 +5,13 @@ use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::symlink;
 use std::path::Path;
+use std::str::FromStr;
 use std::time::{Duration, UNIX_EPOCH};
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
     CacheNamespace, FailureNamespace, OriginalIdentity, PersonalCacheRoot, PersonalOriginalUri,
-    ReadableOriginalIdentity, SharedRepositoryContext, ThumbnailSize, UnixMTimeSeconds,
+    ReadableOriginalIdentity, SharedRepositoryContext, ThumbnailSize, UnixMtimeSeconds,
 };
 
 #[test]
@@ -65,6 +66,8 @@ fn namespaces_compute_cache_entry_paths() {
 #[test]
 fn failure_namespaces_are_direct_ascii_directory_names() {
     assert!(FailureNamespace::new("program-1.0_alpha+build").is_ok());
+    let namespace = FailureNamespace::from_str("program-1.0_alpha+build").unwrap();
+    assert_eq!(namespace.as_ref(), "program-1.0_alpha+build");
 
     for invalid in [
         "",
@@ -80,9 +83,35 @@ fn failure_namespaces_are_direct_ascii_directory_names() {
 }
 
 #[test]
+fn path_newtypes_expose_unambiguous_path_traits() {
+    let temp = TempDir::new().unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
+        OriginalIdentity::new(
+            PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
+            UnixMtimeSeconds::new(42),
+        )
+        .with_original_byte_size(12),
+    );
+    let installed = root
+        .install_thumbnail_path(&original, ThumbnailSize::Normal, &png_without_metadata())
+        .unwrap();
+
+    assert_eq!(root.as_ref(), temp.path().join("thumbnails").as_path());
+    assert_eq!(
+        installed.as_ref(),
+        root.cache_entry_path(
+            original.identity().uri(),
+            &CacheNamespace::Size(ThumbnailSize::Normal)
+        )
+        .as_path()
+    );
+}
+
+#[test]
 fn original_identity_preserves_required_freshness_facts() {
     let uri = PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap();
-    let mtime = UnixMTimeSeconds::new(42);
+    let mtime = UnixMtimeSeconds::new(42);
     let identity = OriginalIdentity::new(uri.clone(), mtime)
         .with_original_byte_size(12)
         .with_mime_type("image/png")
@@ -100,7 +129,7 @@ fn original_identity_preserves_required_freshness_facts() {
 fn original_identity_without_mime_type_needs_no_type_hint() {
     let uri = PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap();
     let identity =
-        OriginalIdentity::new(uri.clone(), UnixMTimeSeconds::new(42)).with_original_byte_size(12);
+        OriginalIdentity::new(uri.clone(), UnixMtimeSeconds::new(42)).with_original_byte_size(12);
 
     assert_eq!(identity.uri(), &uri);
     assert_eq!(identity.mime_type(), None);
@@ -109,17 +138,17 @@ fn original_identity_without_mime_type_needs_no_type_hint() {
 #[test]
 fn unix_mtime_seconds_rejects_pre_epoch_times() {
     assert_eq!(
-        UnixMTimeSeconds::from_system_time(UNIX_EPOCH + Duration::from_secs(7))
+        UnixMtimeSeconds::from_system_time(UNIX_EPOCH + Duration::from_secs(7))
             .unwrap()
             .as_u64(),
         7
     );
-    assert!(UnixMTimeSeconds::from_system_time(UNIX_EPOCH - Duration::from_secs(1)).is_err());
+    assert!(UnixMtimeSeconds::from_system_time(UNIX_EPOCH - Duration::from_secs(1)).is_err());
     assert_eq!(
-        UnixMTimeSeconds::try_from_i64(7).unwrap(),
-        UnixMTimeSeconds::new(7)
+        UnixMtimeSeconds::try_from_i64(7).unwrap(),
+        UnixMtimeSeconds::new(7)
     );
-    assert!(UnixMTimeSeconds::try_from_i64(-1).is_err());
+    assert!(UnixMtimeSeconds::try_from_i64(-1).is_err());
 }
 
 #[test]
@@ -145,7 +174,7 @@ fn readable_local_identity_preserves_symlink_path_as_uri_and_stats_target() {
     assert_eq!(readable.identity().uri(), &expected_uri);
     assert_eq!(
         readable.identity().mtime(),
-        UnixMTimeSeconds::from_system_time(target_metadata.modified().unwrap()).unwrap()
+        UnixMtimeSeconds::from_system_time(target_metadata.modified().unwrap()).unwrap()
     );
     assert_eq!(
         readable.identity().original_byte_size(),
@@ -173,4 +202,16 @@ fn shared_repository_context_computes_contextual_cache_paths() {
         )
         .is_err()
     );
+}
+
+fn png_without_metadata() -> Vec<u8> {
+    let mut output = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut output, 2, 1);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_image_data(&[255; 8]).unwrap();
+    }
+    output
 }

@@ -8,7 +8,8 @@ use tempfile::TempDir;
 use xdg_thumbnail::{
     AccessTimePreservation, CacheEntryInspectionOutcome, CacheEntryProblem, CacheNamespace,
     FailureNamespace, NonstandardEntryPolicy, OriginalIdentity, OriginalUriIdentity,
-    PersonalCacheRoot, PersonalOriginalUri, ReadableOriginalIdentity, ThumbnailSize,
+    PersonalCacheRoot, PersonalOriginalUri, ReadableOriginalIdentity, ThumbnailMetadataKey,
+    ThumbnailMetadataProblem, ThumbnailMetadataProblemKind, ThumbnailSize,
 };
 
 #[test]
@@ -106,7 +107,10 @@ fn inspection_reports_invalid_uri_metadata_and_filename_uri_mismatch() {
 
     assert!(entries.iter().any(|entry| {
         entry.path() == invalid_uri_path.as_path()
-            && matches!(entry.outcome(), CacheEntryInspectionOutcome::Invalid(problems) if problems.contains(&CacheEntryProblem::InvalidMetadataSyntax))
+            && matches!(entry.outcome(), CacheEntryInspectionOutcome::Invalid(problems) if problems.contains(&metadata_problem(
+                ThumbnailMetadataKey::Uri,
+                ThumbnailMetadataProblemKind::InvalidSyntax,
+            )))
     }));
     assert!(entries.iter().any(|entry| {
         entry.path() == mismatched_path.as_path()
@@ -180,9 +184,10 @@ fn cache_entry_handles_remove_files_without_following_symlinks() {
         .unwrap();
     let handle = root
         .inspect_thumbnails(&[ThumbnailSize::Normal], NonstandardEntryPolicy::Exclude)
-        .unwrap()[0]
-        .handle()
-        .clone();
+        .unwrap()
+        .pop()
+        .unwrap()
+        .into_handle();
     handle.remove().unwrap();
     assert!(!installed.path().exists());
 
@@ -195,18 +200,26 @@ fn cache_entry_handles_remove_files_without_following_symlinks() {
 
     let symlink_handle = root
         .inspect_thumbnails(&[ThumbnailSize::Normal], NonstandardEntryPolicy::Exclude)
-        .unwrap()[0]
-        .handle()
-        .clone();
+        .unwrap()
+        .pop()
+        .unwrap()
+        .into_handle();
     assert!(symlink_handle.remove().is_err());
     assert!(outside.exists());
+}
+
+fn metadata_problem(
+    key: ThumbnailMetadataKey,
+    kind: ThumbnailMetadataProblemKind,
+) -> CacheEntryProblem {
+    CacheEntryProblem::Metadata(ThumbnailMetadataProblem::new(key, kind))
 }
 
 fn readable_original() -> ReadableOriginalIdentity {
     ReadableOriginalIdentity::from_confirmed_readable_identity(
         OriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
-            xdg_thumbnail::UnixMTimeSeconds::new(42),
+            xdg_thumbnail::UnixMtimeSeconds::new(42),
         )
         .with_original_byte_size(12)
         .with_mime_type("image/png")

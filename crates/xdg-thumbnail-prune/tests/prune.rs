@@ -6,7 +6,7 @@ use serde_json::Value;
 use tempfile::TempDir;
 use xdg_thumbnail::{
     CacheNamespace, FailureNamespace, OriginalIdentity, PersonalCacheRoot, PersonalOriginalUri,
-    ReadableOriginalIdentity, ThumbnailSize, UnixMTimeSeconds,
+    ReadableOriginalIdentity, ThumbnailSize, UnixMtimeSeconds,
 };
 
 #[cfg(unix)]
@@ -348,7 +348,7 @@ impl Fixture {
             OriginalIdentity::new(
                 PersonalOriginalUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-missing.png")
                     .unwrap(),
-                UnixMTimeSeconds::new(42),
+                UnixMtimeSeconds::new(42),
             )
             .with_original_byte_size(12)
             .with_mime_type("image/png")
@@ -367,7 +367,7 @@ impl Fixture {
         let original = OriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-huge-missing.png")
                 .unwrap(),
-            UnixMTimeSeconds::new(42),
+            UnixMtimeSeconds::new(42),
         )
         .with_original_byte_size(12)
         .with_mime_type("image/png")
@@ -388,7 +388,7 @@ impl Fixture {
         .unwrap();
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
         let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
-            OriginalIdentity::new(uri, UnixMTimeSeconds::new(1))
+            OriginalIdentity::new(uri, UnixMtimeSeconds::new(1))
                 .with_original_byte_size(1)
                 .with_mime_type("image/png")
                 .unwrap(),
@@ -408,7 +408,7 @@ impl Fixture {
             OriginalIdentity::new(
                 PersonalOriginalUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-photo.png")
                     .unwrap(),
-                UnixMTimeSeconds::new(42),
+                UnixMtimeSeconds::new(42),
             )
             .with_original_byte_size(12)
             .with_mime_type("image/png")
@@ -433,7 +433,7 @@ impl Fixture {
         )
         .unwrap();
         let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
-            OriginalIdentity::new(uri, UnixMTimeSeconds::new(1))
+            OriginalIdentity::new(uri, UnixMtimeSeconds::new(1))
                 .with_original_byte_size(1)
                 .with_mime_type("image/png")
                 .unwrap(),
@@ -455,7 +455,7 @@ impl Fixture {
             original_path.as_os_str().as_encoded_bytes(),
         )
         .unwrap();
-        let mtime = UnixMTimeSeconds::from_system_time(metadata.modified().unwrap()).unwrap();
+        let mtime = UnixMtimeSeconds::from_system_time(metadata.modified().unwrap()).unwrap();
         let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
             OriginalIdentity::new(uri, mtime)
                 .with_original_byte_size(metadata.len())

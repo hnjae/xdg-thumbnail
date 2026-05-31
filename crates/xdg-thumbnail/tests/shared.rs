@@ -9,14 +9,15 @@ use std::os::unix::fs::symlink;
 use tempfile::TempDir;
 use xdg_thumbnail::{
     CacheEntryProblem, SharedCacheEntryOutcome, SharedOriginalFacts, SharedOriginalMetadata,
-    SharedRepositoryContext, SharedThumbnailLookup, SharedThumbnailMetadataPolicy, ThumbnailSize,
-    UnixMTimeSeconds,
+    SharedRepositoryContext, SharedThumbnailLookup, SharedThumbnailMetadataPolicy,
+    ThumbnailMetadataKey, ThumbnailMetadataProblem, ThumbnailMetadataProblemKind, ThumbnailSize,
+    UnixMtimeSeconds,
 };
 
 #[test]
 fn shared_original_metadata_builder_feeds_lookup_facts() {
     let metadata = SharedOriginalMetadata::new()
-        .with_mtime(UnixMTimeSeconds::new(42))
+        .with_mtime(UnixMtimeSeconds::new(42))
         .with_original_byte_size(12);
     let facts = SharedOriginalFacts::new(SharedThumbnailMetadataPolicy::RequireComplete, metadata);
 
@@ -24,7 +25,7 @@ fn shared_original_metadata_builder_feeds_lookup_facts() {
         facts.metadata_policy(),
         SharedThumbnailMetadataPolicy::RequireComplete
     );
-    assert_eq!(facts.mtime(), Some(UnixMTimeSeconds::new(42)));
+    assert_eq!(facts.mtime(), Some(UnixMtimeSeconds::new(42)));
     assert_eq!(facts.original_byte_size(), Some(12));
     assert_eq!(facts.metadata(), metadata);
 }
@@ -104,7 +105,19 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
         .unwrap()
     {
         SharedThumbnailLookup::Invalid(problems) => {
-            assert_eq!(problems, vec![CacheEntryProblem::MissingRequiredMetadata]);
+            assert_eq!(
+                problems,
+                vec![
+                    metadata_problem(
+                        ThumbnailMetadataKey::Uri,
+                        ThumbnailMetadataProblemKind::MissingRequired,
+                    ),
+                    metadata_problem(
+                        ThumbnailMetadataKey::Mtime,
+                        ThumbnailMetadataProblemKind::MissingRequired,
+                    ),
+                ]
+            );
         }
         other => panic!("expected incomplete shared path rejection, got {other:?}"),
     }
@@ -119,7 +132,10 @@ fn shared_lookup_distinguishes_missing_verified_incomplete_invalid_and_unverifia
         .unwrap()
     {
         SharedThumbnailLookup::Invalid(problems) => {
-            assert!(problems.contains(&CacheEntryProblem::StaleMetadata));
+            assert!(problems.contains(&metadata_problem(
+                ThumbnailMetadataKey::Uri,
+                ThumbnailMetadataProblemKind::ValueMismatch,
+            )));
         }
         other => panic!("expected invalid shared path, got {other:?}"),
     }
@@ -218,6 +234,13 @@ fn assert_unreadable_shared_lookup<T: std::fmt::Debug>(lookup: SharedThumbnailLo
     }
 }
 
+fn metadata_problem(
+    key: ThumbnailMetadataKey,
+    kind: ThumbnailMetadataProblemKind,
+) -> CacheEntryProblem {
+    CacheEntryProblem::Metadata(ThumbnailMetadataProblem::new(key, kind))
+}
+
 fn require_complete_facts() -> SharedOriginalFacts {
     SharedOriginalFacts::new(
         SharedThumbnailMetadataPolicy::RequireComplete,
@@ -234,7 +257,7 @@ fn allow_incomplete_facts() -> SharedOriginalFacts {
 
 fn original_metadata() -> SharedOriginalMetadata {
     SharedOriginalMetadata::new()
-        .with_mtime(UnixMTimeSeconds::new(42))
+        .with_mtime(UnixMtimeSeconds::new(42))
         .with_original_byte_size(12)
 }
 

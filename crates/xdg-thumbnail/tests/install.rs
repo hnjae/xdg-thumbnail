@@ -8,7 +8,7 @@ use tempfile::TempDir;
 use xdg_thumbnail::{
     CacheNamespace, OriginalIdentity, ParsedThumbnailPng, PersonalCacheRoot, PersonalOriginalUri,
     RawThumbnailImage, RawThumbnailPixelFormat, ReadableOriginalIdentity, ThumbnailError,
-    ThumbnailPngBitDepth, ThumbnailPngColorType, ThumbnailSize, UnixMTimeSeconds,
+    ThumbnailPngBitDepth, ThumbnailPngColorType, ThumbnailSize, UnixMtimeSeconds,
 };
 
 #[test]
@@ -44,7 +44,7 @@ fn installs_normalized_downscaled_personal_thumbnail_atomically() {
     );
     assert_eq!(
         parsed.metadata().thumb_mtime(),
-        Some(UnixMTimeSeconds::new(42))
+        Some(UnixMtimeSeconds::new(42))
     );
     assert_eq!(parsed.metadata().thumb_size(), Some(12));
     assert_eq!(parsed.metadata().thumb_mime_type(), Some("image/png"));
@@ -250,7 +250,7 @@ fn readable_original() -> ReadableOriginalIdentity {
     ReadableOriginalIdentity::from_confirmed_readable_identity(
         OriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
-            UnixMTimeSeconds::new(42),
+            UnixMtimeSeconds::new(42),
         )
         .with_original_byte_size(12)
         .with_mime_type("image/png")

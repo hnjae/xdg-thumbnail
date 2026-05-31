@@ -20,9 +20,10 @@ use xdg_thumbnail::{
     SharedOriginalFacts, SharedOriginalMetadata, SharedRepositoryContext,
     SharedThumbnailInspectionRequest, SharedThumbnailInspectionRequestParts, SharedThumbnailLookup,
     SharedThumbnailLookupRequest, SharedThumbnailLookupRequestParts, SharedThumbnailMetadataPolicy,
+    ThumbnailMetadataKey, ThumbnailMetadataProblem, ThumbnailMetadataProblemKind,
     ThumbnailPathLookupEntry, ThumbnailPathLookupEntryParts, ThumbnailPngBytesLookupEntry,
     ThumbnailPngBytesLookupEntryParts, ThumbnailPngColorType, ThumbnailRgba8LookupEntry,
-    ThumbnailRgba8LookupEntryParts, ThumbnailSize, UnixMTimeSeconds,
+    ThumbnailRgba8LookupEntryParts, ThumbnailSize, UnixMtimeSeconds,
 };
 
 #[test]
@@ -46,6 +47,9 @@ fn owned_request_and_result_types_are_send_sync_static() {
     assert_send_sync_static::<SharedThumbnailMetadataPolicy>();
     assert_send_sync_static::<SharedOriginalFacts>();
     assert_send_sync_static::<SharedOriginalMetadata>();
+    assert_send_sync_static::<ThumbnailMetadataKey>();
+    assert_send_sync_static::<ThumbnailMetadataProblem>();
+    assert_send_sync_static::<ThumbnailMetadataProblemKind>();
     assert_send_sync_static::<NonstandardEntryPolicy>();
     assert_send_sync_static::<ThumbnailPathLookupEntry>();
     assert_send_sync_static::<ThumbnailPathLookupEntryParts>();
@@ -125,7 +129,7 @@ fn personal_lookup_request_matches_borrowed_lookup() {
             assert_eq!(parts.bytes, png_with_metadata(personal_metadata("42")));
             assert_eq!(
                 parts.metadata.thumb_mtime(),
-                Some(UnixMTimeSeconds::new(42))
+                Some(UnixMtimeSeconds::new(42))
             );
         }
         other => panic!("expected valid personal bytes lookup, got {other:?}"),
@@ -184,7 +188,7 @@ fn personal_install_request_matches_borrowed_install_and_normalizes() {
     assert_eq!(parsed.color_type(), ThumbnailPngColorType::Rgba);
     assert_eq!(
         parsed.metadata().thumb_mtime(),
-        Some(UnixMTimeSeconds::new(42))
+        Some(UnixMtimeSeconds::new(42))
     );
 }
 
@@ -273,7 +277,7 @@ fn personal_raw_install_request_matches_borrowed_install_and_normalizes() {
     assert_eq!(parsed.color_type(), ThumbnailPngColorType::Rgba);
     assert_eq!(
         parsed.metadata().thumb_mtime(),
-        Some(UnixMTimeSeconds::new(42))
+        Some(UnixMtimeSeconds::new(42))
     );
 
     let parts_image =
@@ -365,7 +369,7 @@ fn shared_lookup_and_inspection_requests_match_borrowed_api() {
         SharedRepositoryContext::new(temp.path(), OsStr::from_bytes(b"picture.png")).unwrap();
     let path = context.thumbnail_path(ThumbnailSize::Normal);
     let original_metadata = SharedOriginalMetadata::new()
-        .with_mtime(UnixMTimeSeconds::new(42))
+        .with_mtime(UnixMtimeSeconds::new(42))
         .with_original_byte_size(12);
     let require_complete = SharedOriginalFacts::new(
         SharedThumbnailMetadataPolicy::RequireComplete,
@@ -375,7 +379,7 @@ fn shared_lookup_and_inspection_requests_match_borrowed_api() {
         require_complete.metadata_policy(),
         SharedThumbnailMetadataPolicy::RequireComplete
     );
-    assert_eq!(require_complete.mtime(), Some(UnixMTimeSeconds::new(42)));
+    assert_eq!(require_complete.mtime(), Some(UnixMtimeSeconds::new(42)));
     assert_eq!(require_complete.original_byte_size(), Some(12));
     assert_eq!(require_complete.metadata(), original_metadata);
 
@@ -436,7 +440,7 @@ fn readable_original() -> ReadableOriginalIdentity {
     ReadableOriginalIdentity::from_confirmed_readable_identity(
         OriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
-            UnixMTimeSeconds::new(42),
+            UnixMtimeSeconds::new(42),
         )
         .with_original_byte_size(12)
         .with_mime_type("image/png")

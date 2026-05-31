@@ -7,7 +7,8 @@ use std::os::unix::fs::symlink;
 use tempfile::TempDir;
 use xdg_thumbnail::{
     CacheEntryProblem, CacheNamespace, OriginalIdentity, PersonalCacheRoot, PersonalOriginalUri,
-    PersonalThumbnailLookup, ReadableOriginalIdentity, ThumbnailSize, UnixMTimeSeconds,
+    PersonalThumbnailLookup, ReadableOriginalIdentity, ThumbnailMetadataKey,
+    ThumbnailMetadataProblem, ThumbnailMetadataProblemKind, ThumbnailSize, UnixMtimeSeconds,
 };
 
 #[test]
@@ -49,7 +50,10 @@ fn lookup_thumbnail_path_distinguishes_valid_missing_and_invalid_entries() {
         .unwrap()
     {
         PersonalThumbnailLookup::Invalid(problems) => {
-            assert!(problems.contains(&CacheEntryProblem::StaleMetadata));
+            assert!(problems.contains(&metadata_problem(
+                ThumbnailMetadataKey::Mtime,
+                ThumbnailMetadataProblemKind::ValueMismatch,
+            )));
         }
         other => panic!("expected invalid lookup, got {other:?}"),
     }
@@ -116,7 +120,7 @@ fn lookup_thumbnail_rgba8_returns_decoded_pixels_and_metadata() {
             assert_eq!(parts.pixels, pixels);
             assert_eq!(
                 parts.metadata.thumb_mtime(),
-                Some(UnixMTimeSeconds::new(42))
+                Some(UnixMtimeSeconds::new(42))
             );
         }
         other => panic!("expected valid RGBA8 lookup, got {other:?}"),
@@ -220,11 +224,18 @@ fn assert_unreadable_lookup<T: std::fmt::Debug>(lookup: PersonalThumbnailLookup<
     }
 }
 
+fn metadata_problem(
+    key: ThumbnailMetadataKey,
+    kind: ThumbnailMetadataProblemKind,
+) -> CacheEntryProblem {
+    CacheEntryProblem::Metadata(ThumbnailMetadataProblem::new(key, kind))
+}
+
 fn original_identity(mtime: u64) -> ReadableOriginalIdentity {
     ReadableOriginalIdentity::from_confirmed_readable_identity(
         OriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
-            UnixMTimeSeconds::new(mtime),
+            UnixMtimeSeconds::new(mtime),
         )
         .with_original_byte_size(12)
         .with_mime_type("image/png")
