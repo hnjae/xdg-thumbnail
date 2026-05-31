@@ -10,7 +10,7 @@ use std::process::{Command as ProcessCommand, ExitCode};
 use std::time::{Duration, Instant};
 
 use base64::Engine;
-use clap::{CommandFactory, Parser, ValueEnum};
+use clap::{CommandFactory, Parser, ValueEnum, error::ErrorKind};
 use serde::Serialize;
 use xdg_thumbnail::{
     CacheNamespace, PersonalCacheRoot, PersonalOriginalUri, PersonalThumbnailLookup,
@@ -23,32 +23,76 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::fs::PermissionsExt;
 
 #[derive(Parser, Debug)]
-#[command(version, about)]
+#[command(
+    version,
+    about,
+    override_usage = "xdg-thumbnail-generate [OPTIONS] <PATH>..."
+)]
 struct Cli {
-    #[arg(long, value_enum)]
+    #[arg(
+        long,
+        value_enum,
+        value_name = "SIZE",
+        help = "Generate one size namespace: normal, large, x-large, or xx-large. Defaults to normal. Can be passed multiple times."
+    )]
     size: Vec<SizeArg>,
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Regenerate even when a valid target thumbnail already exists."
+    )]
     force: bool,
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Report planned thumbnailer selection, sandbox eligibility, and target paths without running thumbnailers or writing cache entries."
+    )]
     dry_run: bool,
-    #[arg(long, default_value = "30s", value_parser = parse_duration)]
+    #[arg(
+        long,
+        default_value = "30s",
+        value_name = "DURATION",
+        value_parser = parse_duration,
+        help = "Maximum runtime for each thumbnailer invocation."
+    )]
     timeout: Duration,
-    #[arg(long, value_enum, default_value_t = SandboxArg::Required, help = SANDBOX_HELP)]
+    #[arg(
+        long,
+        value_enum,
+        value_name = "MODE",
+        default_value_t = SandboxArg::Required,
+        help = SANDBOX_HELP
+    )]
     sandbox: SandboxArg,
-    #[arg(long, value_enum, default_value_t = FormatArg::Human)]
+    #[arg(
+        long,
+        value_enum,
+        value_name = "FORMAT",
+        default_value_t = FormatArg::Human,
+        help = "Output format: human or jsonl."
+    )]
     format: FormatArg,
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Print discovery, MIME, command, validation, and cache-write details."
+    )]
     verbose: bool,
     #[arg(
         long,
         value_enum,
         value_name = "SHELL",
-        conflicts_with = "generate_manpage"
+        conflicts_with = "generate_manpage",
+        help = "Generate a shell completion script to stdout and exit without PATH operands."
     )]
     generate_completion: Option<clap_complete::Shell>,
-    #[arg(long, conflicts_with = "generate_completion")]
+    #[arg(
+        long,
+        conflicts_with = "generate_completion",
+        help = "Generate a man page to stdout and exit without PATH operands."
+    )]
     generate_manpage: bool,
-    #[arg(required_unless_present_any = ["generate_completion", "generate_manpage"])]
+    #[arg(
+        value_name = "PATH",
+        required_unless_present_any = ["generate_completion", "generate_manpage"]
+    )]
     paths: Vec<PathBuf>,
 }
 
@@ -88,6 +132,7 @@ enum FormatArg {
 #[derive(Default)]
 struct Summary {
     requested: u64,
+    planned: u64,
     generated: u64,
     kept: u64,
     skipped: u64,
@@ -166,6 +211,7 @@ struct SummaryRecord {
     schema_version: u8,
     event: &'static str,
     requested: u64,
+    planned: u64,
     generated: u64,
     kept: u64,
     skipped: u64,
@@ -180,7 +226,14 @@ fn main() -> ExitCode {
         Ok(cli) => cli,
         Err(error) => {
             let _ = error.print();
-            return ExitCode::from(2);
+            return if matches!(
+                error.kind(),
+                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
+            ) {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(2)
+            };
         }
     };
 
@@ -455,7 +508,7 @@ fn plan_one(
         }
         record.decision = "generate";
         record.reason = "dry-run";
-        summary.generated += 1;
+        summary.planned += 1;
         return record;
     }
 
@@ -549,8 +602,9 @@ fn write_human(
         println!("sandbox requirement: {SANDBOX_REQUIREMENT}");
     }
     println!(
-        "summary requested={} generated={} kept={} skipped={} failed={} warnings={} exit-code={}",
+        "summary requested={} planned={} generated={} kept={} skipped={} failed={} warnings={} exit-code={}",
         summary.requested,
+        summary.planned,
         summary.generated,
         summary.kept,
         summary.skipped,
@@ -582,6 +636,7 @@ fn write_jsonl(
         schema_version: 0,
         event: "summary",
         requested: summary.requested,
+        planned: summary.planned,
         generated: summary.generated,
         kept: summary.kept,
         skipped: summary.skipped,

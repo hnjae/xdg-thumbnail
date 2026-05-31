@@ -8,7 +8,7 @@ use std::process::ExitCode;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
-use clap::{CommandFactory, Parser, ValueEnum};
+use clap::{CommandFactory, Parser, ValueEnum, error::ErrorKind};
 use serde::Serialize;
 use xdg_thumbnail::{
     AccessTimePreservation, CacheEntryInspection, CacheEntryInspectionOutcome, CacheEntryProblem,
@@ -24,38 +24,88 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 #[derive(Parser, Debug)]
 #[command(version, about)]
 struct Cli {
-    #[arg(long, default_value = "30d", value_parser = parse_duration)]
+    #[arg(
+        long,
+        default_value = "30d",
+        value_name = "DURATION",
+        value_parser = parse_duration,
+        help = "Age threshold for remote, virtual, and removable entries under the selected age basis."
+    )]
     older_than: Duration,
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Apply deletion decisions. Without this option, prune only reports planned actions."
+    )]
     delete: bool,
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Include stale local thumbnails as deletion candidates. Actual deletion still requires --delete."
+    )]
     delete_stale_local: bool,
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Allow scanned failure entries to become deletion candidates. Actual deletion still requires --delete."
+    )]
     allow_delete_failures: bool,
-    #[arg(long, value_enum)]
+    #[arg(
+        long,
+        value_enum,
+        value_name = "SIZE",
+        help = "Restrict successful thumbnail scan to one size namespace: normal, large, x-large, or xx-large. Can be passed multiple times."
+    )]
     size: Vec<SizeArg>,
-    #[arg(long, value_enum, default_value_t = ScopeArg::Thumbnails)]
+    #[arg(
+        long,
+        value_enum,
+        value_name = "SCOPE",
+        default_value_t = ScopeArg::Thumbnails,
+        help = "Restrict scan scope: thumbnails, failures, or all."
+    )]
     scope: ScopeArg,
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Include nonstandard filenames in reports as skipped entries."
+    )]
     include_nonstandard_files: bool,
-    #[arg(long)]
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Add a local path prefix that should use age-based cleanup. Can be passed multiple times."
+    )]
     removable_prefix: Vec<PathBuf>,
-    #[arg(long)]
+    #[arg(long, help = "Do not treat /media as removable by default.")]
     ignore_fhs_media: bool,
-    #[arg(long, value_enum, default_value_t = AgeBasisArg::AccessTime)]
+    #[arg(
+        long,
+        value_enum,
+        value_name = "BASIS",
+        default_value_t = AgeBasisArg::AccessTime,
+        help = "Timestamp basis for age-based cleanup: atime or mtime. mtime is more portable and more aggressive."
+    )]
     age_basis: AgeBasisArg,
-    #[arg(long, value_enum, default_value_t = FormatArg::Human)]
+    #[arg(
+        long,
+        value_enum,
+        value_name = "FORMAT",
+        default_value_t = FormatArg::Human,
+        help = "Output format: human or jsonl."
+    )]
     format: FormatArg,
-    #[arg(long)]
+    #[arg(long, help = "Print classification and timestamp details.")]
     verbose: bool,
     #[arg(
         long,
         value_enum,
         value_name = "SHELL",
-        conflicts_with = "generate_manpage"
+        conflicts_with = "generate_manpage",
+        help = "Generate a shell completion script to stdout and exit."
     )]
     generate_completion: Option<clap_complete::Shell>,
-    #[arg(long, conflicts_with = "generate_completion")]
+    #[arg(
+        long,
+        conflicts_with = "generate_completion",
+        help = "Generate a man page to stdout and exit."
+    )]
     generate_manpage: bool,
 }
 
@@ -201,7 +251,14 @@ fn main() -> ExitCode {
         Ok(cli) => cli,
         Err(error) => {
             let _ = error.print();
-            return ExitCode::from(2);
+            return if matches!(
+                error.kind(),
+                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
+            ) {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(2)
+            };
         }
     };
 
@@ -528,7 +585,7 @@ fn evaluate_local_file(
         PersonalValidationOutcome::Invalid(problems)
             if has_metadata_kind(&problems, ThumbnailMetadataProblemKind::ValueMismatch) =>
         {
-            if cli.delete_stale_local && cli.delete {
+            if cli.delete_stale_local {
                 *decision = Decision::Delete;
                 *reason = Some("stale-local-metadata");
             } else {
