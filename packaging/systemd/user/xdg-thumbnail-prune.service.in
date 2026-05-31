@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: 2026 KIM Hyunjae
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[Unit]
+Description=Prune the Freedesktop thumbnail cache
+Documentation=man:xdg-thumbnail-prune(1)
+
+[Service]
+Type=oneshot
+ExecStart=@bindir@/xdg-thumbnail-prune --delete

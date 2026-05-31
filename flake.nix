@@ -110,6 +110,15 @@
                 ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
                   wrapProgram "$out/bin/xdg-thumbnail-generate" \
                     --prefix PATH : ${lib.makeBinPath [ pkgs.bubblewrap ]}
+
+                  install -Dm0644 ${./packaging/systemd/user/xdg-thumbnail-prune.timer} \
+                    "$out/share/systemd/user/xdg-thumbnail-prune.timer"
+                  install -Dm0644 ${./packaging/systemd/user/xdg-thumbnail-prune.service.in} \
+                    "$out/share/systemd/user/xdg-thumbnail-prune.service.in"
+                  sed "s|@bindir@|$out/bin|g" \
+                    "$out/share/systemd/user/xdg-thumbnail-prune.service.in" \
+                    > "$out/share/systemd/user/xdg-thumbnail-prune.service"
+                  rm "$out/share/systemd/user/xdg-thumbnail-prune.service.in"
                 ''}
               '';
             }
@@ -138,8 +147,18 @@
                 grep -Fx "RandomizedDelaySec=1h" "$timer"
                 grep -Fx "WantedBy=timers.target" "$timer"
 
-                SYSTEMD_UNIT_PATH="${package}/share/systemd/user:${pkgs.systemd}/example/systemd/user" \
-                  systemd-analyze --user verify "$service" "$timer"
+                fixture="$TMPDIR/systemd-user-fixtures"
+                mkdir -p "$fixture"
+                printf "[Unit]\nDescription=Basic Target\n" > "$fixture/basic.target"
+                printf "[Unit]\nDescription=Timers Target\n" > "$fixture/timers.target"
+
+                runtime="$TMPDIR/systemd-runtime"
+                mkdir -p "$runtime"
+                chmod 700 "$runtime"
+
+                XDG_RUNTIME_DIR="$runtime" \
+                  SYSTEMD_UNIT_PATH="${package}/share/systemd/user:$fixture" \
+                  systemd-analyze --user --root=/ --man=no verify "$service" "$timer"
 
                 mkdir -p "$out"
               '';
