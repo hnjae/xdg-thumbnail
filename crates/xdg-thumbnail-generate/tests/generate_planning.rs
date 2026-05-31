@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use assert_cmd::Command;
+use base64::Engine;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -125,6 +126,111 @@ fn rejects_inputs_inside_personal_cache() {
     assert
         .code(4)
         .stdout(predicates::str::contains("unsupported-input"));
+}
+
+#[test]
+fn dry_run_normalizes_relative_input_dot_segments_for_identity_and_reports() {
+    let fixture = Fixture::new();
+    let input = fixture.write_png_input("photo.png");
+    std::fs::create_dir(fixture.root.path().join("subdir")).unwrap();
+    fixture.write_thumbnailer("test.thumbnailer", "true %i %o %s", "image/png;");
+
+    let records = fixture.run_jsonl([
+        "--dry-run",
+        "--sandbox",
+        "off",
+        "--format",
+        "jsonl",
+        "subdir/.././photo.png",
+    ]);
+
+    assert_eq!(records[0]["decision"], "generate");
+    assert_entry_uses_input_identity(&fixture, &records[0], &input);
+}
+
+#[test]
+fn dry_run_normalizes_absolute_input_dot_segments_for_identity_and_reports() {
+    let fixture = Fixture::new();
+    let input = fixture.write_png_input("photo.png");
+    std::fs::create_dir(fixture.root.path().join("dir")).unwrap();
+    fixture.write_thumbnailer("test.thumbnailer", "true %i %o %s", "image/png;");
+    let dot_segment_input = fixture.root.path().join("dir/.././photo.png");
+
+    let records = fixture.run_jsonl([
+        "--dry-run",
+        "--sandbox",
+        "off",
+        "--format",
+        "jsonl",
+        dot_segment_input.to_str().unwrap(),
+    ]);
+
+    assert_eq!(records[0]["decision"], "generate");
+    assert_entry_uses_input_identity(&fixture, &records[0], &input);
+}
+
+#[cfg(unix)]
+#[test]
+fn dry_run_preserves_symlink_path_as_input_identity() {
+    let fixture = Fixture::new();
+    let real_dir = fixture.root.path().join("real");
+    let link_dir = fixture.root.path().join("link");
+    std::fs::create_dir(&real_dir).unwrap();
+    std::fs::write(real_dir.join("photo.png"), rendered_png()).unwrap();
+    std::os::unix::fs::symlink(&real_dir, &link_dir).unwrap();
+    fixture.write_thumbnailer("test.thumbnailer", "true %i %o %s", "image/png;");
+    let symlink_input = link_dir.join("photo.png");
+
+    let records = fixture.run_jsonl([
+        "--dry-run",
+        "--sandbox",
+        "off",
+        "--format",
+        "jsonl",
+        symlink_input.to_str().unwrap(),
+    ]);
+
+    assert_eq!(records[0]["decision"], "generate");
+    assert_entry_uses_input_identity(&fixture, &records[0], &symlink_input);
+    assert!(
+        !records[0]["uri"]
+            .as_str()
+            .unwrap()
+            .contains("/real/photo.png")
+    );
+}
+
+#[test]
+fn rejects_dot_segment_inputs_inside_personal_cache() {
+    let fixture = Fixture::new();
+    let cache_input = fixture
+        .cache_home
+        .path()
+        .join("thumbnails/normal/input.png");
+    std::fs::create_dir_all(cache_input.parent().unwrap()).unwrap();
+    std::fs::write(&cache_input, rendered_png()).unwrap();
+    let cache_home_name = fixture.cache_home.path().file_name().unwrap();
+    let dot_segment_input = fixture
+        .cache_home
+        .path()
+        .join("..")
+        .join(cache_home_name)
+        .join("thumbnails/normal/input.png");
+
+    let records = fixture.run_jsonl_code(
+        [
+            "--dry-run",
+            "--sandbox",
+            "off",
+            "--format",
+            "jsonl",
+            dot_segment_input.to_str().unwrap(),
+        ],
+        4,
+    );
+
+    assert_eq!(records[0]["decision"], "skip");
+    assert_eq!(records[0]["reason"], "unsupported-input");
 }
 
 #[cfg(unix)]
@@ -372,6 +478,7 @@ impl Fixture {
         path.push(":");
         path.push(std::env::var_os("PATH").unwrap_or_default());
         command
+            .current_dir(self.root.path())
             .env("XDG_CACHE_HOME", self.cache_home.path())
             .env("HOME", self.home.path())
             .env("XDG_DATA_HOME", self.data_home.path())
@@ -490,6 +597,31 @@ impl Fixture {
         )
         .unwrap();
     }
+}
+
+fn assert_entry_uses_input_identity(fixture: &Fixture, entry: &Value, input: &std::path::Path) {
+    let uri = PersonalOriginalUri::from_absolute_path_bytes(input.as_os_str().as_encoded_bytes())
+        .unwrap();
+    let cache_path = PersonalCacheRoot::new(fixture.cache_home.path().join("thumbnails"))
+        .unwrap()
+        .cache_entry_path(
+            &uri,
+            &xdg_thumbnail::CacheNamespace::Size(ThumbnailSize::Normal),
+        );
+
+    assert_eq!(entry["input_path_display"], input.display().to_string());
+    assert_eq!(entry["input_path_bytes_b64"], path_bytes_b64(input));
+    assert_eq!(entry["uri"], uri.as_str());
+    assert_eq!(entry["thumbnailer_uri"], uri.as_str());
+    assert_eq!(
+        entry["cache_path_display"],
+        cache_path.display().to_string()
+    );
+    assert_eq!(entry["cache_path_bytes_b64"], path_bytes_b64(&cache_path));
+}
+
+fn path_bytes_b64(path: &std::path::Path) -> String {
+    base64::engine::general_purpose::STANDARD_NO_PAD.encode(path.as_os_str().as_encoded_bytes())
 }
 
 fn parse_jsonl(output: Vec<u8>) -> Vec<Value> {
