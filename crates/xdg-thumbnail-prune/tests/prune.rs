@@ -26,7 +26,13 @@ fn help_and_version_are_successful_metadata_modes() {
         .stdout(predicate::str::contains("Apply deletion decisions"))
         .stdout(predicate::str::contains(
             "Actual deletion still requires --delete",
-        ));
+        ))
+        .stdout(predicate::str::contains("--allow-stale-local-deletion"))
+        .stdout(predicate::str::contains("--allow-failure-deletion"))
+        .stdout(predicate::str::contains("--ignore-media-prefix"))
+        .stdout(predicate::str::contains("--delete-stale-local").not())
+        .stdout(predicate::str::contains("--allow-delete-failures").not())
+        .stdout(predicate::str::contains("--ignore-fhs-media").not());
 
     Command::cargo_bin("xdg-thumbnail-prune")
         .unwrap()
@@ -50,7 +56,7 @@ fn generates_completion_without_scanning_cache() {
 fn generates_manpage_before_delete_option_validation() {
     Command::cargo_bin("xdg-thumbnail-prune")
         .unwrap()
-        .args(["--allow-delete-failures", "--generate-manpage"])
+        .args(["--allow-failure-deletion", "--generate-manpage"])
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -126,10 +132,12 @@ fn deletes_missing_local_originals_with_jsonl_report_when_requested() {
 fn failure_deletion_opt_in_requires_failure_scope() {
     Command::cargo_bin("xdg-thumbnail-prune")
         .unwrap()
-        .arg("--allow-delete-failures")
+        .arg("--allow-failure-deletion")
         .assert()
         .code(2)
-        .stderr(predicates::str::contains("--scope failures"));
+        .stderr(predicates::str::contains(
+            "--allow-failure-deletion requires --scope failures or --scope all",
+        ));
 }
 
 #[test]
@@ -144,8 +152,8 @@ fn deletes_stale_local_failure_entries_when_both_stale_and_failure_deletion_are_
         .args([
             "--scope",
             "failures",
-            "--allow-delete-failures",
-            "--delete-stale-local",
+            "--allow-failure-deletion",
+            "--allow-stale-local-deletion",
             "--delete",
             "--format",
             "jsonl",
@@ -171,7 +179,7 @@ fn deletes_stale_local_failure_entries_when_both_stale_and_failure_deletion_are_
 }
 
 #[test]
-fn delete_stale_local_previews_stale_local_thumbnails_until_delete_is_enabled() {
+fn allow_stale_local_deletion_previews_stale_local_thumbnails_until_delete_is_enabled() {
     let fixture = Fixture::new();
     let thumbnail = fixture.install_stale_local_thumbnail();
 
@@ -180,7 +188,7 @@ fn delete_stale_local_previews_stale_local_thumbnails_until_delete_is_enabled() 
         .env("XDG_CACHE_HOME", fixture.cache_home.path())
         .env("HOME", fixture.home.path())
         .args([
-            "--delete-stale-local",
+            "--allow-stale-local-deletion",
             "--format",
             "jsonl",
             "--age-basis",
@@ -208,7 +216,7 @@ fn delete_stale_local_previews_stale_local_thumbnails_until_delete_is_enabled() 
         .env("XDG_CACHE_HOME", fixture.cache_home.path())
         .env("HOME", fixture.home.path())
         .args([
-            "--delete-stale-local",
+            "--allow-stale-local-deletion",
             "--delete",
             "--format",
             "jsonl",
