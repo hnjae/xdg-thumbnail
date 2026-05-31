@@ -7,23 +7,25 @@ use std::os::unix::ffi::OsStrExt;
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    CacheEntryInspection, CacheNamespace, FailureEntryWriteRequest, FailureEntryWriteRequestParts,
-    FailureNamespace, InstalledThumbnailPath, InstalledThumbnailPngBytes,
-    InstalledThumbnailPngBytesParts, NonstandardEntryPolicy, OwnedRawThumbnailImage,
-    OwnedRawThumbnailImageParts, ParsedThumbnailPng, PersonalCacheRoot, PersonalOriginalIdentity,
-    PersonalOriginalUri, PersonalThumbnailInspectionRequest,
-    PersonalThumbnailInspectionRequestParts, PersonalThumbnailInstallRequest,
-    PersonalThumbnailInstallRequestParts, PersonalThumbnailLookup, PersonalThumbnailLookupRequest,
-    PersonalThumbnailLookupRequestParts, PersonalThumbnailRawInstallRequest,
-    PersonalThumbnailRawInstallRequestParts, RawThumbnailImage, RawThumbnailPixelFormat,
-    ReadablePersonalOriginalIdentity, SharedCacheEntryInspection, SharedCacheEntryOutcome,
-    SharedOriginalFacts, SharedOriginalMetadata, SharedRepositoryContext,
-    SharedThumbnailInspectionRequest, SharedThumbnailInspectionRequestParts, SharedThumbnailLookup,
-    SharedThumbnailLookupRequest, SharedThumbnailLookupRequestParts, SharedThumbnailMetadataPolicy,
-    ThumbnailMetadataKey, ThumbnailMetadataProblem, ThumbnailMetadataProblemKind,
-    ThumbnailPathLookupEntry, ThumbnailPathLookupEntryParts, ThumbnailPngBytesLookupEntry,
-    ThumbnailPngBytesLookupEntryParts, ThumbnailPngColorType, ThumbnailRgba8LookupEntry,
-    ThumbnailRgba8LookupEntryParts, ThumbnailSize, UnixMtimeSeconds,
+    CacheEntryInspection, CacheEntryInspectionOutcome, CacheEntryInspectionParts, CacheNamespace,
+    FailureEntryInspectionRequest, FailureEntryInspectionRequestParts, FailureEntryWriteRequest,
+    FailureEntryWriteRequestParts, FailureNamespace, InstalledThumbnailPath,
+    InstalledThumbnailPngBytes, InstalledThumbnailPngBytesParts, NonstandardEntryPolicy,
+    OriginalUriIdentity, OwnedRawThumbnailImage, OwnedRawThumbnailImageParts, ParsedThumbnailPng,
+    PersonalCacheRoot, PersonalOriginalIdentity, PersonalOriginalUri,
+    PersonalThumbnailInspectionRequest, PersonalThumbnailInspectionRequestParts,
+    PersonalThumbnailInstallRequest, PersonalThumbnailInstallRequestParts, PersonalThumbnailLookup,
+    PersonalThumbnailLookupRequest, PersonalThumbnailLookupRequestParts,
+    PersonalThumbnailRawInstallRequest, PersonalThumbnailRawInstallRequestParts, RawThumbnailImage,
+    RawThumbnailPixelFormat, ReadablePersonalOriginalIdentity, SharedCacheEntryInspection,
+    SharedCacheEntryInspectionParts, SharedCacheEntryOutcome, SharedOriginalFacts,
+    SharedOriginalMetadata, SharedRepositoryContext, SharedThumbnailInspectionRequest,
+    SharedThumbnailInspectionRequestParts, SharedThumbnailLookup, SharedThumbnailLookupRequest,
+    SharedThumbnailLookupRequestParts, SharedThumbnailMetadataPolicy, ThumbnailMetadataKey,
+    ThumbnailMetadataProblem, ThumbnailMetadataProblemKind, ThumbnailPathLookupEntry,
+    ThumbnailPathLookupEntryParts, ThumbnailPngBytesLookupEntry, ThumbnailPngBytesLookupEntryParts,
+    ThumbnailPngColorType, ThumbnailRgba8LookupEntry, ThumbnailRgba8LookupEntryParts,
+    ThumbnailSize, UnixMtimeSeconds,
 };
 
 #[test]
@@ -38,6 +40,8 @@ fn owned_request_and_result_types_are_send_sync_static() {
     assert_send_sync_static::<PersonalThumbnailRawInstallRequestParts>();
     assert_send_sync_static::<FailureEntryWriteRequest>();
     assert_send_sync_static::<FailureEntryWriteRequestParts>();
+    assert_send_sync_static::<FailureEntryInspectionRequest>();
+    assert_send_sync_static::<FailureEntryInspectionRequestParts>();
     assert_send_sync_static::<PersonalThumbnailInspectionRequest>();
     assert_send_sync_static::<PersonalThumbnailInspectionRequestParts>();
     assert_send_sync_static::<SharedThumbnailLookupRequest>();
@@ -62,7 +66,9 @@ fn owned_request_and_result_types_are_send_sync_static() {
     assert_send_sync_static::<InstalledThumbnailPngBytesParts>();
     assert_send_sync_static::<OwnedRawThumbnailImageParts>();
     assert_send_sync_static::<CacheEntryInspection>();
+    assert_send_sync_static::<CacheEntryInspectionParts>();
     assert_send_sync_static::<SharedCacheEntryInspection>();
+    assert_send_sync_static::<SharedCacheEntryInspectionParts>();
     assert_send_sync_static::<PersonalThumbnailLookup<ThumbnailPngBytesLookupEntry>>();
     assert_send_sync_static::<SharedThumbnailLookup<ThumbnailPngBytesLookupEntry>>();
     assert_send_sync_static::<PersonalThumbnailLookup<ThumbnailRgba8LookupEntry>>();
@@ -126,7 +132,7 @@ fn personal_lookup_request_matches_borrowed_lookup() {
             );
             let parts = bytes.into_parts();
             assert_eq!(parts.path, path);
-            assert_eq!(parts.bytes, png_with_metadata(personal_metadata("42")));
+            assert_eq!(parts.png_bytes, png_with_metadata(personal_metadata("42")));
             assert_eq!(
                 parts.metadata.thumb_mtime(),
                 Some(UnixMtimeSeconds::new(42))
@@ -180,9 +186,9 @@ fn personal_install_request_matches_borrowed_install_and_normalizes() {
     let expected_bytes = request_install.png_bytes().to_vec();
     let installed_parts = request_install.into_parts();
     assert_eq!(installed_parts.path, expected_path);
-    assert_eq!(installed_parts.bytes, expected_bytes);
+    assert_eq!(installed_parts.png_bytes, expected_bytes);
 
-    let parsed = ParsedThumbnailPng::parse(&installed_parts.bytes).unwrap();
+    let parsed = ParsedThumbnailPng::parse(&installed_parts.png_bytes).unwrap();
     assert_eq!(parsed.width(), 128);
     assert_eq!(parsed.height(), 64);
     assert_eq!(parsed.color_type(), ThumbnailPngColorType::Rgba);
@@ -332,6 +338,37 @@ fn failure_entry_write_request_matches_borrowed_write() {
 }
 
 #[test]
+fn failure_entry_inspection_request_matches_borrowed_inspection() {
+    let temp = TempDir::new().unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let namespace = FailureNamespace::new("xdg-thumbnail-0.1.0").unwrap();
+    let original = readable_original();
+    root.write_failure_entry_png_bytes(&original, &namespace)
+        .unwrap();
+    let request = FailureEntryInspectionRequest::new(root.clone(), NonstandardEntryPolicy::Exclude);
+
+    let parts = request.clone().into_parts();
+    assert_eq!(parts.root, root);
+    assert_eq!(
+        parts.nonstandard_entry_policy,
+        NonstandardEntryPolicy::Exclude
+    );
+
+    assert_eq!(
+        request.clone().inspect().unwrap(),
+        root.inspect_failure_entries(NonstandardEntryPolicy::Exclude)
+            .unwrap()
+    );
+
+    let entries = run_blocking_style(move || request.inspect()).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(
+        entries[0].namespace(),
+        &CacheNamespace::Failure(namespace.clone())
+    );
+}
+
+#[test]
 fn personal_inspection_request_owns_size_vector() {
     let temp = TempDir::new().unwrap();
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
@@ -352,7 +389,7 @@ fn personal_inspection_request_owns_size_vector() {
         NonstandardEntryPolicy::Exclude
     );
 
-    let entries = request.inspect().unwrap();
+    let mut entries = request.inspect().unwrap();
 
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].path(), installed.path());
@@ -360,6 +397,18 @@ fn personal_inspection_request_owns_size_vector() {
         entries[0].namespace(),
         &CacheNamespace::Size(ThumbnailSize::Normal)
     );
+    let parts = entries.pop().unwrap().into_parts();
+    assert_eq!(parts.outcome, CacheEntryInspectionOutcome::Unvalidated);
+    match parts.original_uri {
+        Some(OriginalUriIdentity::Personal(uri)) => {
+            assert_eq!(uri, original.identity().uri().clone());
+        }
+        other => panic!("expected personal original URI, got {other:?}"),
+    }
+    assert!(parts.timestamps.modified_at().is_some());
+    assert_eq!(parts.namespace, CacheNamespace::Size(ThumbnailSize::Normal));
+    assert_eq!(parts.path, installed.path());
+    assert_eq!(parts.handle.path(), installed.path());
 }
 
 #[test]
@@ -423,17 +472,24 @@ fn shared_lookup_and_inspection_requests_match_borrowed_api() {
     );
 
     let inspection_request = SharedThumbnailInspectionRequest::new(
-        context,
+        context.clone(),
         vec![ThumbnailSize::Normal],
         original_metadata,
     );
-    let inspections = inspection_request.inspect().unwrap();
+    let mut inspections = inspection_request.inspect().unwrap();
     assert_eq!(inspections.len(), 1);
     assert_eq!(
         inspections[0].outcome(),
         &SharedCacheEntryOutcome::FullyVerified
     );
     assert_eq!(inspections[0].path(), path.as_path());
+    let parts = inspections.pop().unwrap().into_parts();
+    assert_eq!(parts.outcome, SharedCacheEntryOutcome::FullyVerified);
+    assert_eq!(parts.shared_uri, context.shared_uri().clone());
+    assert!(parts.timestamps.modified_at().is_some());
+    assert_eq!(parts.size, ThumbnailSize::Normal);
+    assert_eq!(parts.path, path);
+    assert_eq!(parts.metadata.unwrap().thumb_size(), Some(12));
 }
 
 fn readable_original() -> ReadablePersonalOriginalIdentity {
