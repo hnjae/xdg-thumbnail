@@ -39,6 +39,15 @@ fn parses_standard_thumbnail_metadata() {
     assert_eq!(parsed.metadata().thumb_size(), Some(12));
     assert_eq!(parsed.metadata().try_thumb_size().unwrap(), Some(12));
     assert_eq!(parsed.metadata().thumb_mimetype(), Some("image/png"));
+    assert_eq!(
+        parsed.metadata().iter().collect::<BTreeMap<_, _>>(),
+        BTreeMap::from([
+            ("Thumb::MTime", "42"),
+            ("Thumb::Mimetype", "image/png"),
+            ("Thumb::Size", "12"),
+            ("Thumb::URI", "file:///home/alice/photo.png"),
+        ])
+    );
 }
 
 #[test]
@@ -203,12 +212,12 @@ fn shared_original_metadata() -> SharedOriginalMetadata {
 }
 
 fn original_identity() -> OriginalIdentity {
-    OriginalIdentity::with_mime_type(
+    OriginalIdentity::new(
         PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
         UnixMTimeSeconds::new(42),
-        Some(12),
-        "image/png",
     )
+    .with_original_byte_size(12)
+    .with_mime_type("image/png")
     .unwrap()
 }
 

@@ -459,7 +459,7 @@ fn evaluate_entry(
         thumbnail_path_display: entry.path().display().to_string(),
         thumbnail_path_bytes_b64: path_bytes_b64(entry.path()),
         uri: uri_text,
-        namespace: entry.namespace().name(),
+        namespace: entry.namespace().to_string(),
         classification: classification.as_str(),
         decision: decision.as_str(),
         applied,

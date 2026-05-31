@@ -248,12 +248,12 @@ fn raw_thumbnail_rejects_short_buffer() {
 
 fn readable_original() -> ReadableOriginalIdentity {
     ReadableOriginalIdentity::from_confirmed_readable_identity(
-        OriginalIdentity::with_mime_type(
+        OriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             UnixMTimeSeconds::new(42),
-            Some(12),
-            "image/png",
         )
+        .with_original_byte_size(12)
+        .with_mime_type("image/png")
         .unwrap(),
     )
 }

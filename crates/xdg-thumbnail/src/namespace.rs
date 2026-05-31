@@ -31,13 +31,19 @@ impl CacheNamespace {
         }
     }
 
-    /// Returns a display-oriented namespace name.
+    /// Returns the relative cache directory for this namespace.
     #[must_use]
-    pub fn name(&self) -> String {
+    pub fn relative_directory(&self) -> String {
         match self {
             Self::Size(size) => size.directory_name().to_owned(),
             Self::Failure(namespace) => format!("fail/{}", namespace.as_str()),
         }
+    }
+}
+
+impl fmt::Display for CacheNamespace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.relative_directory())
     }
 }
 
@@ -131,7 +137,7 @@ impl ThumbnailSize {
 
 #[cfg(test)]
 mod tests {
-    use super::ThumbnailSize;
+    use super::{CacheNamespace, FailureNamespace, ThumbnailSize};
 
     #[test]
     fn thumbnail_size_directory_names_match_standard() {
@@ -150,5 +156,16 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(names, ["normal", "large", "x-large", "xx-large"]);
+    }
+
+    #[test]
+    fn cache_namespace_strings_are_relative_directories() {
+        let size = CacheNamespace::Size(ThumbnailSize::Normal);
+        let failure = CacheNamespace::Failure(FailureNamespace::new("app-1").unwrap());
+
+        assert_eq!(size.relative_directory(), "normal");
+        assert_eq!(size.to_string(), "normal");
+        assert_eq!(failure.relative_directory(), "fail/app-1");
+        assert_eq!(failure.to_string(), "fail/app-1");
     }
 }

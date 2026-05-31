@@ -85,13 +85,10 @@ fn reports_stale_failure_entry_metadata() {
     let original = readable_original();
     let bytes = failure_png_with_metadata(1, 1, original.identity());
     let stale_original = ReadableOriginalIdentity::from_confirmed_readable_identity(
-        OriginalIdentity::with_mime_type(
-            original.identity().uri().clone(),
-            UnixMTimeSeconds::new(43),
-            Some(12),
-            "image/png",
-        )
-        .unwrap(),
+        OriginalIdentity::new(original.identity().uri().clone(), UnixMTimeSeconds::new(43))
+            .with_original_byte_size(12)
+            .with_mime_type("image/png")
+            .unwrap(),
     );
 
     assert_eq!(
@@ -102,12 +99,12 @@ fn reports_stale_failure_entry_metadata() {
 
 fn readable_original() -> ReadableOriginalIdentity {
     ReadableOriginalIdentity::from_confirmed_readable_identity(
-        OriginalIdentity::with_mime_type(
+        OriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             UnixMTimeSeconds::new(42),
-            Some(12),
-            "image/png",
         )
+        .with_original_byte_size(12)
+        .with_mime_type("image/png")
         .unwrap(),
     )
 }

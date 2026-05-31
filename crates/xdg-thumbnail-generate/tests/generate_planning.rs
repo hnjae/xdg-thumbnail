@@ -433,7 +433,9 @@ impl Fixture {
             PersonalOriginalUri::from_absolute_path_bytes(input.as_os_str().as_encoded_bytes())
                 .unwrap();
         let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
-            OriginalIdentity::with_mime_type(uri, mtime, Some(metadata.len()), "image/png")
+            OriginalIdentity::new(uri, mtime)
+                .with_original_byte_size(metadata.len())
+                .with_mime_type("image/png")
                 .unwrap(),
         );
         PersonalCacheRoot::new(self.cache_home.path().join("thumbnails"))

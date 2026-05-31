@@ -738,9 +738,25 @@ impl PersonalThumbnailLookupRequest {
 
     /// Splits this request into its owned parts.
     #[must_use]
-    pub fn into_parts(self) -> (PersonalCacheRoot, ReadableOriginalIdentity, ThumbnailSize) {
-        (self.root, self.original, self.size)
+    pub fn into_parts(self) -> PersonalThumbnailLookupRequestParts {
+        PersonalThumbnailLookupRequestParts {
+            root: self.root,
+            original: self.original,
+            size: self.size,
+        }
     }
+}
+
+/// Owned parts of [`PersonalThumbnailLookupRequest`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct PersonalThumbnailLookupRequestParts {
+    /// Personal thumbnail cache root.
+    pub root: PersonalCacheRoot,
+    /// Readability-confirmed original identity.
+    pub original: ReadableOriginalIdentity,
+    /// Requested thumbnail size.
+    pub size: ThumbnailSize,
 }
 
 /// Owned personal-cache install request for async or runtime-specific adapters.
@@ -838,16 +854,28 @@ impl PersonalThumbnailInstallRequest {
 
     /// Splits this request into its owned parts.
     #[must_use]
-    pub fn into_parts(
-        self,
-    ) -> (
-        PersonalCacheRoot,
-        ReadableOriginalIdentity,
-        ThumbnailSize,
-        Vec<u8>,
-    ) {
-        (self.root, self.original, self.size, self.rendered_png)
+    pub fn into_parts(self) -> PersonalThumbnailInstallRequestParts {
+        PersonalThumbnailInstallRequestParts {
+            root: self.root,
+            original: self.original,
+            size: self.size,
+            rendered_png: self.rendered_png,
+        }
     }
+}
+
+/// Owned parts of [`PersonalThumbnailInstallRequest`].
+#[derive(Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct PersonalThumbnailInstallRequestParts {
+    /// Personal thumbnail cache root.
+    pub root: PersonalCacheRoot,
+    /// Readability-confirmed original identity.
+    pub original: ReadableOriginalIdentity,
+    /// Requested thumbnail size.
+    pub size: ThumbnailSize,
+    /// Caller-rendered PNG bytes.
+    pub rendered_png: Vec<u8>,
 }
 
 /// Owned personal-cache raw install request for async or runtime-specific adapters.
@@ -911,16 +939,28 @@ impl PersonalThumbnailRawInstallRequest {
 
     /// Splits this request into its owned parts.
     #[must_use]
-    pub fn into_parts(
-        self,
-    ) -> (
-        PersonalCacheRoot,
-        ReadableOriginalIdentity,
-        ThumbnailSize,
-        OwnedRawThumbnailImage,
-    ) {
-        (self.root, self.original, self.size, self.image)
+    pub fn into_parts(self) -> PersonalThumbnailRawInstallRequestParts {
+        PersonalThumbnailRawInstallRequestParts {
+            root: self.root,
+            original: self.original,
+            size: self.size,
+            image: self.image,
+        }
     }
+}
+
+/// Owned parts of [`PersonalThumbnailRawInstallRequest`].
+#[derive(Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct PersonalThumbnailRawInstallRequestParts {
+    /// Personal thumbnail cache root.
+    pub root: PersonalCacheRoot,
+    /// Readability-confirmed original identity.
+    pub original: ReadableOriginalIdentity,
+    /// Requested thumbnail size.
+    pub size: ThumbnailSize,
+    /// Validated raw thumbnail image.
+    pub image: OwnedRawThumbnailImage,
 }
 
 /// Owned failure-entry write request for async or runtime-specific adapters.
@@ -979,15 +1019,25 @@ impl FailureEntryWriteRequest {
 
     /// Splits this request into its owned parts.
     #[must_use]
-    pub fn into_parts(
-        self,
-    ) -> (
-        PersonalCacheRoot,
-        FailureNamespace,
-        ReadableOriginalIdentity,
-    ) {
-        (self.root, self.namespace, self.original)
+    pub fn into_parts(self) -> FailureEntryWriteRequestParts {
+        FailureEntryWriteRequestParts {
+            root: self.root,
+            namespace: self.namespace,
+            original: self.original,
+        }
     }
+}
+
+/// Owned parts of [`FailureEntryWriteRequest`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct FailureEntryWriteRequestParts {
+    /// Personal thumbnail cache root.
+    pub root: PersonalCacheRoot,
+    /// Failure-entry namespace.
+    pub namespace: FailureNamespace,
+    /// Readability-confirmed original identity.
+    pub original: ReadableOriginalIdentity,
 }
 
 /// Owned personal-cache inspection request for async or runtime-specific adapters.
@@ -1032,15 +1082,25 @@ impl PersonalThumbnailInspectionRequest {
 
     /// Splits this request into its owned parts.
     #[must_use]
-    pub fn into_parts(
-        self,
-    ) -> (
-        PersonalCacheRoot,
-        Vec<ThumbnailSize>,
-        NonstandardEntryPolicy,
-    ) {
-        (self.root, self.sizes, self.nonstandard_entry_policy)
+    pub fn into_parts(self) -> PersonalThumbnailInspectionRequestParts {
+        PersonalThumbnailInspectionRequestParts {
+            root: self.root,
+            sizes: self.sizes,
+            nonstandard_entry_policy: self.nonstandard_entry_policy,
+        }
     }
+}
+
+/// Owned parts of [`PersonalThumbnailInspectionRequest`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct PersonalThumbnailInspectionRequestParts {
+    /// Personal thumbnail cache root.
+    pub root: PersonalCacheRoot,
+    /// Successful thumbnail sizes to inspect.
+    pub sizes: Vec<ThumbnailSize>,
+    /// Policy for nonstandard cache directory entries.
+    pub nonstandard_entry_policy: NonstandardEntryPolicy,
 }
 
 /// Owned shared-repository lookup request for async or runtime-specific adapters.
@@ -1113,9 +1173,25 @@ impl SharedThumbnailLookupRequest {
 
     /// Splits this request into its owned parts.
     #[must_use]
-    pub fn into_parts(self) -> (SharedRepositoryContext, ThumbnailSize, SharedOriginalFacts) {
-        (self.context, self.size, self.original)
+    pub fn into_parts(self) -> SharedThumbnailLookupRequestParts {
+        SharedThumbnailLookupRequestParts {
+            context: self.context,
+            size: self.size,
+            original: self.original,
+        }
     }
+}
+
+/// Owned parts of [`SharedThumbnailLookupRequest`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct SharedThumbnailLookupRequestParts {
+    /// Shared repository lookup context.
+    pub context: SharedRepositoryContext,
+    /// Requested thumbnail size.
+    pub size: ThumbnailSize,
+    /// Shared original freshness facts and metadata policy.
+    pub original: SharedOriginalFacts,
 }
 
 /// Owned shared-repository inspection request for async or runtime-specific adapters.
@@ -1160,15 +1236,25 @@ impl SharedThumbnailInspectionRequest {
 
     /// Splits this request into its owned parts.
     #[must_use]
-    pub fn into_parts(
-        self,
-    ) -> (
-        SharedRepositoryContext,
-        Vec<ThumbnailSize>,
-        SharedOriginalMetadata,
-    ) {
-        (self.context, self.sizes, self.original)
+    pub fn into_parts(self) -> SharedThumbnailInspectionRequestParts {
+        SharedThumbnailInspectionRequestParts {
+            context: self.context,
+            sizes: self.sizes,
+            original: self.original,
+        }
     }
+}
+
+/// Owned parts of [`SharedThumbnailInspectionRequest`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct SharedThumbnailInspectionRequestParts {
+    /// Shared repository lookup context.
+    pub context: SharedRepositoryContext,
+    /// Successful thumbnail sizes to inspect.
+    pub sizes: Vec<ThumbnailSize>,
+    /// Policy-neutral shared original metadata facts.
+    pub original: SharedOriginalMetadata,
 }
 
 fn only_unverifiable_original(problems: &[CacheEntryProblem]) -> bool {
@@ -1483,9 +1569,22 @@ impl ThumbnailPathLookupEntry {
 
     /// Splits this result into its owned path and metadata.
     #[must_use]
-    pub fn into_parts(self) -> (PathBuf, ThumbnailMetadata) {
-        (self.path, self.metadata)
+    pub fn into_parts(self) -> ThumbnailPathLookupEntryParts {
+        ThumbnailPathLookupEntryParts {
+            path: self.path,
+            metadata: self.metadata,
+        }
     }
+}
+
+/// Owned parts of [`ThumbnailPathLookupEntry`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct ThumbnailPathLookupEntryParts {
+    /// Path that was validated.
+    pub path: PathBuf,
+    /// Metadata parsed from the validated PNG.
+    pub metadata: ThumbnailMetadata,
 }
 
 /// Exact validated PNG bytes and metadata facts.
@@ -1517,9 +1616,25 @@ impl ThumbnailPngBytesLookupEntry {
 
     /// Splits this result into its owned path, PNG bytes, and metadata.
     #[must_use]
-    pub fn into_parts(self) -> (PathBuf, Vec<u8>, ThumbnailMetadata) {
-        (self.path, self.bytes, self.metadata)
+    pub fn into_parts(self) -> ThumbnailPngBytesLookupEntryParts {
+        ThumbnailPngBytesLookupEntryParts {
+            path: self.path,
+            bytes: self.bytes,
+            metadata: self.metadata,
+        }
     }
+}
+
+/// Owned parts of [`ThumbnailPngBytesLookupEntry`].
+#[derive(Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct ThumbnailPngBytesLookupEntryParts {
+    /// Path from which the PNG bytes were validated.
+    pub path: PathBuf,
+    /// Exact PNG bytes that passed validation.
+    pub bytes: Vec<u8>,
+    /// Metadata parsed from the validated PNG.
+    pub metadata: ThumbnailMetadata,
 }
 
 /// Decoded tightly packed RGBA8 pixels and metadata facts from a validated cache PNG.
@@ -1577,16 +1692,34 @@ impl ThumbnailRgba8LookupEntry {
 
     /// Splits this result into its owned path, dimensions, stride, RGBA8 pixels, and metadata.
     #[must_use]
-    pub fn into_parts(self) -> (PathBuf, u32, u32, usize, Vec<u8>, ThumbnailMetadata) {
-        (
-            self.path,
-            self.width,
-            self.height,
-            self.stride,
-            self.pixels,
-            self.metadata,
-        )
+    pub fn into_parts(self) -> ThumbnailRgba8LookupEntryParts {
+        ThumbnailRgba8LookupEntryParts {
+            path: self.path,
+            width: self.width,
+            height: self.height,
+            stride: self.stride,
+            pixels: self.pixels,
+            metadata: self.metadata,
+        }
     }
+}
+
+/// Owned parts of [`ThumbnailRgba8LookupEntry`].
+#[derive(Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct ThumbnailRgba8LookupEntryParts {
+    /// Path from which the PNG was validated and decoded.
+    pub path: PathBuf,
+    /// Decoded image width in pixels.
+    pub width: u32,
+    /// Decoded image height in pixels.
+    pub height: u32,
+    /// Row stride in bytes.
+    pub stride: usize,
+    /// Decoded row-major RGBA8 pixel buffer.
+    pub pixels: Vec<u8>,
+    /// Metadata parsed from the validated PNG.
+    pub metadata: ThumbnailMetadata,
 }
 
 /// Path result of a successful personal-cache install or failure-entry write.
@@ -1635,9 +1768,22 @@ impl InstalledThumbnailPngBytes {
 
     /// Splits this result into its owned path and final PNG bytes.
     #[must_use]
-    pub fn into_parts(self) -> (PathBuf, Vec<u8>) {
-        (self.path, self.bytes)
+    pub fn into_parts(self) -> InstalledThumbnailPngBytesParts {
+        InstalledThumbnailPngBytesParts {
+            path: self.path,
+            bytes: self.bytes,
+        }
     }
+}
+
+/// Owned parts of [`InstalledThumbnailPngBytes`].
+#[derive(Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct InstalledThumbnailPngBytesParts {
+    /// Installed cache path.
+    pub path: PathBuf,
+    /// Final normalized PNG bytes that were installed.
+    pub bytes: Vec<u8>,
 }
 
 fn ensure_private_directory(path: &Path) -> Result<()> {

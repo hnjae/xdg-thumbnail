@@ -110,11 +110,14 @@ fn lookup_thumbnail_rgba8_returns_decoded_pixels_and_metadata() {
             assert_eq!(valid.rgba8_pixels(), pixels.as_slice());
             assert_eq!(valid.metadata().thumb_size(), Some(12));
 
-            let (owned_path, width, height, stride, owned_pixels, metadata) = valid.into_parts();
-            assert_eq!(owned_path, path);
-            assert_eq!((width, height, stride), (2, 1, 8));
-            assert_eq!(owned_pixels, pixels);
-            assert_eq!(metadata.thumb_mtime(), Some(UnixMTimeSeconds::new(42)));
+            let parts = valid.into_parts();
+            assert_eq!(parts.path, path);
+            assert_eq!((parts.width, parts.height, parts.stride), (2, 1, 8));
+            assert_eq!(parts.pixels, pixels);
+            assert_eq!(
+                parts.metadata.thumb_mtime(),
+                Some(UnixMTimeSeconds::new(42))
+            );
         }
         other => panic!("expected valid RGBA8 lookup, got {other:?}"),
     }
@@ -219,12 +222,12 @@ fn assert_unreadable_lookup<T: std::fmt::Debug>(lookup: PersonalThumbnailLookup<
 
 fn original_identity(mtime: u64) -> ReadableOriginalIdentity {
     ReadableOriginalIdentity::from_confirmed_readable_identity(
-        OriginalIdentity::with_mime_type(
+        OriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             UnixMTimeSeconds::new(mtime),
-            Some(12),
-            "image/png",
         )
+        .with_original_byte_size(12)
+        .with_mime_type("image/png")
         .unwrap(),
     )
 }

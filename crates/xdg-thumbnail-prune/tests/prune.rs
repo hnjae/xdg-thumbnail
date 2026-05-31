@@ -345,13 +345,13 @@ impl Fixture {
     fn install_for_missing_original(&self) -> std::path::PathBuf {
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
         let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
-            OriginalIdentity::with_mime_type(
+            OriginalIdentity::new(
                 PersonalOriginalUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-missing.png")
                     .unwrap(),
                 UnixMTimeSeconds::new(42),
-                Some(12),
-                "image/png",
             )
+            .with_original_byte_size(12)
+            .with_mime_type("image/png")
             .unwrap(),
         );
         root.install_thumbnail_png_bytes(&original, ThumbnailSize::Normal, &rendered_png())
@@ -364,13 +364,13 @@ impl Fixture {
 
     fn install_nonconforming_for_missing_original(&self) -> std::path::PathBuf {
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
-        let original = OriginalIdentity::with_mime_type(
+        let original = OriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-huge-missing.png")
                 .unwrap(),
             UnixMTimeSeconds::new(42),
-            Some(12),
-            "image/png",
         )
+        .with_original_byte_size(12)
+        .with_mime_type("image/png")
         .unwrap();
         let path =
             root.cache_entry_path(original.uri(), &CacheNamespace::Size(ThumbnailSize::Normal));
@@ -388,7 +388,9 @@ impl Fixture {
         .unwrap();
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
         let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
-            OriginalIdentity::with_mime_type(uri, UnixMTimeSeconds::new(1), Some(1), "image/png")
+            OriginalIdentity::new(uri, UnixMTimeSeconds::new(1))
+                .with_original_byte_size(1)
+                .with_mime_type("image/png")
                 .unwrap(),
         );
         let namespace = FailureNamespace::new("app-1").unwrap();
@@ -403,13 +405,13 @@ impl Fixture {
     fn install_uri_filename_mismatch(&self) -> std::path::PathBuf {
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
         let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
-            OriginalIdentity::with_mime_type(
+            OriginalIdentity::new(
                 PersonalOriginalUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-photo.png")
                     .unwrap(),
                 UnixMTimeSeconds::new(42),
-                Some(12),
-                "image/png",
             )
+            .with_original_byte_size(12)
+            .with_mime_type("image/png")
             .unwrap(),
         );
         let installed = root
@@ -431,7 +433,9 @@ impl Fixture {
         )
         .unwrap();
         let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
-            OriginalIdentity::with_mime_type(uri, UnixMTimeSeconds::new(1), Some(1), "image/png")
+            OriginalIdentity::new(uri, UnixMTimeSeconds::new(1))
+                .with_original_byte_size(1)
+                .with_mime_type("image/png")
                 .unwrap(),
         );
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
@@ -453,7 +457,9 @@ impl Fixture {
         .unwrap();
         let mtime = UnixMTimeSeconds::from_system_time(metadata.modified().unwrap()).unwrap();
         let original = ReadableOriginalIdentity::from_confirmed_readable_identity(
-            OriginalIdentity::with_mime_type(uri, mtime, Some(metadata.len()), "image/png")
+            OriginalIdentity::new(uri, mtime)
+                .with_original_byte_size(metadata.len())
+                .with_mime_type("image/png")
                 .unwrap(),
         );
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();

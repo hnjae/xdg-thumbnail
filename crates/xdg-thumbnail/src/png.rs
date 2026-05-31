@@ -179,15 +179,31 @@ impl OwnedRawThumbnailImage {
 
     /// Splits this image into its validated owned parts.
     #[must_use]
-    pub fn into_parts(self) -> (u32, u32, usize, RawThumbnailPixelFormat, Vec<u8>) {
-        (
-            self.width,
-            self.height,
-            self.stride,
-            self.format,
-            self.pixels,
-        )
+    pub fn into_parts(self) -> OwnedRawThumbnailImageParts {
+        OwnedRawThumbnailImageParts {
+            width: self.width,
+            height: self.height,
+            stride: self.stride,
+            format: self.format,
+            pixels: self.pixels,
+        }
     }
+}
+
+/// Owned parts of [`OwnedRawThumbnailImage`].
+#[derive(Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct OwnedRawThumbnailImageParts {
+    /// Image width in pixels.
+    pub width: u32,
+    /// Image height in pixels.
+    pub height: u32,
+    /// Row stride in bytes.
+    pub stride: usize,
+    /// Explicit pixel format.
+    pub format: RawThumbnailPixelFormat,
+    /// Validated pixel buffer.
+    pub pixels: Vec<u8>,
 }
 
 /// Policy-neutral problem found while validating or inspecting a cache entry.
@@ -251,6 +267,13 @@ impl ThumbnailMetadata {
     #[must_use]
     pub fn get(&self, key: &str) -> Option<&str> {
         self.values.get(key).map(String::as_str)
+    }
+
+    /// Iterates over raw metadata key/value pairs.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> + '_ {
+        self.values
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
     }
 
     /// Returns `Thumb::URI` when present.

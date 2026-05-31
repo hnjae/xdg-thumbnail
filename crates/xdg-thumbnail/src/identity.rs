@@ -94,38 +94,32 @@ pub struct OriginalIdentity {
 impl OriginalIdentity {
     /// Creates an original identity from caller-confirmed facts without a MIME type.
     #[must_use]
-    pub fn new(
-        uri: PersonalOriginalUri,
-        mtime: UnixMTimeSeconds,
-        original_byte_size: Option<u64>,
-    ) -> Self {
+    pub fn new(uri: PersonalOriginalUri, mtime: UnixMTimeSeconds) -> Self {
         Self {
             uri,
             mtime,
-            original_byte_size,
+            original_byte_size: None,
             mime_type: None,
         }
     }
 
-    /// Creates an original identity from caller-confirmed facts with a MIME type.
+    /// Adds the original byte size.
+    #[must_use]
+    pub fn with_original_byte_size(mut self, size: u64) -> Self {
+        self.original_byte_size = Some(size);
+        self
+    }
+
+    /// Adds a MIME type.
     ///
     /// # Errors
     ///
     /// Returns an error when `mime_type` is not valid thumbnail metadata.
-    pub fn with_mime_type(
-        uri: PersonalOriginalUri,
-        mtime: UnixMTimeSeconds,
-        original_byte_size: Option<u64>,
-        mime_type: impl Into<String>,
-    ) -> Result<Self> {
+    pub fn with_mime_type(mut self, mime_type: impl Into<String>) -> Result<Self> {
         let mime_type = mime_type.into();
         validate_mime_type(&mime_type)?;
-        Ok(Self {
-            uri,
-            mtime,
-            original_byte_size,
-            mime_type: Some(mime_type),
-        })
+        self.mime_type = Some(mime_type);
+        Ok(self)
     }
 
     /// Returns the canonical personal-cache URI.
@@ -162,7 +156,7 @@ pub struct ReadableOriginalIdentity {
 impl ReadableOriginalIdentity {
     /// Marks caller-confirmed original identity facts as readable.
     #[must_use]
-    pub const fn from_confirmed_readable_identity(identity: OriginalIdentity) -> Self {
+    pub fn from_confirmed_readable_identity(identity: OriginalIdentity) -> Self {
         Self { identity }
     }
 
@@ -214,10 +208,11 @@ impl ReadableOriginalIdentity {
                 source,
             }
         })?)?;
+        let identity = OriginalIdentity::new(uri, mtime).with_original_byte_size(metadata.len());
         let identity = if let Some(mime_type) = mime_type {
-            OriginalIdentity::with_mime_type(uri, mtime, Some(metadata.len()), mime_type)?
+            identity.with_mime_type(mime_type)?
         } else {
-            OriginalIdentity::new(uri, mtime, Some(metadata.len()))
+            identity
         };
         Ok(Self { identity })
     }

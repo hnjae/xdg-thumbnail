@@ -88,13 +88,18 @@ mod uri;
 
 #[cfg(unix)]
 pub use cache::{
-    FailureEntryWriteRequest, InstalledThumbnailPath, InstalledThumbnailPngBytes,
-    PersonalCacheRoot, PersonalThumbnailInspectionRequest, PersonalThumbnailInstallRequest,
-    PersonalThumbnailLookup, PersonalThumbnailLookupRequest, PersonalThumbnailRawInstallRequest,
+    FailureEntryWriteRequest, FailureEntryWriteRequestParts, InstalledThumbnailPath,
+    InstalledThumbnailPngBytes, InstalledThumbnailPngBytesParts, PersonalCacheRoot,
+    PersonalThumbnailInspectionRequest, PersonalThumbnailInspectionRequestParts,
+    PersonalThumbnailInstallRequest, PersonalThumbnailInstallRequestParts, PersonalThumbnailLookup,
+    PersonalThumbnailLookupRequest, PersonalThumbnailLookupRequestParts,
+    PersonalThumbnailRawInstallRequest, PersonalThumbnailRawInstallRequestParts,
     SharedCacheEntryInspection, SharedCacheEntryOutcome, SharedOriginalFacts,
-    SharedOriginalMetadata, SharedThumbnailInspectionRequest, SharedThumbnailLookup,
-    SharedThumbnailLookupRequest, SharedThumbnailMetadataPolicy, ThumbnailPathLookupEntry,
-    ThumbnailPngBytesLookupEntry, ThumbnailRgba8LookupEntry,
+    SharedOriginalMetadata, SharedThumbnailInspectionRequest,
+    SharedThumbnailInspectionRequestParts, SharedThumbnailLookup, SharedThumbnailLookupRequest,
+    SharedThumbnailLookupRequestParts, SharedThumbnailMetadataPolicy, ThumbnailPathLookupEntry,
+    ThumbnailPathLookupEntryParts, ThumbnailPngBytesLookupEntry, ThumbnailPngBytesLookupEntryParts,
+    ThumbnailRgba8LookupEntry, ThumbnailRgba8LookupEntryParts,
 };
 #[cfg(unix)]
 pub use error::{Result, ThumbnailError};
@@ -111,10 +116,10 @@ pub use inspection::{
 pub use namespace::{CacheNamespace, FailureNamespace, ThumbnailSize};
 #[cfg(unix)]
 pub use png::{
-    CacheEntryProblem, OwnedRawThumbnailImage, ParsedThumbnailPng, PersonalValidationOutcome,
-    RawThumbnailImage, RawThumbnailPixelFormat, SharedValidationOutcome, ThumbnailMetadata,
-    ThumbnailPngBitDepth, ThumbnailPngColorType, validate_personal_failure_entry,
-    validate_personal_thumbnail, validate_shared_thumbnail,
+    CacheEntryProblem, OwnedRawThumbnailImage, OwnedRawThumbnailImageParts, ParsedThumbnailPng,
+    PersonalValidationOutcome, RawThumbnailImage, RawThumbnailPixelFormat, SharedValidationOutcome,
+    ThumbnailMetadata, ThumbnailPngBitDepth, ThumbnailPngColorType,
+    validate_personal_failure_entry, validate_personal_thumbnail, validate_shared_thumbnail,
 };
 #[cfg(unix)]
 pub use uri::{PersonalOriginalUri, SharedRelativeOriginalUri};
