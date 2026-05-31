@@ -16,6 +16,7 @@ Primary references:
 - Thumbnail URI canonicalization: `spec/uri-canonicalization.md`
 - Prune CLI behavior: `spec/prune-cli-behavior.md`
 - Generate CLI behavior: `spec/generate-cli-behavior.md`
+- Package artifacts: `spec/package-artifacts.md`
 - Thumbnail filename hashing: <https://specifications.freedesktop.org/thumbnail/latest/thumbsave.html>
 - Modification checks: <https://specifications.freedesktop.org/thumbnail/latest/modifications.html>
 - Deletion guidance: <https://specifications.freedesktop.org/thumbnail/latest/delete.html>
