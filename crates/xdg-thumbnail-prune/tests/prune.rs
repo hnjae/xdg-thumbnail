@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use assert_cmd::Command;
+use predicates::prelude::*;
 use serde_json::Value;
 use tempfile::TempDir;
 use xdg_thumbnail::{
@@ -11,6 +12,29 @@ use xdg_thumbnail::{
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+
+#[test]
+fn help_and_version_are_successful_metadata_modes() {
+    Command::cargo_bin("xdg-thumbnail-prune")
+        .unwrap()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Usage: xdg-thumbnail-prune [OPTIONS]",
+        ))
+        .stdout(predicate::str::contains("Apply deletion decisions"))
+        .stdout(predicate::str::contains(
+            "Actual deletion still requires --delete",
+        ));
+
+    Command::cargo_bin("xdg-thumbnail-prune")
+        .unwrap()
+        .arg("--version")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("xdg-thumbnail-prune"));
+}
 
 #[test]
 fn generates_completion_without_scanning_cache() {
@@ -147,7 +171,7 @@ fn deletes_stale_local_failure_entries_when_both_stale_and_failure_deletion_are_
 }
 
 #[test]
-fn reports_stale_local_thumbnails_with_stale_decision_until_delete_is_enabled() {
+fn delete_stale_local_previews_stale_local_thumbnails_until_delete_is_enabled() {
     let fixture = Fixture::new();
     let thumbnail = fixture.install_stale_local_thumbnail();
 
@@ -174,9 +198,10 @@ fn reports_stale_local_thumbnails_with_stale_decision_until_delete_is_enabled() 
         .collect::<Vec<_>>();
 
     assert!(thumbnail.exists());
-    assert_eq!(records[0]["decision"], "stale");
+    assert_eq!(records[0]["decision"], "delete");
     assert_eq!(records[0]["applied"], false);
     assert_eq!(records[0]["reason"], "stale-local-metadata");
+    assert_eq!(records.last().unwrap()["would_delete"], 1);
 
     let output = Command::cargo_bin("xdg-thumbnail-prune")
         .unwrap()

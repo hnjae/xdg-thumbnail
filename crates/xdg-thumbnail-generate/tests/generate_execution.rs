@@ -31,6 +31,9 @@ fn sandbox_off_executes_thumbnailer_and_installs_output() {
     assert_eq!(records[0]["decision"], "generated");
     assert_eq!(records[0]["applied"], true);
     assert_eq!(records[0]["reason"], "created");
+    assert_eq!(records.last().unwrap()["event"], "summary");
+    assert_eq!(records.last().unwrap()["planned"], 0);
+    assert_eq!(records.last().unwrap()["generated"], 1);
     let cache_path = records[0]["cache_path_display"].as_str().unwrap();
     let bytes = std::fs::read(cache_path).unwrap();
     let parsed = ParsedThumbnailPng::parse(&bytes).unwrap();

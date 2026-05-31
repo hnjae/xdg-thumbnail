@@ -3,6 +3,7 @@
 
 use assert_cmd::Command;
 use base64::Engine;
+use predicates::prelude::*;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -14,6 +15,29 @@ use xdg_thumbnail::{
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+
+#[test]
+fn help_and_version_are_successful_metadata_modes() {
+    Command::cargo_bin("xdg-thumbnail-generate")
+        .unwrap()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Usage: xdg-thumbnail-generate [OPTIONS] <PATH>...",
+        ))
+        .stdout(predicate::str::contains(
+            "Report planned thumbnailer selection",
+        ))
+        .stdout(predicate::str::contains("without PATH operands"));
+
+    Command::cargo_bin("xdg-thumbnail-generate")
+        .unwrap()
+        .arg("--version")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("xdg-thumbnail-generate"));
+}
 
 #[test]
 fn generates_completion_without_inputs() {
@@ -65,6 +89,9 @@ fn dry_run_reports_selected_thumbnailer_and_target_cache_path() {
             .unwrap()
             .contains("/thumbnails/normal/")
     );
+    assert_eq!(records.last().unwrap()["event"], "summary");
+    assert_eq!(records.last().unwrap()["planned"], 1);
+    assert_eq!(records.last().unwrap()["generated"], 0);
 }
 
 #[test]
