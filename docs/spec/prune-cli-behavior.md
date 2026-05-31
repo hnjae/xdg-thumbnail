@@ -17,10 +17,10 @@ Options:
 --delete                      Apply deletion decisions. Without this option, prune only reports planned actions.
 --allow-stale-local-deletion  Allow stale local thumbnails to become deletion candidates. Actual deletion still requires --delete.
 --allow-failure-deletion      Allow scanned failure entries to become deletion candidates. Requires --scope failures or --scope all. Actual deletion still requires --delete.
---size <SIZE>                 Restrict successful thumbnail scan to one size namespace: normal, large, x-large, or xx-large. Can be passed multiple times; duplicate values are ignored after their first occurrence.
+--size <SIZE>                 Restrict successful thumbnail scan to one size namespace: normal, large, x-large, or xx-large. Defaults to all successful thumbnail size namespaces. Can be passed multiple times; duplicate values are ignored after their first occurrence.
 --scope <SCOPE>               Restrict scan scope: thumbnails, failures, or all. Defaults to thumbnails.
 --include-nonstandard-files   Include nonstandard filenames in reports as skipped entries.
---removable-prefix <PATH>     Add a local path prefix that should use age-based cleanup. Can be passed multiple times.
+--removable-prefix <PATH>     Add an absolute local path prefix that should use age-based cleanup. Can be passed multiple times.
 --ignore-media-prefix         Do not treat /media as removable by default.
 --age-basis <BASIS>           Timestamp basis for age-based cleanup: atime or mtime. Defaults to atime. mtime is a more portable and more aggressive explicit mode.
 --format <FORMAT>             Output format: human or jsonl. Defaults to human.
@@ -31,7 +31,7 @@ Options:
 
 The option names above are the initial prune CLI contract. Behavior or option-name changes require a spec update.
 
-`--generate-completion` and `--generate-manpage` are metadata-generation modes derived from the clap command definition. They do not scan cache state, do not read or delete thumbnails, bypass deletion-option validation, and exit successfully after writing the requested artifact to stdout. The generated man page and installed shell completions must describe the same command shape as the executable. Nix package outputs must include generated bash, fish, and zsh completions plus section 1 man pages for installed CLI binaries.
+`--generate-completion` and `--generate-manpage` are public metadata-generation modes derived from the clap command definition for packagers and users. They do not scan cache state, do not read or delete thumbnails, bypass scan and deletion option validation, and exit successfully after writing the requested artifact to stdout. The generated man page and installed shell completions must describe the same command shape as the executable. Nix package outputs must include generated bash, fish, and zsh completions plus section 1 man pages for installed CLI binaries.
 
 `--help` and `--version` are metadata-only modes provided by the command parser. They do not scan cache state, bypass deletion-option validation, and must exit successfully with code `0`. CLI help, generated man pages, and generated completions must include option descriptions matching the public behavior documented here.
 
@@ -54,7 +54,9 @@ If `$XDG_CACHE_HOME` is unset, blank, or relative, the fallback is `$HOME/.cache
 
 The command should not scan shared thumbnail repositories by default, and the initial prune CLI does not define shared-repository deletion behavior. Failure entries under `$XDG_CACHE_HOME/thumbnails/fail/<program-version>/` are separate failure namespaces and are scanned only with `--scope failures` or `--scope all`.
 
-`--size` applies only to successful thumbnail size namespaces. With `--scope all`, successful thumbnail entries are restricted to the requested sizes while failure entries are still scanned. Passing `--size` with `--scope failures` is a usage error because no successful thumbnail namespace is being scanned.
+`--size` applies only to successful thumbnail size namespaces. When omitted, all successful thumbnail size namespaces are scanned. With `--scope all`, successful thumbnail entries are restricted to the requested sizes while failure entries are still scanned. Passing `--size` with `--scope failures` is a usage error because no successful thumbnail namespace is being scanned.
+
+`--removable-prefix` accepts absolute local path prefixes only. Relative, blank, or otherwise non-absolute prefix values are usage errors with exit code `2`. The prune CLI uses accepted prefixes as lexical path prefixes for classification and must not canonicalize them, require them to exist, resolve symlinks, or rewrite user input.
 
 When failure entries are scanned, the prune CLI applies the same inspection and classification policy used for successful thumbnails: classify the stored original URI, validate available metadata, and use the configured age basis for remote, virtual, and removable entries. Failure entries are application-specific retry state, so they may become deletion candidates only when `--allow-failure-deletion` is passed. Actual deletion still requires `--delete`. Passing `--allow-failure-deletion` without `--scope failures` or `--scope all` is a usage error, and the diagnostic must tell the user to add one of those scan scopes. Failure entries do not use successful-thumbnail size validation.
 
