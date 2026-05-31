@@ -91,6 +91,7 @@ struct Cli {
     generate_manpage: bool,
     #[arg(
         value_name = "PATH",
+        help = "Local filesystem path to generate thumbnails for; repeat for multiple inputs. Required for generation; omit only with --generate-completion or --generate-manpage.",
         required_unless_present_any = ["generate_completion", "generate_manpage"]
     )]
     paths: Vec<PathBuf>,
