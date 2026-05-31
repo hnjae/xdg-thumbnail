@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    PersonalCacheRoot, PersonalOriginalIdentity, PersonalOriginalUri,
+    CacheNamespace, PersonalCacheRoot, PersonalOriginalIdentity, PersonalOriginalUri,
     ReadablePersonalOriginalIdentity, ThumbnailSize, UnixMtimeSeconds,
 };
 
@@ -69,6 +69,8 @@ fn dry_run_reports_selected_thumbnailer_and_target_cache_path() {
 
     let records = fixture.run_jsonl([
         "--dry-run",
+        "--size",
+        "normal",
         "--sandbox",
         "off",
         "--format",
@@ -95,6 +97,97 @@ fn dry_run_reports_selected_thumbnailer_and_target_cache_path() {
 }
 
 #[test]
+fn dry_run_defaults_to_all_supported_sizes() {
+    let fixture = Fixture::new();
+    let input = fixture.write_png_input("photo.png");
+    fixture.write_thumbnailer("test.thumbnailer", "true %i %o %s", "image/png;");
+
+    let records = fixture.run_jsonl([
+        "--dry-run",
+        "--sandbox",
+        "off",
+        "--format",
+        "jsonl",
+        input.to_str().unwrap(),
+    ]);
+
+    let entries = records
+        .iter()
+        .filter(|record| record["event"] == "entry")
+        .collect::<Vec<_>>();
+    assert_eq!(entries.len(), 4);
+    assert_eq!(entries[0]["namespace"], "normal");
+    assert_eq!(entries[1]["namespace"], "large");
+    assert_eq!(entries[2]["namespace"], "x-large");
+    assert_eq!(entries[3]["namespace"], "xx-large");
+    assert!(entries.iter().all(|entry| entry["decision"] == "generate"));
+    assert_eq!(records.last().unwrap()["requested"], 4);
+    assert_eq!(records.last().unwrap()["planned"], 4);
+}
+
+#[test]
+fn duplicate_explicit_sizes_are_planned_once() {
+    let fixture = Fixture::new();
+    let input = fixture.write_png_input("photo.png");
+    fixture.write_thumbnailer("test.thumbnailer", "true %i %o %s", "image/png;");
+
+    let records = fixture.run_jsonl([
+        "--dry-run",
+        "--size",
+        "normal",
+        "--size",
+        "normal",
+        "--sandbox",
+        "off",
+        "--format",
+        "jsonl",
+        input.to_str().unwrap(),
+    ]);
+
+    let entries = records
+        .iter()
+        .filter(|record| record["event"] == "entry")
+        .collect::<Vec<_>>();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["namespace"], "normal");
+    assert_eq!(records.last().unwrap()["requested"], 1);
+    assert_eq!(records.last().unwrap()["planned"], 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn cache_lookup_failure_uses_stable_reason() {
+    let fixture = Fixture::new();
+    let input = fixture.write_png_input("photo.png");
+    let normal_dir = fixture.cache_home.path().join("thumbnails/normal");
+    std::fs::create_dir_all(&normal_dir).unwrap();
+    std::fs::set_permissions(&normal_dir, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+    let output = fixture
+        .command([
+            "--dry-run",
+            "--size",
+            "normal",
+            "--sandbox",
+            "off",
+            "--format",
+            "jsonl",
+            input.to_str().unwrap(),
+        ])
+        .code(4)
+        .get_output()
+        .stdout
+        .clone();
+    std::fs::set_permissions(&normal_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let records = parse_jsonl(output);
+
+    assert_eq!(records[0]["decision"], "skip");
+    assert_eq!(records[0]["reason"], "cache-lookup-failed");
+    assert_eq!(records[0]["error"]["kind"], "cache-lookup-failed");
+    assert_eq!(records.last().unwrap()["skipped"], 1);
+}
+
+#[test]
 fn dry_run_keeps_existing_valid_thumbnail_unless_forced() {
     let fixture = Fixture::new();
     let input = fixture.write_png_input("existing.png");
@@ -103,6 +196,8 @@ fn dry_run_keeps_existing_valid_thumbnail_unless_forced() {
 
     let records = fixture.run_jsonl([
         "--dry-run",
+        "--size",
+        "normal",
         "--sandbox",
         "off",
         "--format",
@@ -123,6 +218,8 @@ fn dry_run_keeps_existing_valid_thumbnail_without_optional_metadata() {
 
     let records = fixture.run_jsonl([
         "--dry-run",
+        "--size",
+        "normal",
         "--sandbox",
         "off",
         "--format",
@@ -164,6 +261,8 @@ fn dry_run_normalizes_relative_input_dot_segments_for_identity_and_reports() {
 
     let records = fixture.run_jsonl([
         "--dry-run",
+        "--size",
+        "normal",
         "--sandbox",
         "off",
         "--format",
@@ -185,6 +284,8 @@ fn dry_run_normalizes_absolute_input_dot_segments_for_identity_and_reports() {
 
     let records = fixture.run_jsonl([
         "--dry-run",
+        "--size",
+        "normal",
         "--sandbox",
         "off",
         "--format",
@@ -210,6 +311,8 @@ fn dry_run_preserves_symlink_path_as_input_identity() {
 
     let records = fixture.run_jsonl([
         "--dry-run",
+        "--size",
+        "normal",
         "--sandbox",
         "off",
         "--format",
@@ -247,6 +350,8 @@ fn rejects_dot_segment_inputs_inside_personal_cache() {
     let records = fixture.run_jsonl_code(
         [
             "--dry-run",
+            "--size",
+            "normal",
             "--sandbox",
             "off",
             "--format",
@@ -277,6 +382,8 @@ fn try_exec_without_execute_permission_is_ignored() {
 
     let assert = fixture.command([
         "--dry-run",
+        "--size",
+        "normal",
         "--sandbox",
         "off",
         "--format",
@@ -298,6 +405,8 @@ fn matching_invalid_thumbnailer_without_valid_match_reports_entry_error() {
     let records = fixture.run_jsonl_code(
         [
             "--dry-run",
+            "--size",
+            "normal",
             "--sandbox",
             "off",
             "--format",
@@ -322,6 +431,8 @@ fn matching_invalid_thumbnailer_with_valid_match_emits_warning() {
 
     let records = fixture.run_jsonl([
         "--dry-run",
+        "--size",
+        "normal",
         "--sandbox",
         "off",
         "--format",
@@ -347,6 +458,8 @@ fn unrelated_invalid_thumbnailer_discovery_emits_warning() {
 
     let records = fixture.run_jsonl([
         "--dry-run",
+        "--size",
+        "normal",
         "--sandbox",
         "off",
         "--format",
@@ -371,6 +484,8 @@ fn thumbnailer_matching_accepts_mime_supertypes() {
 
     let records = fixture.run_jsonl([
         "--dry-run",
+        "--size",
+        "normal",
         "--sandbox",
         "off",
         "--format",
@@ -391,7 +506,14 @@ fn required_sandbox_reports_backend_probe_failure_before_execution() {
     fixture.write_thumbnailer("valid.thumbnailer", "true %i %o %s", "image/png;");
 
     let records = fixture.run_jsonl_code(
-        ["--dry-run", "--format", "jsonl", input.to_str().unwrap()],
+        [
+            "--dry-run",
+            "--size",
+            "normal",
+            "--format",
+            "jsonl",
+            input.to_str().unwrap(),
+        ],
         1,
     );
 
@@ -414,7 +536,14 @@ fn required_sandbox_rejects_env_wrapped_shell_entries_before_execution() {
     fixture.write_thumbnailer("shell.thumbnailer", "env -u FOO sh -c true", "image/png;");
 
     let records = fixture.run_jsonl_code(
-        ["--dry-run", "--format", "jsonl", input.to_str().unwrap()],
+        [
+            "--dry-run",
+            "--size",
+            "normal",
+            "--format",
+            "jsonl",
+            input.to_str().unwrap(),
+        ],
         1,
     );
 
@@ -440,7 +569,14 @@ fn required_sandbox_rejects_literal_user_host_paths_before_execution() {
     );
 
     let records = fixture.run_jsonl_code(
-        ["--dry-run", "--format", "jsonl", input.to_str().unwrap()],
+        [
+            "--dry-run",
+            "--size",
+            "normal",
+            "--format",
+            "jsonl",
+            input.to_str().unwrap(),
+        ],
         1,
     );
 
@@ -468,7 +604,14 @@ fn required_sandbox_rejects_env_wrapped_user_commands_before_execution() {
     );
 
     let records = fixture.run_jsonl_code(
-        ["--dry-run", "--format", "jsonl", input.to_str().unwrap()],
+        [
+            "--dry-run",
+            "--size",
+            "normal",
+            "--format",
+            "jsonl",
+            input.to_str().unwrap(),
+        ],
         1,
     );
 
@@ -610,10 +753,7 @@ impl Fixture {
             PersonalOriginalUri::from_absolute_path_bytes(input.as_os_str().as_encoded_bytes())
                 .unwrap();
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
-        let path = root.cache_entry_path(
-            &uri,
-            &xdg_thumbnail::CacheNamespace::Size(ThumbnailSize::Normal),
-        );
+        let path = root.cache_entry_path(&uri, &CacheNamespace::Size(ThumbnailSize::Normal));
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(
             path,
@@ -631,10 +771,7 @@ fn assert_entry_uses_input_identity(fixture: &Fixture, entry: &Value, input: &st
         .unwrap();
     let cache_path = PersonalCacheRoot::new(fixture.cache_home.path().join("thumbnails"))
         .unwrap()
-        .cache_entry_path(
-            &uri,
-            &xdg_thumbnail::CacheNamespace::Size(ThumbnailSize::Normal),
-        );
+        .cache_entry_path(&uri, &CacheNamespace::Size(ThumbnailSize::Normal));
 
     assert_eq!(entry["input_path_display"], input.display().to_string());
     assert_eq!(entry["input_path_bytes_b64"], path_bytes_b64(input));

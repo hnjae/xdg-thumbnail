@@ -29,6 +29,9 @@ fn help_and_version_are_successful_metadata_modes() {
         ))
         .stdout(predicate::str::contains("--allow-stale-local-deletion"))
         .stdout(predicate::str::contains("--allow-failure-deletion"))
+        .stdout(predicate::str::contains(
+            "Requires --scope failures or --scope all",
+        ))
         .stdout(predicate::str::contains("--ignore-media-prefix"))
         .stdout(predicate::str::contains("--delete-stale-local").not())
         .stdout(predicate::str::contains("--allow-delete-failures").not())
@@ -75,6 +78,45 @@ fn default_age_basis_is_reported_as_atime() {
         .assert()
         .success()
         .stdout(predicates::str::contains("basis=atime"));
+}
+
+#[test]
+fn duplicate_explicit_sizes_are_scanned_once() {
+    let fixture = Fixture::new();
+    fixture.install_valid_local_thumbnail();
+
+    let output = Command::cargo_bin("xdg-thumbnail-prune")
+        .unwrap()
+        .env("XDG_CACHE_HOME", fixture.cache_home.path())
+        .env("HOME", fixture.home.path())
+        .args([
+            "--size",
+            "normal",
+            "--size",
+            "normal",
+            "--format",
+            "jsonl",
+            "--age-basis",
+            "mtime",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let lines = String::from_utf8(output).unwrap();
+    let records = lines
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+
+    let entries = records
+        .iter()
+        .filter(|record| record["event"] == "entry")
+        .collect::<Vec<_>>();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["namespace"], "normal");
+    assert_eq!(records.last().unwrap()["scanned"], 1);
 }
 
 #[test]
