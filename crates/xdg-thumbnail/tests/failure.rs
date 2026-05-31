@@ -41,10 +41,10 @@ fn writes_deterministic_failure_namespace_entries() {
         Some("file:///home/alice/photo.png")
     );
     assert_eq!(
-        parsed.metadata().thumb_mtime(),
+        parsed.metadata().thumb_mtime_lossy(),
         Some(UnixMtimeSeconds::new(42))
     );
-    assert_eq!(parsed.metadata().thumb_size(), Some(12));
+    assert_eq!(parsed.metadata().thumb_size_lossy(), Some(12));
     assert_eq!(parsed.metadata().thumb_mime_type(), Some("image/png"));
     assert_eq!(
         validate_personal_failure_entry(first.png_bytes(), &original),
@@ -86,7 +86,7 @@ fn validates_failure_entry_metadata_without_successful_thumbnail_size_limits() {
 fn reports_stale_failure_entry_metadata() {
     let original = readable_original();
     let bytes = failure_png_with_metadata(1, 1, original.identity());
-    let stale_original = ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+    let stale_original = ReadablePersonalOriginalIdentity::assume_readable(
         PersonalOriginalIdentity::new(original.identity().uri().clone(), UnixMtimeSeconds::new(43))
             .with_original_byte_size(12)
             .with_mime_type("image/png")
@@ -110,7 +110,7 @@ fn metadata_problem(
 }
 
 fn readable_original() -> ReadablePersonalOriginalIdentity {
-    ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+    ReadablePersonalOriginalIdentity::assume_readable(
         PersonalOriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             UnixMtimeSeconds::new(42),

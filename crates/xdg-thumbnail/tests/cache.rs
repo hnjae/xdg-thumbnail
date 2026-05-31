@@ -143,7 +143,7 @@ fn failure_namespaces_are_direct_ascii_directory_names() {
 fn path_newtypes_expose_unambiguous_path_traits() {
     let temp = TempDir::new().unwrap();
     let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
-    let original = ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+    let original = ReadablePersonalOriginalIdentity::assume_readable(
         PersonalOriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             UnixMtimeSeconds::new(42),
@@ -173,8 +173,7 @@ fn original_identity_preserves_required_freshness_facts() {
         .with_original_byte_size(12)
         .with_mime_type("image/png")
         .unwrap();
-    let readable =
-        ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(identity.clone());
+    let readable = ReadablePersonalOriginalIdentity::assume_readable(identity.clone());
 
     assert_eq!(identity.uri(), &uri);
     assert_eq!(identity.mtime().as_u64(), 42);

@@ -80,7 +80,7 @@ fn lookup_thumbnail_png_bytes_returns_exact_validated_png_bytes() {
         PersonalThumbnailLookup::Valid(valid) => {
             assert_eq!(valid.path(), path.as_path());
             assert_eq!(valid.png_bytes(), valid_bytes.as_slice());
-            assert_eq!(valid.metadata().thumb_size(), Some(12));
+            assert_eq!(valid.metadata().thumb_size_lossy(), Some(12));
         }
         other => panic!("expected valid bytes lookup, got {other:?}"),
     }
@@ -113,14 +113,14 @@ fn lookup_thumbnail_rgba8_returns_decoded_pixels_and_metadata() {
             assert_eq!(valid.height(), 1);
             assert_eq!(valid.stride(), 8);
             assert_eq!(valid.pixels(), pixels.as_slice());
-            assert_eq!(valid.metadata().thumb_size(), Some(12));
+            assert_eq!(valid.metadata().thumb_size_lossy(), Some(12));
 
             let parts = valid.into_parts();
             assert_eq!(parts.path, path);
             assert_eq!((parts.width, parts.height, parts.stride), (2, 1, 8));
             assert_eq!(parts.pixels, pixels);
             assert_eq!(
-                parts.metadata.thumb_mtime(),
+                parts.metadata.thumb_mtime_lossy(),
                 Some(UnixMtimeSeconds::new(42))
             );
         }
@@ -233,7 +233,7 @@ fn metadata_problem(
 }
 
 fn original_identity(mtime: u64) -> ReadablePersonalOriginalIdentity {
-    ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+    ReadablePersonalOriginalIdentity::assume_readable(
         PersonalOriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             UnixMtimeSeconds::new(mtime),

@@ -247,7 +247,7 @@ fn metadata_problem(
 }
 
 fn readable_original() -> ReadablePersonalOriginalIdentity {
-    ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+    ReadablePersonalOriginalIdentity::assume_readable(
         PersonalOriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             xdg_thumbnail::UnixMtimeSeconds::new(42),

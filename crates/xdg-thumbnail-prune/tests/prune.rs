@@ -344,7 +344,7 @@ impl Fixture {
 
     fn install_for_missing_original(&self) -> std::path::PathBuf {
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
-        let original = ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+        let original = ReadablePersonalOriginalIdentity::assume_readable(
             PersonalOriginalIdentity::new(
                 PersonalOriginalUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-missing.png")
                     .unwrap(),
@@ -387,7 +387,7 @@ impl Fixture {
         )
         .unwrap();
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
-        let original = ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+        let original = ReadablePersonalOriginalIdentity::assume_readable(
             PersonalOriginalIdentity::new(uri, UnixMtimeSeconds::new(1))
                 .with_original_byte_size(1)
                 .with_mime_type("image/png")
@@ -404,7 +404,7 @@ impl Fixture {
 
     fn install_uri_filename_mismatch(&self) -> std::path::PathBuf {
         let root = PersonalCacheRoot::new(self.cache_home.path().join("thumbnails")).unwrap();
-        let original = ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+        let original = ReadablePersonalOriginalIdentity::assume_readable(
             PersonalOriginalIdentity::new(
                 PersonalOriginalUri::from_absolute_path_bytes(b"/tmp/xdg-thumbnail-photo.png")
                     .unwrap(),
@@ -432,7 +432,7 @@ impl Fixture {
             original_path.as_os_str().as_encoded_bytes(),
         )
         .unwrap();
-        let original = ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+        let original = ReadablePersonalOriginalIdentity::assume_readable(
             PersonalOriginalIdentity::new(uri, UnixMtimeSeconds::new(1))
                 .with_original_byte_size(1)
                 .with_mime_type("image/png")
@@ -456,7 +456,7 @@ impl Fixture {
         )
         .unwrap();
         let mtime = UnixMtimeSeconds::from_system_time(metadata.modified().unwrap()).unwrap();
-        let original = ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+        let original = ReadablePersonalOriginalIdentity::assume_readable(
             PersonalOriginalIdentity::new(uri, mtime)
                 .with_original_byte_size(metadata.len())
                 .with_mime_type("image/png")

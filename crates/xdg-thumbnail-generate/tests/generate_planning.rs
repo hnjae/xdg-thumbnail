@@ -432,7 +432,7 @@ impl Fixture {
         let uri =
             PersonalOriginalUri::from_absolute_path_bytes(input.as_os_str().as_encoded_bytes())
                 .unwrap();
-        let original = ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+        let original = ReadablePersonalOriginalIdentity::assume_readable(
             PersonalOriginalIdentity::new(uri, mtime)
                 .with_original_byte_size(metadata.len())
                 .with_mime_type("image/png")

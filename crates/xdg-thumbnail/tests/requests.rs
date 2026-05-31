@@ -119,7 +119,7 @@ fn personal_lookup_request_matches_borrowed_lookup() {
         PersonalThumbnailLookup::Valid(valid_path) => {
             let parts = valid_path.into_parts();
             assert_eq!(parts.path, path);
-            assert_eq!(parts.metadata.thumb_size(), Some(12));
+            assert_eq!(parts.metadata.thumb_size_lossy(), Some(12));
         }
         other => panic!("expected valid personal path lookup, got {other:?}"),
     }
@@ -134,7 +134,7 @@ fn personal_lookup_request_matches_borrowed_lookup() {
             assert_eq!(parts.path, path);
             assert_eq!(parts.png_bytes, png_with_metadata(personal_metadata("42")));
             assert_eq!(
-                parts.metadata.thumb_mtime(),
+                parts.metadata.thumb_mtime_lossy(),
                 Some(UnixMtimeSeconds::new(42))
             );
         }
@@ -153,7 +153,7 @@ fn personal_lookup_request_matches_borrowed_lookup() {
             assert_eq!(rgba8.path(), path.as_path());
             assert_eq!((rgba8.width(), rgba8.height(), rgba8.stride()), (2, 1, 8));
             assert_eq!(rgba8.pixels(), &[255; 8]);
-            assert_eq!(rgba8.metadata().thumb_size(), Some(12));
+            assert_eq!(rgba8.metadata().thumb_size_lossy(), Some(12));
         }
         other => panic!("expected valid personal RGBA8 lookup, got {other:?}"),
     }
@@ -193,7 +193,7 @@ fn personal_install_request_matches_borrowed_install_and_normalizes() {
     assert_eq!(parsed.height(), 64);
     assert_eq!(parsed.color_type(), ThumbnailPngColorType::Rgba);
     assert_eq!(
-        parsed.metadata().thumb_mtime(),
+        parsed.metadata().thumb_mtime_lossy(),
         Some(UnixMtimeSeconds::new(42))
     );
 }
@@ -282,7 +282,7 @@ fn personal_raw_install_request_matches_borrowed_install_and_normalizes() {
     assert_eq!(parsed.height(), 64);
     assert_eq!(parsed.color_type(), ThumbnailPngColorType::Rgba);
     assert_eq!(
-        parsed.metadata().thumb_mtime(),
+        parsed.metadata().thumb_mtime_lossy(),
         Some(UnixMtimeSeconds::new(42))
     );
 
@@ -489,11 +489,11 @@ fn shared_lookup_and_inspection_requests_match_borrowed_api() {
     assert!(parts.timestamps.modified_at().is_some());
     assert_eq!(parts.size, ThumbnailSize::Normal);
     assert_eq!(parts.path, path);
-    assert_eq!(parts.metadata.unwrap().thumb_size(), Some(12));
+    assert_eq!(parts.metadata.unwrap().thumb_size_lossy(), Some(12));
 }
 
 fn readable_original() -> ReadablePersonalOriginalIdentity {
-    ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+    ReadablePersonalOriginalIdentity::assume_readable(
         PersonalOriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             UnixMtimeSeconds::new(42),

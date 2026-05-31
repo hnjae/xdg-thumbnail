@@ -30,14 +30,14 @@ fn parses_standard_thumbnail_metadata() {
         Some("file:///home/alice/photo.png")
     );
     assert_eq!(
-        parsed.metadata().thumb_mtime(),
+        parsed.metadata().thumb_mtime_lossy(),
         Some(UnixMtimeSeconds::new(42))
     );
     assert_eq!(
         parsed.metadata().try_thumb_mtime().unwrap(),
         Some(UnixMtimeSeconds::new(42))
     );
-    assert_eq!(parsed.metadata().thumb_size(), Some(12));
+    assert_eq!(parsed.metadata().thumb_size_lossy(), Some(12));
     assert_eq!(parsed.metadata().try_thumb_size().unwrap(), Some(12));
     assert_eq!(parsed.metadata().thumb_mime_type(), Some("image/png"));
     assert_eq!(
@@ -77,16 +77,15 @@ fn metadata_typed_accessors_distinguish_invalid_syntax() {
     let png = png_with_metadata(2, 1, png::ColorType::Rgba, metadata);
     let parsed = ParsedThumbnailPng::parse(&png).unwrap();
 
-    assert_eq!(parsed.metadata().thumb_mtime(), None);
-    assert!(parsed.metadata().try_thumb_mtime().is_err());
-    assert_eq!(parsed.metadata().thumb_size(), None);
-    assert!(parsed.metadata().try_thumb_size().is_err());
+    assert_eq!(parsed.metadata().thumb_mtime_lossy(), None);
+    assert!(matches!(parsed.metadata().try_thumb_mtime(), Err(_)));
+    assert_eq!(parsed.metadata().thumb_size_lossy(), None);
+    assert!(matches!(parsed.metadata().try_thumb_size(), Err(_)));
 }
 
 #[test]
 fn validates_personal_thumbnail_metadata_and_conformance() {
-    let original =
-        ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(original_identity());
+    let original = ReadablePersonalOriginalIdentity::assume_readable(original_identity());
     let valid = png_with_metadata(2, 1, png::ColorType::Rgba, metadata());
     assert_eq!(
         validate_personal_thumbnail(&valid, &original, ThumbnailSize::Normal),
@@ -369,8 +368,7 @@ fn parser_and_validation_reject_png_resource_limits() {
         Err(ThumbnailError::ResourceLimitExceeded { .. })
     ));
 
-    let original =
-        ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(original_identity());
+    let original = ReadablePersonalOriginalIdentity::assume_readable(original_identity());
     assert_personal_invalid_contains(
         validate_personal_thumbnail(&png, &original, ThumbnailSize::Normal),
         CacheEntryProblem::ResourceLimitExceeded,

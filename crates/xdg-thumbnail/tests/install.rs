@@ -44,10 +44,10 @@ fn installs_normalized_downscaled_personal_thumbnail_atomically() {
         Some("file:///home/alice/photo.png")
     );
     assert_eq!(
-        parsed.metadata().thumb_mtime(),
+        parsed.metadata().thumb_mtime_lossy(),
         Some(UnixMtimeSeconds::new(42))
     );
-    assert_eq!(parsed.metadata().thumb_size(), Some(12));
+    assert_eq!(parsed.metadata().thumb_size_lossy(), Some(12));
     assert_eq!(parsed.metadata().thumb_mime_type(), Some("image/png"));
 
     let dir_mode = std::fs::metadata(expected_path.parent().unwrap())
@@ -297,7 +297,7 @@ fn raw_thumbnail_rejects_short_buffer() {
 }
 
 fn readable_original() -> ReadablePersonalOriginalIdentity {
-    ReadablePersonalOriginalIdentity::from_confirmed_readable_identity(
+    ReadablePersonalOriginalIdentity::assume_readable(
         PersonalOriginalIdentity::new(
             PersonalOriginalUri::from_absolute_path_bytes(b"/home/alice/photo.png").unwrap(),
             UnixMtimeSeconds::new(42),
