@@ -1177,6 +1177,59 @@ pub struct PersonalThumbnailInspectionRequestParts {
     pub nonstandard_entry_policy: NonstandardEntryPolicy,
 }
 
+/// Owned failure-entry inspection request for async or runtime-specific adapters.
+///
+/// Constructing this request does not perform filesystem I/O. Inspection happens only when
+/// [`Self::inspect`] is called.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FailureEntryInspectionRequest {
+    root: PersonalCacheRoot,
+    nonstandard_entry_policy: NonstandardEntryPolicy,
+}
+
+impl FailureEntryInspectionRequest {
+    /// Creates an owned failure-entry inspection request.
+    #[must_use]
+    pub fn new(root: PersonalCacheRoot, nonstandard_entry_policy: NonstandardEntryPolicy) -> Self {
+        Self {
+            root,
+            nonstandard_entry_policy,
+        }
+    }
+
+    /// Inspects direct files in immediate real failure-entry namespaces.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`PersonalCacheRoot::inspect_failure_entries`].
+    pub fn inspect(self) -> Result<Vec<CacheEntryInspection>> {
+        let Self {
+            root,
+            nonstandard_entry_policy,
+        } = self;
+        root.inspect_failure_entries(nonstandard_entry_policy)
+    }
+
+    /// Splits this request into its owned parts.
+    #[must_use]
+    pub fn into_parts(self) -> FailureEntryInspectionRequestParts {
+        FailureEntryInspectionRequestParts {
+            root: self.root,
+            nonstandard_entry_policy: self.nonstandard_entry_policy,
+        }
+    }
+}
+
+/// Owned parts of [`FailureEntryInspectionRequest`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct FailureEntryInspectionRequestParts {
+    /// Personal thumbnail cache root.
+    pub root: PersonalCacheRoot,
+    /// Policy for nonstandard cache directory entries.
+    pub nonstandard_entry_policy: NonstandardEntryPolicy,
+}
+
 /// Owned shared-repository lookup request for async or runtime-specific adapters.
 ///
 /// Constructing this request does not perform filesystem I/O. Validation happens only when
@@ -1619,6 +1672,37 @@ impl SharedCacheEntryInspection {
     pub const fn metadata(&self) -> Option<&ThumbnailMetadata> {
         self.metadata.as_ref()
     }
+
+    /// Splits this inspection into its owned facts.
+    #[must_use]
+    pub fn into_parts(self) -> SharedCacheEntryInspectionParts {
+        SharedCacheEntryInspectionParts {
+            outcome: self.outcome,
+            shared_uri: self.shared_uri,
+            timestamps: self.timestamps,
+            size: self.size,
+            path: self.path,
+            metadata: self.metadata,
+        }
+    }
+}
+
+/// Owned parts of [`SharedCacheEntryInspection`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct SharedCacheEntryInspectionParts {
+    /// Shared validation or inspection outcome.
+    pub outcome: SharedCacheEntryOutcome,
+    /// Shared relative URI used for hashing and metadata comparison.
+    pub shared_uri: SharedRelativeOriginalUri,
+    /// Timestamp facts.
+    pub timestamps: ThumbnailTimestamps,
+    /// Successful-thumbnail size namespace.
+    pub size: ThumbnailSize,
+    /// Inspected shared cache path.
+    pub path: PathBuf,
+    /// Parsed metadata when the entry was a readable PNG.
+    pub metadata: Option<ThumbnailMetadata>,
 }
 
 /// A validated cache path and metadata facts.
@@ -1693,7 +1777,7 @@ impl ThumbnailPngBytesLookupEntry {
     pub fn into_parts(self) -> ThumbnailPngBytesLookupEntryParts {
         ThumbnailPngBytesLookupEntryParts {
             path: self.path,
-            bytes: self.bytes,
+            png_bytes: self.bytes,
             metadata: self.metadata,
         }
     }
@@ -1706,7 +1790,7 @@ pub struct ThumbnailPngBytesLookupEntryParts {
     /// Path from which the PNG bytes were validated.
     pub path: PathBuf,
     /// Exact PNG bytes that passed validation.
-    pub bytes: Vec<u8>,
+    pub png_bytes: Vec<u8>,
     /// Metadata parsed from the validated PNG.
     pub metadata: ThumbnailMetadata,
 }
@@ -1851,7 +1935,7 @@ impl InstalledThumbnailPngBytes {
     pub fn into_parts(self) -> InstalledThumbnailPngBytesParts {
         InstalledThumbnailPngBytesParts {
             path: self.path,
-            bytes: self.bytes,
+            png_bytes: self.bytes,
         }
     }
 }
@@ -1863,7 +1947,7 @@ pub struct InstalledThumbnailPngBytesParts {
     /// Installed cache path.
     pub path: PathBuf,
     /// Final normalized PNG bytes that were installed.
-    pub bytes: Vec<u8>,
+    pub png_bytes: Vec<u8>,
 }
 
 fn ensure_private_directory(path: &Path) -> Result<()> {

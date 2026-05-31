@@ -142,6 +142,37 @@ impl CacheEntryInspection {
     pub fn into_handle(self) -> CacheEntryHandle {
         self.handle
     }
+
+    /// Splits this inspection into its owned facts and removal handle.
+    #[must_use]
+    pub fn into_parts(self) -> CacheEntryInspectionParts {
+        CacheEntryInspectionParts {
+            outcome: self.outcome,
+            original_uri: self.original_uri,
+            timestamps: self.timestamps,
+            namespace: self.namespace,
+            path: self.path,
+            handle: self.handle,
+        }
+    }
+}
+
+/// Owned parts of [`CacheEntryInspection`].
+#[derive(Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct CacheEntryInspectionParts {
+    /// Validation or inspection outcome.
+    pub outcome: CacheEntryInspectionOutcome,
+    /// Original URI parsed from metadata when present and valid.
+    pub original_uri: Option<OriginalUriIdentity>,
+    /// Timestamp facts.
+    pub timestamps: ThumbnailTimestamps,
+    /// Cache namespace.
+    pub namespace: CacheNamespace,
+    /// Inspected cache path.
+    pub path: PathBuf,
+    /// Safe-removal handle for the inspected cache entry.
+    pub handle: CacheEntryHandle,
 }
 
 /// A handle for a discovered cache entry.

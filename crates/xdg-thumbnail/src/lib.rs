@@ -93,13 +93,14 @@ mod uri;
 
 #[cfg(unix)]
 pub use cache::{
-    FailureEntryWriteRequest, FailureEntryWriteRequestParts, InstalledThumbnailPath,
-    InstalledThumbnailPngBytes, InstalledThumbnailPngBytesParts, PersonalCacheRoot,
-    PersonalThumbnailInspectionRequest, PersonalThumbnailInspectionRequestParts,
-    PersonalThumbnailInstallRequest, PersonalThumbnailInstallRequestParts, PersonalThumbnailLookup,
-    PersonalThumbnailLookupRequest, PersonalThumbnailLookupRequestParts,
-    PersonalThumbnailRawInstallRequest, PersonalThumbnailRawInstallRequestParts,
-    SharedCacheEntryInspection, SharedCacheEntryOutcome, SharedOriginalFacts,
+    FailureEntryInspectionRequest, FailureEntryInspectionRequestParts, FailureEntryWriteRequest,
+    FailureEntryWriteRequestParts, InstalledThumbnailPath, InstalledThumbnailPngBytes,
+    InstalledThumbnailPngBytesParts, PersonalCacheRoot, PersonalThumbnailInspectionRequest,
+    PersonalThumbnailInspectionRequestParts, PersonalThumbnailInstallRequest,
+    PersonalThumbnailInstallRequestParts, PersonalThumbnailLookup, PersonalThumbnailLookupRequest,
+    PersonalThumbnailLookupRequestParts, PersonalThumbnailRawInstallRequest,
+    PersonalThumbnailRawInstallRequestParts, SharedCacheEntryInspection,
+    SharedCacheEntryInspectionParts, SharedCacheEntryOutcome, SharedOriginalFacts,
     SharedOriginalMetadata, SharedThumbnailInspectionRequest,
     SharedThumbnailInspectionRequestParts, SharedThumbnailLookup, SharedThumbnailLookupRequest,
     SharedThumbnailLookupRequestParts, SharedThumbnailMetadataPolicy, ThumbnailPathLookupEntry,
@@ -118,7 +119,7 @@ pub use identity::{
 #[cfg(unix)]
 pub use inspection::{
     AccessTimePreservation, CacheEntryHandle, CacheEntryInspection, CacheEntryInspectionOutcome,
-    NonstandardEntryPolicy, OriginalUriIdentity, ThumbnailTimestamps,
+    CacheEntryInspectionParts, NonstandardEntryPolicy, OriginalUriIdentity, ThumbnailTimestamps,
 };
 #[cfg(unix)]
 pub use namespace::{CacheNamespace, FailureNamespace, ThumbnailSize};
