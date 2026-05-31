@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
-use crate::PersonalOriginalUri;
 use crate::inspection::{
     CacheEntryInspection, NonstandardEntryPolicy, read_thumbnail_for_inspection,
     thumbnail_timestamps, thumbnail_timestamps_from_metadata,
@@ -20,10 +19,13 @@ use crate::{
     ParsedThumbnailPng, PersonalValidationOutcome, RawThumbnailImage,
     ReadablePersonalOriginalIdentity, Result, SharedRelativeOriginalUri, SharedRepositoryContext,
     SharedValidationOutcome, ThumbnailError, ThumbnailMetadata, ThumbnailSize, ThumbnailTimestamps,
-    UnixMtimeSeconds, decode_validated_thumbnail_png_to_rgba8, encode_rgba_png, metadata_problem,
-    normalized_personal_thumbnail_png, normalized_personal_thumbnail_raw_png, push_problem,
-    thumbnail_metadata_pairs, validate_personal_thumbnail, validate_shared_thumbnail,
+    UnixMtimeSeconds, decode_validated_thumbnail_png_to_rgba8,
+    downscaled_validated_thumbnail_png_to_rgba8, encode_rgba_png, metadata_problem,
+    normalized_personal_thumbnail_from_cache_png, normalized_personal_thumbnail_png,
+    normalized_personal_thumbnail_raw_png, push_problem, thumbnail_metadata_pairs,
+    validate_personal_thumbnail, validate_shared_thumbnail,
 };
+use crate::{PersonalOriginalIdentity, PersonalOriginalUri};
 use crate::{ThumbnailMetadataKey, ThumbnailMetadataProblemKind};
 
 /// Root directory of the personal thumbnail cache, usually `$XDG_CACHE_HOME/thumbnails`.
@@ -219,6 +221,42 @@ impl PersonalCacheRoot {
         }
     }
 
+    /// Returns decoded RGBA8 display pixels, falling back to larger personal-cache namespaces.
+    ///
+    /// The exact namespace is checked first. If it is missing, larger namespaces are checked in
+    /// ascending order. The first non-missing candidate controls the result.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for unexpected filesystem I/O while reading the candidate or for PNG
+    /// decoding failures after validation succeeds.
+    pub fn lookup_display_thumbnail_rgba8(
+        &self,
+        original: &ReadablePersonalOriginalIdentity,
+        size: ThumbnailSize,
+    ) -> Result<PersonalThumbnailLookup<DisplayThumbnailRgba8LookupEntry>> {
+        for source_size in display_candidate_sizes(size) {
+            match self.lookup_thumbnail_entry(original, source_size)? {
+                PersonalThumbnailLookup::Valid(entry) => {
+                    return Ok(PersonalThumbnailLookup::Valid(
+                        display_rgba8_lookup_entry_from_parts(
+                            entry.path,
+                            &entry.bytes,
+                            entry.metadata,
+                            size,
+                            source_size,
+                        )?,
+                    ));
+                }
+                PersonalThumbnailLookup::Missing => {}
+                PersonalThumbnailLookup::Invalid(problems) => {
+                    return Ok(PersonalThumbnailLookup::Invalid(problems));
+                }
+            }
+        }
+        Ok(PersonalThumbnailLookup::Missing)
+    }
+
     /// Normalizes rendered PNG data, atomically installs a personal-cache thumbnail, and returns its path.
     ///
     /// # Errors
@@ -283,6 +321,149 @@ impl PersonalCacheRoot {
         Ok(InstalledThumbnailPngBytes { path, bytes })
     }
 
+    /// Materializes the requested personal-cache namespace from an exact or larger personal entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when final PNG normalization, validation, or atomic installation fails.
+    pub fn materialize_thumbnail_from_larger_cache_returning_path(
+        &self,
+        original: &ReadablePersonalOriginalIdentity,
+        size: ThumbnailSize,
+    ) -> Result<PersonalThumbnailLookup<MaterializedThumbnailPath>> {
+        match self.materialize_thumbnail_from_larger_cache_entry(original, size)? {
+            PersonalThumbnailLookup::Valid(entry) => {
+                Ok(PersonalThumbnailLookup::Valid(MaterializedThumbnailPath {
+                    target_path: entry.target_path,
+                    source_path: entry.source_path,
+                    requested_size: entry.requested_size,
+                    source_size: entry.source_size,
+                    written: entry.written,
+                }))
+            }
+            PersonalThumbnailLookup::Missing => Ok(PersonalThumbnailLookup::Missing),
+            PersonalThumbnailLookup::Invalid(problems) => {
+                Ok(PersonalThumbnailLookup::Invalid(problems))
+            }
+        }
+    }
+
+    /// Materializes the requested personal-cache namespace and returns final target PNG bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when final PNG normalization, validation, or atomic installation fails.
+    pub fn materialize_thumbnail_from_larger_cache_returning_png_bytes(
+        &self,
+        original: &ReadablePersonalOriginalIdentity,
+        size: ThumbnailSize,
+    ) -> Result<PersonalThumbnailLookup<MaterializedThumbnailPngBytes>> {
+        match self.materialize_thumbnail_from_larger_cache_entry(original, size)? {
+            PersonalThumbnailLookup::Valid(entry) => Ok(PersonalThumbnailLookup::Valid(
+                MaterializedThumbnailPngBytes {
+                    target_path: entry.target_path,
+                    source_path: entry.source_path,
+                    requested_size: entry.requested_size,
+                    source_size: entry.source_size,
+                    written: entry.written,
+                    bytes: entry.bytes,
+                },
+            )),
+            PersonalThumbnailLookup::Missing => Ok(PersonalThumbnailLookup::Missing),
+            PersonalThumbnailLookup::Invalid(problems) => {
+                Ok(PersonalThumbnailLookup::Invalid(problems))
+            }
+        }
+    }
+
+    /// Materializes a shared thumbnail into this personal cache and returns the target path.
+    ///
+    /// Shared repositories are read-only; this method writes only to the receiver personal cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when shared facts cannot produce required personal metadata, final PNG
+    /// normalization fails, or atomic installation fails.
+    pub fn materialize_shared_thumbnail_returning_path(
+        &self,
+        shared: &SharedRepositoryContext,
+        original_facts: SharedOriginalFacts,
+        size: ThumbnailSize,
+    ) -> Result<SharedThumbnailLookup<MaterializedThumbnailPath>> {
+        match self.materialize_shared_thumbnail_entry(shared, original_facts, size)? {
+            SharedThumbnailLookup::FullyVerified(entry) => Ok(
+                SharedThumbnailLookup::FullyVerified(MaterializedThumbnailPath {
+                    target_path: entry.target_path,
+                    source_path: entry.source_path,
+                    requested_size: entry.requested_size,
+                    source_size: entry.source_size,
+                    written: entry.written,
+                }),
+            ),
+            SharedThumbnailLookup::MetadataIncomplete(entry) => Ok(
+                SharedThumbnailLookup::MetadataIncomplete(MaterializedThumbnailPath {
+                    target_path: entry.target_path,
+                    source_path: entry.source_path,
+                    requested_size: entry.requested_size,
+                    source_size: entry.source_size,
+                    written: entry.written,
+                }),
+            ),
+            SharedThumbnailLookup::Missing => Ok(SharedThumbnailLookup::Missing),
+            SharedThumbnailLookup::Invalid(problems) => {
+                Ok(SharedThumbnailLookup::Invalid(problems))
+            }
+            SharedThumbnailLookup::Unverifiable(problems) => {
+                Ok(SharedThumbnailLookup::Unverifiable(problems))
+            }
+        }
+    }
+
+    /// Materializes a shared thumbnail into this personal cache and returns final target PNG bytes.
+    ///
+    /// Shared repositories are read-only; this method writes only to the receiver personal cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when shared facts cannot produce required personal metadata, final PNG
+    /// normalization fails, or atomic installation fails.
+    pub fn materialize_shared_thumbnail_returning_png_bytes(
+        &self,
+        shared: &SharedRepositoryContext,
+        original_facts: SharedOriginalFacts,
+        size: ThumbnailSize,
+    ) -> Result<SharedThumbnailLookup<MaterializedThumbnailPngBytes>> {
+        match self.materialize_shared_thumbnail_entry(shared, original_facts, size)? {
+            SharedThumbnailLookup::FullyVerified(entry) => Ok(
+                SharedThumbnailLookup::FullyVerified(MaterializedThumbnailPngBytes {
+                    target_path: entry.target_path,
+                    source_path: entry.source_path,
+                    requested_size: entry.requested_size,
+                    source_size: entry.source_size,
+                    written: entry.written,
+                    bytes: entry.bytes,
+                }),
+            ),
+            SharedThumbnailLookup::MetadataIncomplete(entry) => Ok(
+                SharedThumbnailLookup::MetadataIncomplete(MaterializedThumbnailPngBytes {
+                    target_path: entry.target_path,
+                    source_path: entry.source_path,
+                    requested_size: entry.requested_size,
+                    source_size: entry.source_size,
+                    written: entry.written,
+                    bytes: entry.bytes,
+                }),
+            ),
+            SharedThumbnailLookup::Missing => Ok(SharedThumbnailLookup::Missing),
+            SharedThumbnailLookup::Invalid(problems) => {
+                Ok(SharedThumbnailLookup::Invalid(problems))
+            }
+            SharedThumbnailLookup::Unverifiable(problems) => {
+                Ok(SharedThumbnailLookup::Unverifiable(problems))
+            }
+        }
+    }
+
     fn install_thumbnail_entry(
         &self,
         original: &ReadablePersonalOriginalIdentity,
@@ -307,6 +488,108 @@ impl PersonalCacheRoot {
         let bytes = normalized_personal_thumbnail_raw_png(image, original.identity(), size)?;
         self.write_personal_entry(&path, &namespace, &bytes)?;
         Ok((path, bytes))
+    }
+
+    fn materialize_thumbnail_from_larger_cache_entry(
+        &self,
+        original: &ReadablePersonalOriginalIdentity,
+        size: ThumbnailSize,
+    ) -> Result<PersonalThumbnailLookup<MaterializedPersonalEntry>> {
+        let target_path =
+            self.cache_entry_path(original.identity().uri(), &CacheNamespace::Size(size));
+        for source_size in display_candidate_sizes(size) {
+            match self.lookup_thumbnail_entry(original, source_size)? {
+                PersonalThumbnailLookup::Valid(entry) if source_size == size => {
+                    return Ok(PersonalThumbnailLookup::Valid(MaterializedPersonalEntry {
+                        target_path,
+                        source_path: entry.path,
+                        requested_size: size,
+                        source_size,
+                        written: false,
+                        bytes: entry.bytes,
+                    }));
+                }
+                PersonalThumbnailLookup::Valid(entry) => {
+                    let bytes = normalized_personal_thumbnail_from_cache_png(
+                        &entry.bytes,
+                        original.identity(),
+                        size,
+                    )?;
+                    self.write_personal_entry(&target_path, &CacheNamespace::Size(size), &bytes)?;
+                    return Ok(PersonalThumbnailLookup::Valid(MaterializedPersonalEntry {
+                        target_path,
+                        source_path: entry.path,
+                        requested_size: size,
+                        source_size,
+                        written: true,
+                        bytes,
+                    }));
+                }
+                PersonalThumbnailLookup::Missing => {}
+                PersonalThumbnailLookup::Invalid(problems) => {
+                    return Ok(PersonalThumbnailLookup::Invalid(problems));
+                }
+            }
+        }
+        Ok(PersonalThumbnailLookup::Missing)
+    }
+
+    fn materialize_shared_thumbnail_entry(
+        &self,
+        shared: &SharedRepositoryContext,
+        original_facts: SharedOriginalFacts,
+        size: ThumbnailSize,
+    ) -> Result<SharedThumbnailLookup<MaterializedPersonalEntry>> {
+        let original = personal_identity_from_shared_facts(shared, original_facts)?;
+        let target_path = self.cache_entry_path(original.uri(), &CacheNamespace::Size(size));
+        for source_size in display_candidate_sizes(size) {
+            match shared.lookup_thumbnail_entry(source_size, original_facts)? {
+                SharedThumbnailLookup::FullyVerified(entry) => {
+                    let bytes = normalized_personal_thumbnail_from_cache_png(
+                        &entry.bytes,
+                        &original,
+                        size,
+                    )?;
+                    self.write_personal_entry(&target_path, &CacheNamespace::Size(size), &bytes)?;
+                    return Ok(SharedThumbnailLookup::FullyVerified(
+                        MaterializedPersonalEntry {
+                            target_path,
+                            source_path: entry.path,
+                            requested_size: size,
+                            source_size,
+                            written: true,
+                            bytes,
+                        },
+                    ));
+                }
+                SharedThumbnailLookup::MetadataIncomplete(entry) => {
+                    let bytes = normalized_personal_thumbnail_from_cache_png(
+                        &entry.bytes,
+                        &original,
+                        size,
+                    )?;
+                    self.write_personal_entry(&target_path, &CacheNamespace::Size(size), &bytes)?;
+                    return Ok(SharedThumbnailLookup::MetadataIncomplete(
+                        MaterializedPersonalEntry {
+                            target_path,
+                            source_path: entry.path,
+                            requested_size: size,
+                            source_size,
+                            written: true,
+                            bytes,
+                        },
+                    ));
+                }
+                SharedThumbnailLookup::Missing => {}
+                SharedThumbnailLookup::Invalid(problems) => {
+                    return Ok(SharedThumbnailLookup::Invalid(problems));
+                }
+                SharedThumbnailLookup::Unverifiable(problems) => {
+                    return Ok(SharedThumbnailLookup::Unverifiable(problems));
+                }
+            }
+        }
+        Ok(SharedThumbnailLookup::Missing)
     }
 
     /// Writes a deterministic 1x1 transparent failure entry and returns its path.
@@ -571,6 +854,56 @@ impl SharedRepositoryContext {
         }
     }
 
+    /// Returns decoded RGBA8 display pixels, falling back to larger shared-repository namespaces.
+    ///
+    /// The exact namespace is checked first. If it is missing, larger namespaces are checked in
+    /// ascending order. The first non-missing candidate controls the result.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for unexpected filesystem I/O while reading the candidate or for PNG
+    /// decoding failures after validation succeeds.
+    pub fn lookup_display_thumbnail_rgba8(
+        &self,
+        original_facts: SharedOriginalFacts,
+        size: ThumbnailSize,
+    ) -> Result<SharedThumbnailLookup<DisplayThumbnailRgba8LookupEntry>> {
+        for source_size in display_candidate_sizes(size) {
+            match self.lookup_thumbnail_entry(source_size, original_facts)? {
+                SharedThumbnailLookup::FullyVerified(entry) => {
+                    return Ok(SharedThumbnailLookup::FullyVerified(
+                        display_rgba8_lookup_entry_from_parts(
+                            entry.path,
+                            &entry.bytes,
+                            entry.metadata,
+                            size,
+                            source_size,
+                        )?,
+                    ));
+                }
+                SharedThumbnailLookup::MetadataIncomplete(entry) => {
+                    return Ok(SharedThumbnailLookup::MetadataIncomplete(
+                        display_rgba8_lookup_entry_from_parts(
+                            entry.path,
+                            &entry.bytes,
+                            entry.metadata,
+                            size,
+                            source_size,
+                        )?,
+                    ));
+                }
+                SharedThumbnailLookup::Missing => {}
+                SharedThumbnailLookup::Invalid(problems) => {
+                    return Ok(SharedThumbnailLookup::Invalid(problems));
+                }
+                SharedThumbnailLookup::Unverifiable(problems) => {
+                    return Ok(SharedThumbnailLookup::Unverifiable(problems));
+                }
+            }
+        }
+        Ok(SharedThumbnailLookup::Missing)
+    }
+
     /// Inspects existing shared-repository thumbnails without exposing removal handles.
     ///
     /// # Errors
@@ -806,6 +1139,22 @@ impl PersonalThumbnailLookupRequest {
         root.lookup_thumbnail_rgba8(&original, size)
     }
 
+    /// Returns decoded display RGBA8 pixels for the owned request.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`PersonalCacheRoot::lookup_display_thumbnail_rgba8`].
+    pub fn lookup_display_rgba8(
+        self,
+    ) -> Result<PersonalThumbnailLookup<DisplayThumbnailRgba8LookupEntry>> {
+        let Self {
+            root,
+            original,
+            size,
+        } = self;
+        root.lookup_display_thumbnail_rgba8(&original, size)
+    }
+
     /// Splits this request into its owned parts.
     #[must_use]
     pub fn into_parts(self) -> PersonalThumbnailLookupRequestParts {
@@ -821,6 +1170,87 @@ impl PersonalThumbnailLookupRequest {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct PersonalThumbnailLookupRequestParts {
+    /// Personal thumbnail cache root.
+    pub root: PersonalCacheRoot,
+    /// Readability-confirmed original identity.
+    pub original: ReadablePersonalOriginalIdentity,
+    /// Requested thumbnail size.
+    pub size: ThumbnailSize,
+}
+
+/// Owned personal-cache fallback materialization request for async or runtime-specific adapters.
+///
+/// Constructing this request does not perform filesystem I/O. Validation and materialization
+/// happen only when [`Self::materialize_path`] or [`Self::materialize_png_bytes`] is called.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PersonalThumbnailMaterializationRequest {
+    root: PersonalCacheRoot,
+    original: ReadablePersonalOriginalIdentity,
+    size: ThumbnailSize,
+}
+
+impl PersonalThumbnailMaterializationRequest {
+    /// Creates an owned personal-cache materialization request.
+    #[must_use]
+    pub fn new(
+        root: PersonalCacheRoot,
+        original: ReadablePersonalOriginalIdentity,
+        size: ThumbnailSize,
+    ) -> Self {
+        Self {
+            root,
+            original,
+            size,
+        }
+    }
+
+    /// Materializes the requested personal namespace and returns its path.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as
+    /// [`PersonalCacheRoot::materialize_thumbnail_from_larger_cache_returning_path`].
+    pub fn materialize_path(self) -> Result<PersonalThumbnailLookup<MaterializedThumbnailPath>> {
+        let Self {
+            root,
+            original,
+            size,
+        } = self;
+        root.materialize_thumbnail_from_larger_cache_returning_path(&original, size)
+    }
+
+    /// Materializes the requested personal namespace and returns final PNG bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as
+    /// [`PersonalCacheRoot::materialize_thumbnail_from_larger_cache_returning_png_bytes`].
+    pub fn materialize_png_bytes(
+        self,
+    ) -> Result<PersonalThumbnailLookup<MaterializedThumbnailPngBytes>> {
+        let Self {
+            root,
+            original,
+            size,
+        } = self;
+        root.materialize_thumbnail_from_larger_cache_returning_png_bytes(&original, size)
+    }
+
+    /// Splits this request into its owned parts.
+    #[must_use]
+    pub fn into_parts(self) -> PersonalThumbnailMaterializationRequestParts {
+        PersonalThumbnailMaterializationRequestParts {
+            root: self.root,
+            original: self.original,
+            size: self.size,
+        }
+    }
+}
+
+/// Owned parts of [`PersonalThumbnailMaterializationRequest`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct PersonalThumbnailMaterializationRequestParts {
     /// Personal thumbnail cache root.
     pub root: PersonalCacheRoot,
     /// Readability-confirmed original identity.
@@ -1299,6 +1729,22 @@ impl SharedThumbnailLookupRequest {
         context.lookup_thumbnail_rgba8(original_facts, size)
     }
 
+    /// Returns decoded display RGBA8 pixels for the owned request.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`SharedRepositoryContext::lookup_display_thumbnail_rgba8`].
+    pub fn lookup_display_rgba8(
+        self,
+    ) -> Result<SharedThumbnailLookup<DisplayThumbnailRgba8LookupEntry>> {
+        let Self {
+            context,
+            original_facts,
+            size,
+        } = self;
+        context.lookup_display_thumbnail_rgba8(original_facts, size)
+    }
+
     /// Splits this request into its owned parts.
     #[must_use]
     pub fn into_parts(self) -> SharedThumbnailLookupRequestParts {
@@ -1316,6 +1762,103 @@ impl SharedThumbnailLookupRequest {
 pub struct SharedThumbnailLookupRequestParts {
     /// Shared repository lookup context.
     pub context: SharedRepositoryContext,
+    /// Shared original freshness facts and metadata policy.
+    pub original_facts: SharedOriginalFacts,
+    /// Requested thumbnail size.
+    pub size: ThumbnailSize,
+}
+
+/// Owned shared-to-personal fallback materialization request for async adapters.
+///
+/// Constructing this request does not perform filesystem I/O. Validation and materialization
+/// happen only when [`Self::materialize_path`] or [`Self::materialize_png_bytes`] is called.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SharedToPersonalThumbnailMaterializationRequest {
+    personal_root: PersonalCacheRoot,
+    shared_context: SharedRepositoryContext,
+    original_facts: SharedOriginalFacts,
+    size: ThumbnailSize,
+}
+
+impl SharedToPersonalThumbnailMaterializationRequest {
+    /// Creates an owned shared-to-personal materialization request.
+    #[must_use]
+    pub fn new(
+        personal_root: PersonalCacheRoot,
+        shared_context: SharedRepositoryContext,
+        original_facts: SharedOriginalFacts,
+        size: ThumbnailSize,
+    ) -> Self {
+        Self {
+            personal_root,
+            shared_context,
+            original_facts,
+            size,
+        }
+    }
+
+    /// Materializes the requested shared thumbnail into the personal cache and returns its path.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as
+    /// [`PersonalCacheRoot::materialize_shared_thumbnail_returning_path`].
+    pub fn materialize_path(self) -> Result<SharedThumbnailLookup<MaterializedThumbnailPath>> {
+        let Self {
+            personal_root,
+            shared_context,
+            original_facts,
+            size,
+        } = self;
+        personal_root.materialize_shared_thumbnail_returning_path(
+            &shared_context,
+            original_facts,
+            size,
+        )
+    }
+
+    /// Materializes the requested shared thumbnail into the personal cache and returns final PNG bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as
+    /// [`PersonalCacheRoot::materialize_shared_thumbnail_returning_png_bytes`].
+    pub fn materialize_png_bytes(
+        self,
+    ) -> Result<SharedThumbnailLookup<MaterializedThumbnailPngBytes>> {
+        let Self {
+            personal_root,
+            shared_context,
+            original_facts,
+            size,
+        } = self;
+        personal_root.materialize_shared_thumbnail_returning_png_bytes(
+            &shared_context,
+            original_facts,
+            size,
+        )
+    }
+
+    /// Splits this request into its owned parts.
+    #[must_use]
+    pub fn into_parts(self) -> SharedToPersonalThumbnailMaterializationRequestParts {
+        SharedToPersonalThumbnailMaterializationRequestParts {
+            personal_root: self.personal_root,
+            shared_context: self.shared_context,
+            original_facts: self.original_facts,
+            size: self.size,
+        }
+    }
+}
+
+/// Owned parts of [`SharedToPersonalThumbnailMaterializationRequest`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct SharedToPersonalThumbnailMaterializationRequestParts {
+    /// Destination personal thumbnail cache root.
+    pub personal_root: PersonalCacheRoot,
+    /// Source shared repository lookup context.
+    pub shared_context: SharedRepositoryContext,
     /// Shared original freshness facts and metadata policy.
     pub original_facts: SharedOriginalFacts,
     /// Requested thumbnail size.
@@ -1469,6 +2012,40 @@ struct ValidatedSharedEntry {
     metadata: ThumbnailMetadata,
 }
 
+struct MaterializedPersonalEntry {
+    target_path: PathBuf,
+    source_path: PathBuf,
+    requested_size: ThumbnailSize,
+    source_size: ThumbnailSize,
+    written: bool,
+    bytes: Vec<u8>,
+}
+
+fn display_candidate_sizes(requested_size: ThumbnailSize) -> impl Iterator<Item = ThumbnailSize> {
+    ThumbnailSize::all()
+        .iter()
+        .copied()
+        .skip_while(move |size| *size != requested_size)
+}
+
+fn personal_identity_from_shared_facts(
+    shared: &SharedRepositoryContext,
+    original_facts: SharedOriginalFacts,
+) -> Result<PersonalOriginalIdentity> {
+    let Some(mtime) = original_facts.mtime() else {
+        return Err(ThumbnailError::invalid_metadata(
+            "shared original mtime is required for personal materialization",
+        ));
+    };
+    let original_path = shared.repository_root().join(shared.original_child_name());
+    let uri = PersonalOriginalUri::from_absolute_path_bytes(original_path.as_os_str().as_bytes())?;
+    let mut original = PersonalOriginalIdentity::new(uri, mtime);
+    if let Some(size) = original_facts.original_byte_size() {
+        original = original.with_original_byte_size(size);
+    }
+    Ok(original)
+}
+
 fn rgba8_lookup_entry_from_parts(
     path: PathBuf,
     bytes: &[u8],
@@ -1482,6 +2059,26 @@ fn rgba8_lookup_entry_from_parts(
         stride: decoded.stride,
         pixels: decoded.pixels,
         metadata,
+    })
+}
+
+fn display_rgba8_lookup_entry_from_parts(
+    source_path: PathBuf,
+    bytes: &[u8],
+    source_metadata: ThumbnailMetadata,
+    requested_size: ThumbnailSize,
+    source_size: ThumbnailSize,
+) -> Result<DisplayThumbnailRgba8LookupEntry> {
+    let decoded = downscaled_validated_thumbnail_png_to_rgba8(bytes, requested_size)?;
+    Ok(DisplayThumbnailRgba8LookupEntry {
+        source_path,
+        requested_size,
+        source_size,
+        width: decoded.width,
+        height: decoded.height,
+        stride: decoded.stride,
+        pixels: decoded.pixels,
+        source_metadata,
     })
 }
 
@@ -1880,6 +2477,116 @@ pub struct ThumbnailRgba8LookupEntryParts {
     pub metadata: ThumbnailMetadata,
 }
 
+/// Decoded display RGBA8 pixels from an exact or larger validated cache PNG.
+///
+/// Pixels are row-major `[red, green, blue, alpha]` bytes with straight alpha and
+/// `stride == width * 4`. When `source_size()` differs from `requested_size()`, pixels were
+/// derived from a larger source namespace and constrained to the requested namespace dimensions.
+#[derive(Debug, Eq, PartialEq)]
+pub struct DisplayThumbnailRgba8LookupEntry {
+    source_path: PathBuf,
+    requested_size: ThumbnailSize,
+    source_size: ThumbnailSize,
+    width: u32,
+    height: u32,
+    stride: usize,
+    pixels: Vec<u8>,
+    source_metadata: ThumbnailMetadata,
+}
+
+impl DisplayThumbnailRgba8LookupEntry {
+    /// Returns the source cache path that was validated and decoded.
+    #[must_use]
+    pub fn source_path(&self) -> &Path {
+        &self.source_path
+    }
+
+    /// Returns the requested display size namespace.
+    #[must_use]
+    pub const fn requested_size(&self) -> ThumbnailSize {
+        self.requested_size
+    }
+
+    /// Returns the cache namespace that supplied the source PNG.
+    #[must_use]
+    pub const fn source_size(&self) -> ThumbnailSize {
+        self.source_size
+    }
+
+    /// Returns whether the display pixels came from a larger namespace than requested.
+    #[must_use]
+    pub const fn is_derived(&self) -> bool {
+        self.requested_size as u8 != self.source_size as u8
+    }
+
+    /// Returns the decoded display width in pixels.
+    #[must_use]
+    pub const fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// Returns the decoded display height in pixels.
+    #[must_use]
+    pub const fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// Returns the row stride in bytes.
+    #[must_use]
+    pub const fn stride(&self) -> usize {
+        self.stride
+    }
+
+    /// Returns the decoded row-major RGBA8 display pixel buffer.
+    #[must_use]
+    pub fn pixels(&self) -> &[u8] {
+        &self.pixels
+    }
+
+    /// Returns metadata parsed from the source PNG.
+    #[must_use]
+    pub const fn source_metadata(&self) -> &ThumbnailMetadata {
+        &self.source_metadata
+    }
+
+    /// Splits this result into its owned source path, size facts, pixels, and source metadata.
+    #[must_use]
+    pub fn into_parts(self) -> DisplayThumbnailRgba8LookupEntryParts {
+        DisplayThumbnailRgba8LookupEntryParts {
+            source_path: self.source_path,
+            requested_size: self.requested_size,
+            source_size: self.source_size,
+            width: self.width,
+            height: self.height,
+            stride: self.stride,
+            pixels: self.pixels,
+            source_metadata: self.source_metadata,
+        }
+    }
+}
+
+/// Owned parts of [`DisplayThumbnailRgba8LookupEntry`].
+#[derive(Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct DisplayThumbnailRgba8LookupEntryParts {
+    /// Source cache path that was validated and decoded.
+    pub source_path: PathBuf,
+    /// Requested display size namespace.
+    pub requested_size: ThumbnailSize,
+    /// Cache namespace that supplied the source PNG.
+    pub source_size: ThumbnailSize,
+    /// Decoded display width in pixels.
+    pub width: u32,
+    /// Decoded display height in pixels.
+    pub height: u32,
+    /// Row stride in bytes.
+    pub stride: usize,
+    /// Decoded row-major RGBA8 display pixel buffer.
+    pub pixels: Vec<u8>,
+    /// Metadata parsed from the source PNG.
+    pub source_metadata: ThumbnailMetadata,
+}
+
 /// Path result of a successful personal-cache install or failure-entry write.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InstalledThumbnailPath {
@@ -1904,6 +2611,158 @@ impl AsRef<Path> for InstalledThumbnailPath {
     fn as_ref(&self) -> &Path {
         self.path()
     }
+}
+
+/// Path result of explicit fallback materialization into the personal cache.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaterializedThumbnailPath {
+    target_path: PathBuf,
+    source_path: PathBuf,
+    requested_size: ThumbnailSize,
+    source_size: ThumbnailSize,
+    written: bool,
+}
+
+impl MaterializedThumbnailPath {
+    /// Returns the requested personal-cache target path.
+    #[must_use]
+    pub fn target_path(&self) -> &Path {
+        &self.target_path
+    }
+
+    /// Returns the source cache path used for materialization.
+    #[must_use]
+    pub fn source_path(&self) -> &Path {
+        &self.source_path
+    }
+
+    /// Returns the requested target size namespace.
+    #[must_use]
+    pub const fn requested_size(&self) -> ThumbnailSize {
+        self.requested_size
+    }
+
+    /// Returns the source size namespace.
+    #[must_use]
+    pub const fn source_size(&self) -> ThumbnailSize {
+        self.source_size
+    }
+
+    /// Returns whether this operation wrote a new target file.
+    #[must_use]
+    pub const fn written(&self) -> bool {
+        self.written
+    }
+
+    /// Splits this result into its owned target path, source path, size facts, and write status.
+    #[must_use]
+    pub fn into_parts(self) -> MaterializedThumbnailPathParts {
+        MaterializedThumbnailPathParts {
+            target_path: self.target_path,
+            source_path: self.source_path,
+            requested_size: self.requested_size,
+            source_size: self.source_size,
+            written: self.written,
+        }
+    }
+}
+
+/// Owned parts of [`MaterializedThumbnailPath`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct MaterializedThumbnailPathParts {
+    /// Requested personal-cache target path.
+    pub target_path: PathBuf,
+    /// Source cache path used for materialization.
+    pub source_path: PathBuf,
+    /// Requested target size namespace.
+    pub requested_size: ThumbnailSize,
+    /// Source size namespace.
+    pub source_size: ThumbnailSize,
+    /// Whether this operation wrote a new target file.
+    pub written: bool,
+}
+
+/// PNG bytes result of explicit fallback materialization into the personal cache.
+///
+/// Returned bytes are the final target personal-cache PNG bytes, not the source cache bytes.
+#[derive(Debug, Eq, PartialEq)]
+pub struct MaterializedThumbnailPngBytes {
+    target_path: PathBuf,
+    source_path: PathBuf,
+    requested_size: ThumbnailSize,
+    source_size: ThumbnailSize,
+    written: bool,
+    bytes: Vec<u8>,
+}
+
+impl MaterializedThumbnailPngBytes {
+    /// Returns the requested personal-cache target path.
+    #[must_use]
+    pub fn target_path(&self) -> &Path {
+        &self.target_path
+    }
+
+    /// Returns the source cache path used for materialization.
+    #[must_use]
+    pub fn source_path(&self) -> &Path {
+        &self.source_path
+    }
+
+    /// Returns the requested target size namespace.
+    #[must_use]
+    pub const fn requested_size(&self) -> ThumbnailSize {
+        self.requested_size
+    }
+
+    /// Returns the source size namespace.
+    #[must_use]
+    pub const fn source_size(&self) -> ThumbnailSize {
+        self.source_size
+    }
+
+    /// Returns whether this operation wrote a new target file.
+    #[must_use]
+    pub const fn written(&self) -> bool {
+        self.written
+    }
+
+    /// Returns the final target personal-cache PNG bytes.
+    #[must_use]
+    pub fn png_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// Splits this result into its owned target path, source path, size facts, write status, and PNG bytes.
+    #[must_use]
+    pub fn into_parts(self) -> MaterializedThumbnailPngBytesParts {
+        MaterializedThumbnailPngBytesParts {
+            target_path: self.target_path,
+            source_path: self.source_path,
+            requested_size: self.requested_size,
+            source_size: self.source_size,
+            written: self.written,
+            png_bytes: self.bytes,
+        }
+    }
+}
+
+/// Owned parts of [`MaterializedThumbnailPngBytes`].
+#[derive(Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct MaterializedThumbnailPngBytesParts {
+    /// Requested personal-cache target path.
+    pub target_path: PathBuf,
+    /// Source cache path used for materialization.
+    pub source_path: PathBuf,
+    /// Requested target size namespace.
+    pub requested_size: ThumbnailSize,
+    /// Source size namespace.
+    pub source_size: ThumbnailSize,
+    /// Whether this operation wrote a new target file.
+    pub written: bool,
+    /// Final target personal-cache PNG bytes.
+    pub png_bytes: Vec<u8>,
 }
 
 /// PNG bytes result of a successful personal-cache install or failure-entry write.

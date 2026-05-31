@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use std::collections::BTreeMap;
-use std::os::unix::fs::symlink;
+use std::os::unix::fs::{PermissionsExt, symlink};
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
@@ -420,6 +420,7 @@ fn materialize_personal_larger_source_writes_requested_namespace() {
         &CacheNamespace::Size(ThumbnailSize::Normal),
     );
     std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+    std::fs::set_permissions(root.as_path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     std::fs::write(
         &source_path,
         png_with_metadata_dimensions(metadata("42"), 256, 128, 99),
@@ -497,6 +498,7 @@ fn materialize_personal_png_bytes_returns_final_target_bytes() {
         &CacheNamespace::Size(ThumbnailSize::Large),
     );
     std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+    std::fs::set_permissions(root.as_path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     std::fs::write(
         &source_path,
         png_with_metadata_dimensions(metadata("42"), 256, 128, 99),

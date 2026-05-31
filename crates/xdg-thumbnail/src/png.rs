@@ -948,6 +948,34 @@ pub(crate) fn normalized_personal_thumbnail_raw_png(
     normalized_personal_thumbnail_rgba_png(image, original, size)
 }
 
+pub(crate) fn normalized_personal_thumbnail_from_cache_png(
+    thumbnail_png: &[u8],
+    original: &PersonalOriginalIdentity,
+    size: ThumbnailSize,
+) -> Result<Vec<u8>> {
+    let image = decode_validated_thumbnail_png_to_rgba_image(thumbnail_png)?;
+    normalized_personal_thumbnail_rgba_png(image, original, size)
+}
+
+pub(crate) fn downscaled_validated_thumbnail_png_to_rgba8(
+    thumbnail_png: &[u8],
+    size: ThumbnailSize,
+) -> Result<DecodedThumbnailRgba8> {
+    let image = decode_validated_thumbnail_png_to_rgba_image(thumbnail_png)?;
+    let image = downscale_to_namespace(image, size)?;
+    Ok(DecodedThumbnailRgba8 {
+        width: image.width,
+        height: image.height,
+        stride: usize::try_from(image.width)
+            .ok()
+            .and_then(|width| width.checked_mul(4))
+            .ok_or_else(|| {
+                ThumbnailError::resource_limit_exceeded("PNG decode resource limit exceeded")
+            })?,
+        pixels: image.pixels,
+    })
+}
+
 fn normalized_personal_thumbnail_rgba_png(
     image: RgbaImage,
     original: &PersonalOriginalIdentity,
@@ -1117,6 +1145,21 @@ fn validated_lookup_rgba_buffer_len(width: u32, height: u32) -> Result<usize> {
 pub(crate) fn decode_validated_thumbnail_png_to_rgba8(
     bytes: &[u8],
 ) -> Result<DecodedThumbnailRgba8> {
+    let image = decode_validated_thumbnail_png_to_rgba_image(bytes)?;
+    Ok(DecodedThumbnailRgba8 {
+        width: image.width,
+        height: image.height,
+        stride: usize::try_from(image.width)
+            .ok()
+            .and_then(|width| width.checked_mul(4))
+            .ok_or_else(|| {
+                ThumbnailError::resource_limit_exceeded("PNG decode resource limit exceeded")
+            })?,
+        pixels: image.pixels,
+    })
+}
+
+fn decode_validated_thumbnail_png_to_rgba_image(bytes: &[u8]) -> Result<RgbaImage> {
     let decoder = png::Decoder::new(Cursor::new(bytes));
     let mut reader = decoder
         .read_info()
@@ -1138,12 +1181,6 @@ pub(crate) fn decode_validated_thumbnail_png_to_rgba8(
         ));
     }
 
-    let stride = usize::try_from(output.width)
-        .ok()
-        .and_then(|width| width.checked_mul(4))
-        .ok_or_else(|| {
-            ThumbnailError::resource_limit_exceeded("PNG decode resource limit exceeded")
-        })?;
     let expected_len = validated_lookup_rgba_buffer_len(output.width, output.height)?;
     let frame = &buffer[..output.buffer_size()];
     let pixels = match output.color_type {
@@ -1175,10 +1212,9 @@ pub(crate) fn decode_validated_thumbnail_png_to_rgba8(
         }
     };
 
-    Ok(DecodedThumbnailRgba8 {
+    Ok(RgbaImage {
         width: output.width,
         height: output.height,
-        stride,
         pixels,
     })
 }

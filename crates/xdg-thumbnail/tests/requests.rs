@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::PermissionsExt;
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
@@ -549,6 +550,7 @@ fn materialization_requests_match_borrowed_api_and_expose_parts() {
         &CacheNamespace::Size(ThumbnailSize::Large),
     );
     std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+    std::fs::set_permissions(root.as_path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     std::fs::write(
         &source_path,
         png_with_metadata_dimensions(personal_metadata("42"), 256, 128, 9),
@@ -565,8 +567,14 @@ fn materialization_requests_match_borrowed_api_and_expose_parts() {
     assert_eq!(parts.original, original);
     assert_eq!(parts.size, ThumbnailSize::Normal);
 
+    let request_materialized = request.clone().materialize_path().unwrap();
+    let target_path = match &request_materialized {
+        PersonalThumbnailLookup::Valid(entry) => entry.target_path().to_owned(),
+        other => panic!("expected request materialization to write target, got {other:?}"),
+    };
+    std::fs::remove_file(&target_path).unwrap();
     assert_eq!(
-        request.clone().materialize_path().unwrap(),
+        request_materialized,
         root.materialize_thumbnail_from_larger_cache_returning_path(
             &original,
             ThumbnailSize::Normal

@@ -92,17 +92,22 @@ mod uri;
 
 #[cfg(unix)]
 pub use cache::{
+    DisplayThumbnailRgba8LookupEntry, DisplayThumbnailRgba8LookupEntryParts,
     FailureEntryInspectionRequest, FailureEntryInspectionRequestParts, FailureEntryWriteRequest,
     FailureEntryWriteRequestParts, InstalledThumbnailPath, InstalledThumbnailPngBytes,
-    InstalledThumbnailPngBytesParts, PersonalCacheRoot, PersonalThumbnailInspectionRequest,
-    PersonalThumbnailInspectionRequestParts, PersonalThumbnailInstallRequest,
-    PersonalThumbnailInstallRequestParts, PersonalThumbnailLookup, PersonalThumbnailLookupRequest,
-    PersonalThumbnailLookupRequestParts, PersonalThumbnailRawInstallRequest,
-    PersonalThumbnailRawInstallRequestParts, SharedCacheEntryInspection,
-    SharedCacheEntryInspectionParts, SharedCacheEntryOutcome, SharedOriginalFacts,
-    SharedOriginalMetadata, SharedThumbnailInspectionRequest,
+    InstalledThumbnailPngBytesParts, MaterializedThumbnailPath, MaterializedThumbnailPathParts,
+    MaterializedThumbnailPngBytes, MaterializedThumbnailPngBytesParts, PersonalCacheRoot,
+    PersonalThumbnailInspectionRequest, PersonalThumbnailInspectionRequestParts,
+    PersonalThumbnailInstallRequest, PersonalThumbnailInstallRequestParts, PersonalThumbnailLookup,
+    PersonalThumbnailLookupRequest, PersonalThumbnailLookupRequestParts,
+    PersonalThumbnailMaterializationRequest, PersonalThumbnailMaterializationRequestParts,
+    PersonalThumbnailRawInstallRequest, PersonalThumbnailRawInstallRequestParts,
+    SharedCacheEntryInspection, SharedCacheEntryInspectionParts, SharedCacheEntryOutcome,
+    SharedOriginalFacts, SharedOriginalMetadata, SharedThumbnailInspectionRequest,
     SharedThumbnailInspectionRequestParts, SharedThumbnailLookup, SharedThumbnailLookupRequest,
-    SharedThumbnailLookupRequestParts, SharedThumbnailMetadataPolicy, ThumbnailPathLookupEntry,
+    SharedThumbnailLookupRequestParts, SharedThumbnailMetadataPolicy,
+    SharedToPersonalThumbnailMaterializationRequest,
+    SharedToPersonalThumbnailMaterializationRequestParts, ThumbnailPathLookupEntry,
     ThumbnailPathLookupEntryParts, ThumbnailPngBytesLookupEntry, ThumbnailPngBytesLookupEntryParts,
     ThumbnailRgba8LookupEntry, ThumbnailRgba8LookupEntryParts,
 };
@@ -135,7 +140,8 @@ pub use uri::{PersonalOriginalUri, SharedRelativeOriginalUri};
 
 #[cfg(unix)]
 pub(crate) use png::{
-    decode_validated_thumbnail_png_to_rgba8, encode_rgba_png, metadata_problem,
+    decode_validated_thumbnail_png_to_rgba8, downscaled_validated_thumbnail_png_to_rgba8,
+    encode_rgba_png, metadata_problem, normalized_personal_thumbnail_from_cache_png,
     normalized_personal_thumbnail_png, normalized_personal_thumbnail_raw_png, push_problem,
     thumbnail_metadata_pairs, validate_mime_type,
 };
