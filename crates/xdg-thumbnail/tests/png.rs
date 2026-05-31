@@ -52,6 +52,24 @@ fn parses_standard_thumbnail_metadata() {
 }
 
 #[test]
+fn parsed_thumbnail_png_into_parts_moves_format_facts_and_metadata() {
+    let png = png_with_metadata(2, 1, png::ColorType::Rgba, metadata());
+    let parsed = ParsedThumbnailPng::parse(&png).unwrap();
+
+    let parts = parsed.into_parts();
+
+    assert_eq!(parts.width, 2);
+    assert_eq!(parts.height, 1);
+    assert_eq!(parts.bit_depth, ThumbnailPngBitDepth::Eight);
+    assert_eq!(parts.color_type, ThumbnailPngColorType::Rgba);
+    assert!(!parts.interlaced);
+    assert_eq!(
+        parts.metadata.thumb_uri(),
+        Some("file:///home/alice/photo.png")
+    );
+}
+
+#[test]
 fn metadata_typed_accessors_distinguish_invalid_syntax() {
     let mut metadata = metadata();
     metadata.insert("Thumb::MTime", "-1");
@@ -348,7 +366,7 @@ fn parser_and_validation_reject_png_resource_limits() {
 
     assert!(matches!(
         ParsedThumbnailPng::parse(&png),
-        Err(ThumbnailError::ResourceLimitExceeded(_))
+        Err(ThumbnailError::ResourceLimitExceeded { .. })
     ));
 
     let original =

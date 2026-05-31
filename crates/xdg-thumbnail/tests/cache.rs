@@ -10,9 +10,9 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    CacheNamespace, FailureNamespace, PersonalCacheRoot, PersonalOriginalIdentity,
-    PersonalOriginalUri, ReadablePersonalOriginalIdentity, SharedRepositoryContext, ThumbnailSize,
-    UnixMtimeSeconds,
+    CacheNamespace, CacheRootProblem, FailureNamespace, PersonalCacheRoot,
+    PersonalOriginalIdentity, PersonalOriginalUri, ReadablePersonalOriginalIdentity,
+    SharedRepositoryContext, ThumbnailError, ThumbnailSize, UnixMtimeSeconds,
 };
 
 #[test]
@@ -35,6 +35,62 @@ fn cache_root_uses_absolute_xdg_cache_home_and_home_fallback() {
     );
 
     assert!(PersonalCacheRoot::resolve_from_values(None, None).is_err());
+}
+
+#[test]
+fn explicit_cache_roots_report_typed_absolute_path_errors() {
+    let personal_error = PersonalCacheRoot::new(Path::new("relative-cache")).unwrap_err();
+    assert!(matches!(
+        personal_error,
+        ThumbnailError::InvalidCacheRoot {
+            ref path,
+            problem: CacheRootProblem::NotAbsolute,
+            ..
+        } if path == Path::new("relative-cache")
+    ));
+
+    let shared_error =
+        SharedRepositoryContext::new(Path::new("relative-repository"), OsStr::new("photo.png"))
+            .unwrap_err();
+    assert!(matches!(
+        shared_error,
+        ThumbnailError::InvalidCacheRoot {
+            ref path,
+            problem: CacheRootProblem::NotAbsolute,
+            ..
+        } if path == Path::new("relative-repository")
+    ));
+}
+
+#[test]
+fn local_original_open_errors_carry_the_failing_path() {
+    let temp = TempDir::new().unwrap();
+    let missing = temp.path().join("missing-original.png");
+
+    let error = ReadablePersonalOriginalIdentity::from_local_path(&missing).unwrap_err();
+
+    assert!(matches!(
+        error,
+        ThumbnailError::Io {
+            context: "open original for reading",
+            path: Some(ref path),
+            ..
+        } if path == &missing
+    ));
+}
+
+#[test]
+fn structured_uri_errors_expose_reason_without_tuple_matching() {
+    let error =
+        ReadablePersonalOriginalIdentity::from_local_path(Path::new("relative-file")).unwrap_err();
+
+    assert!(matches!(
+        error,
+        ThumbnailError::InvalidUriIdentity {
+            reason: "local path must be absolute",
+            ..
+        }
+    ));
 }
 
 #[test]

@@ -208,6 +208,37 @@ fn cache_entry_handles_remove_files_without_following_symlinks() {
     assert!(outside.exists());
 }
 
+#[test]
+fn explicit_personal_cache_entry_handles_remove_computed_entries() {
+    let temp = TempDir::new().unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = readable_original();
+    let installed = root
+        .install_thumbnail_png_bytes(
+            &original,
+            ThumbnailSize::Normal,
+            &png_without_metadata(2, 1),
+        )
+        .unwrap();
+    let namespace = CacheNamespace::Size(ThumbnailSize::Normal);
+    let handle = root.cache_entry_handle(original.identity().uri(), &namespace);
+
+    assert_eq!(handle.path(), installed.path());
+    handle.remove().unwrap();
+    assert!(!installed.path().exists());
+
+    let namespace_dir = root.as_path().join("normal");
+    std::fs::create_dir_all(&namespace_dir).unwrap();
+    let outside = temp.path().join("outside.png");
+    std::fs::write(&outside, b"outside").unwrap();
+    let symlink_path = root.cache_entry_path(original.identity().uri(), &namespace);
+    symlink(&outside, &symlink_path).unwrap();
+
+    let symlink_handle = root.cache_entry_handle(original.identity().uri(), &namespace);
+    assert!(symlink_handle.remove().is_err());
+    assert!(outside.exists());
+}
+
 fn metadata_problem(
     key: ThumbnailMetadataKey,
     kind: ThumbnailMetadataProblemKind,

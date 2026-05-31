@@ -6,8 +6,8 @@ use std::os::unix::fs::symlink;
 
 use tempfile::TempDir;
 use xdg_thumbnail::{
-    CacheNamespace, ParsedThumbnailPng, PersonalCacheRoot, PersonalOriginalIdentity,
-    PersonalOriginalUri, RawThumbnailImage, RawThumbnailPixelFormat,
+    CacheDirectoryProblem, CacheNamespace, ParsedThumbnailPng, PersonalCacheRoot,
+    PersonalOriginalIdentity, PersonalOriginalUri, RawThumbnailImage, RawThumbnailPixelFormat,
     ReadablePersonalOriginalIdentity, ThumbnailError, ThumbnailPngBitDepth, ThumbnailPngColorType,
     ThumbnailSize, UnixMtimeSeconds,
 };
@@ -99,7 +99,14 @@ fn install_rejects_insecure_existing_cache_directories() {
         )
         .unwrap_err();
 
-    assert!(error.to_string().contains("insecure"));
+    assert!(matches!(
+        error,
+        ThumbnailError::InsecureCacheDirectory {
+            ref path,
+            problem: CacheDirectoryProblem::GroupOrOtherAccessible,
+            ..
+        } if path == &target_dir
+    ));
 }
 
 #[test]
@@ -119,8 +126,41 @@ fn install_rejects_symlinked_cache_directories() {
         )
         .unwrap_err();
 
-    assert!(error.to_string().contains("insecure"));
+    assert!(matches!(
+        error,
+        ThumbnailError::InsecureCacheDirectory {
+            ref path,
+            problem: CacheDirectoryProblem::Symlink,
+            ..
+        } if path == &root.as_path().join("normal")
+    ));
     assert!(std::fs::read_dir(&outside).unwrap().next().is_none());
+}
+
+#[test]
+fn install_rejects_cache_namespace_paths_that_are_not_directories() {
+    let temp = TempDir::new().unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    std::fs::create_dir_all(root.as_path()).unwrap();
+    let target_path = root.as_path().join("normal");
+    std::fs::write(&target_path, b"not a directory").unwrap();
+
+    let error = root
+        .install_thumbnail_png_bytes(
+            &readable_original(),
+            ThumbnailSize::Normal,
+            &png_without_metadata(2, 1, png::ColorType::Rgba),
+        )
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        ThumbnailError::InsecureCacheDirectory {
+            ref path,
+            problem: CacheDirectoryProblem::NotDirectory,
+            ..
+        } if path == &target_path
+    ));
 }
 
 #[test]
@@ -230,7 +270,10 @@ fn raw_thumbnail_rejects_invalid_stride() {
 
     assert!(matches!(
         error,
-        ThumbnailError::UnsupportedRenderedThumbnail("raw thumbnail stride is too small")
+        ThumbnailError::UnsupportedRenderedThumbnail {
+            reason: "raw thumbnail stride is too small",
+            ..
+        }
     ));
 }
 
@@ -243,7 +286,10 @@ fn raw_thumbnail_rejects_short_buffer() {
 
     assert!(matches!(
         error,
-        ThumbnailError::UnsupportedRenderedThumbnail("raw thumbnail buffer is too short")
+        ThumbnailError::UnsupportedRenderedThumbnail {
+            reason: "raw thumbnail buffer is too short",
+            ..
+        }
     ));
 }
 
