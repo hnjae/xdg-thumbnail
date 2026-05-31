@@ -84,6 +84,47 @@ fn render_thumbnail_png() -> Vec<u8> {
 }
 ```
 
+## Blocking Adapter Example
+
+Owned request constructors only assemble values and perform no filesystem I/O. Local original identity construction reads filesystem metadata, so async applications should do it inside a runtime-specific blocking adapter.
+
+```rust
+use xdg_thumbnail::{
+    PersonalCacheRoot, PersonalThumbnailInstallRequest, ReadableOriginalIdentity, ThumbnailSize,
+};
+
+fn spawn_blocking<F, R>(operation: F) -> R
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    operation()
+}
+
+fn main() -> xdg_thumbnail::Result<()> {
+    let root = PersonalCacheRoot::resolve_from_env()?;
+    let rendered_png = render_thumbnail_png();
+
+    let installed = spawn_blocking(move || {
+        let original = ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
+        let request = PersonalThumbnailInstallRequest::new(
+            root,
+            original,
+            ThumbnailSize::Normal,
+            rendered_png,
+        );
+        request.install_png_bytes()
+    })?;
+
+    let _cache_path = installed.path();
+    Ok(())
+}
+
+fn render_thumbnail_png() -> Vec<u8> {
+    unimplemented!("return PNG bytes produced by the caller's renderer")
+}
+```
+
 ## Links
 
 - API documentation: <https://docs.rs/xdg-thumbnail>

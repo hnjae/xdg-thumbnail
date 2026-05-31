@@ -296,10 +296,10 @@ impl PersonalCacheRoot {
     /// insecure, or atomic installation fails.
     pub fn write_failure_entry_path(
         &self,
-        namespace: &FailureNamespace,
         original: &ReadableOriginalIdentity,
+        namespace: &FailureNamespace,
     ) -> Result<InstalledThumbnailPath> {
-        let (path, _) = self.write_failure_entry_png_bytes_inner(namespace, original)?;
+        let (path, _) = self.write_failure_entry_png_bytes_inner(original, namespace)?;
         Ok(InstalledThumbnailPath { path })
     }
 
@@ -311,17 +311,17 @@ impl PersonalCacheRoot {
     /// insecure, or atomic installation fails.
     pub fn write_failure_entry_png_bytes(
         &self,
-        namespace: &FailureNamespace,
         original: &ReadableOriginalIdentity,
+        namespace: &FailureNamespace,
     ) -> Result<InstalledThumbnailPngBytes> {
-        let (path, bytes) = self.write_failure_entry_png_bytes_inner(namespace, original)?;
+        let (path, bytes) = self.write_failure_entry_png_bytes_inner(original, namespace)?;
         Ok(InstalledThumbnailPngBytes { path, bytes })
     }
 
     fn write_failure_entry_png_bytes_inner(
         &self,
-        namespace: &FailureNamespace,
         original: &ReadableOriginalIdentity,
+        namespace: &FailureNamespace,
     ) -> Result<(PathBuf, Vec<u8>)> {
         let namespace = CacheNamespace::Failure(namespace.clone());
         let path = self.cache_entry_path(original.identity().uri(), &namespace);
@@ -764,7 +764,9 @@ pub struct PersonalThumbnailLookupRequestParts {
 /// Owned personal-cache install request for async or runtime-specific adapters.
 ///
 /// Constructing this request does not perform filesystem I/O. Normalization and installation happen
-/// only when [`Self::install_path`] or [`Self::install_png_bytes`] is called.
+/// only when [`Self::install_path`] or [`Self::install_png_bytes`] is called. Constructing a
+/// [`ReadableOriginalIdentity`] from a local path performs blocking filesystem I/O, so async callers
+/// should do that inside their runtime's blocking adapter too.
 ///
 /// ```no_run
 /// use xdg_thumbnail::{
@@ -785,16 +787,19 @@ pub struct PersonalThumbnailLookupRequestParts {
 ///
 /// fn main() -> xdg_thumbnail::Result<()> {
 ///     let root = PersonalCacheRoot::resolve_from_env()?;
-///     let original = ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
 ///     let rendered_png = render_thumbnail_png();
-///     let request = PersonalThumbnailInstallRequest::new(
-///         root,
-///         original,
-///         ThumbnailSize::Normal,
-///         rendered_png,
-///     );
 ///
-///     let installed = spawn_blocking(move || request.install_png_bytes())?;
+///     let installed = spawn_blocking(move || {
+///         let original =
+///             ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
+///         let request = PersonalThumbnailInstallRequest::new(
+///             root,
+///             original,
+///             ThumbnailSize::Normal,
+///             rendered_png,
+///         );
+///         request.install_png_bytes()
+///     })?;
 ///     let _path = installed.path();
 ///     Ok(())
 /// }
@@ -972,8 +977,8 @@ pub struct PersonalThumbnailRawInstallRequestParts {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FailureEntryWriteRequest {
     root: PersonalCacheRoot,
-    namespace: FailureNamespace,
     original: ReadableOriginalIdentity,
+    namespace: FailureNamespace,
 }
 
 impl FailureEntryWriteRequest {
@@ -981,13 +986,13 @@ impl FailureEntryWriteRequest {
     #[must_use]
     pub fn new(
         root: PersonalCacheRoot,
-        namespace: FailureNamespace,
         original: ReadableOriginalIdentity,
+        namespace: FailureNamespace,
     ) -> Self {
         Self {
             root,
-            namespace,
             original,
+            namespace,
         }
     }
 
@@ -999,10 +1004,10 @@ impl FailureEntryWriteRequest {
     pub fn write_path(self) -> Result<InstalledThumbnailPath> {
         let Self {
             root,
-            namespace,
             original,
+            namespace,
         } = self;
-        root.write_failure_entry_path(&namespace, &original)
+        root.write_failure_entry_path(&original, &namespace)
     }
 
     /// Writes a deterministic 1x1 transparent failure entry and returns final PNG bytes.
@@ -1013,10 +1018,10 @@ impl FailureEntryWriteRequest {
     pub fn write_png_bytes(self) -> Result<InstalledThumbnailPngBytes> {
         let Self {
             root,
-            namespace,
             original,
+            namespace,
         } = self;
-        root.write_failure_entry_png_bytes(&namespace, &original)
+        root.write_failure_entry_png_bytes(&original, &namespace)
     }
 
     /// Splits this request into its owned parts.
@@ -1024,8 +1029,8 @@ impl FailureEntryWriteRequest {
     pub fn into_parts(self) -> FailureEntryWriteRequestParts {
         FailureEntryWriteRequestParts {
             root: self.root,
-            namespace: self.namespace,
             original: self.original,
+            namespace: self.namespace,
         }
     }
 }
@@ -1036,10 +1041,10 @@ impl FailureEntryWriteRequest {
 pub struct FailureEntryWriteRequestParts {
     /// Personal thumbnail cache root.
     pub root: PersonalCacheRoot,
-    /// Failure-entry namespace.
-    pub namespace: FailureNamespace,
     /// Readability-confirmed original identity.
     pub original: ReadableOriginalIdentity,
+    /// Failure-entry namespace.
+    pub namespace: FailureNamespace,
 }
 
 /// Owned personal-cache inspection request for async or runtime-specific adapters.
@@ -1403,13 +1408,27 @@ pub struct SharedOriginalMetadata {
 }
 
 impl SharedOriginalMetadata {
-    /// Creates shared original metadata facts from caller-supplied values.
+    /// Creates empty shared original metadata facts.
     #[must_use]
-    pub const fn new(mtime: Option<UnixMTimeSeconds>, original_byte_size: Option<u64>) -> Self {
+    pub const fn new() -> Self {
         Self {
-            mtime,
-            original_byte_size,
+            mtime: None,
+            original_byte_size: None,
         }
+    }
+
+    /// Adds a known original modification time.
+    #[must_use]
+    pub const fn with_mtime(mut self, mtime: UnixMTimeSeconds) -> Self {
+        self.mtime = Some(mtime);
+        self
+    }
+
+    /// Adds a known original byte size.
+    #[must_use]
+    pub const fn with_original_byte_size(mut self, original_byte_size: u64) -> Self {
+        self.original_byte_size = Some(original_byte_size);
+        self
     }
 
     /// Returns the original modification time when known.
@@ -1429,35 +1448,19 @@ impl SharedOriginalMetadata {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct SharedOriginalFacts {
     metadata_policy: SharedThumbnailMetadataPolicy,
-    mtime: Option<UnixMTimeSeconds>,
-    original_byte_size: Option<u64>,
+    metadata: SharedOriginalMetadata,
 }
 
 impl SharedOriginalFacts {
-    /// Creates shared lookup facts from caller-supplied values.
-    #[must_use]
-    pub const fn new(
-        metadata_policy: SharedThumbnailMetadataPolicy,
-        mtime: Option<UnixMTimeSeconds>,
-        original_byte_size: Option<u64>,
-    ) -> Self {
-        Self {
-            metadata_policy,
-            mtime,
-            original_byte_size,
-        }
-    }
-
     /// Creates shared lookup facts from a metadata policy and policy-neutral metadata facts.
     #[must_use]
-    pub const fn from_metadata(
+    pub const fn new(
         metadata_policy: SharedThumbnailMetadataPolicy,
         metadata: SharedOriginalMetadata,
     ) -> Self {
         Self {
             metadata_policy,
-            mtime: metadata.mtime(),
-            original_byte_size: metadata.original_byte_size(),
+            metadata,
         }
     }
 
@@ -1470,19 +1473,19 @@ impl SharedOriginalFacts {
     /// Returns the original modification time when known.
     #[must_use]
     pub const fn mtime(&self) -> Option<UnixMTimeSeconds> {
-        self.mtime
+        self.metadata.mtime()
     }
 
     /// Returns the original byte size when known.
     #[must_use]
     pub const fn original_byte_size(&self) -> Option<u64> {
-        self.original_byte_size
+        self.metadata.original_byte_size()
     }
 
     /// Returns policy-neutral shared original metadata facts.
     #[must_use]
     pub const fn metadata(&self) -> SharedOriginalMetadata {
-        SharedOriginalMetadata::new(self.mtime, self.original_byte_size)
+        self.metadata
     }
 }
 
@@ -1682,7 +1685,7 @@ impl ThumbnailRgba8LookupEntry {
 
     /// Returns the decoded row-major RGBA8 pixel buffer.
     #[must_use]
-    pub fn rgba8_pixels(&self) -> &[u8] {
+    pub fn pixels(&self) -> &[u8] {
         &self.pixels
     }
 

@@ -29,7 +29,9 @@
 //! ```
 //!
 //! Owned request types make it straightforward to wrap blocking filesystem work in an async
-//! runtime without adding a runtime dependency to this crate.
+//! runtime without adding a runtime dependency to this crate. Request constructors perform no
+//! filesystem I/O, but local original identity construction does, so build local identities inside
+//! the same blocking adapter.
 //!
 //! ```no_run
 //! use xdg_thumbnail::{
@@ -50,16 +52,19 @@
 //!
 //! fn main() -> xdg_thumbnail::Result<()> {
 //!     let root = PersonalCacheRoot::resolve_from_env()?;
-//!     let original = ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
 //!     let rendered_png = render_thumbnail_png();
-//!     let request = PersonalThumbnailInstallRequest::new(
-//!         root,
-//!         original,
-//!         ThumbnailSize::Normal,
-//!         rendered_png,
-//!     );
 //!
-//!     let installed = spawn_blocking(move || request.install_png_bytes())?;
+//!     let installed = spawn_blocking(move || {
+//!         let original =
+//!             ReadableOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
+//!         let request = PersonalThumbnailInstallRequest::new(
+//!             root,
+//!             original,
+//!             ThumbnailSize::Normal,
+//!             rendered_png,
+//!         );
+//!         request.install_png_bytes()
+//!     })?;
 //!     let _path = installed.path();
 //!
 //!     Ok(())
