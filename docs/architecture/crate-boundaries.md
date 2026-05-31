@@ -84,7 +84,7 @@ The `x-large` and `xx-large` size classes are treated as supported documented be
 - Inspect and classify failure entries when the user includes failure namespaces in the scan scope, while relying on library-owned failure-entry metadata validation and requiring an extra failure-deletion opt-in before treating them as deletion candidates.
 - Own cleanup policy types such as URI classes, deletion reasons, skip reasons, and cleanup decisions.
 - Request removal through library cache entry handles only after the prune CLI has made an explicit deletion decision, and only when the relevant destructive flags are present.
-- Delete successful thumbnail entries only when `--delete` is passed, failure entries only when both `--delete` and `--allow-delete-failures` are passed, and report what was removed, skipped, or left unchanged.
+- Delete successful thumbnail entries only when `--delete` is passed, failure entries only when both `--delete` and `--allow-failure-deletion` are passed, and report what was removed, skipped, or left unchanged.
 - Skip nonstandard cache filenames by default and expose them only as reportable skipped entries when the user passes `--include-nonstandard-files`.
 - Provide conservative defaults and clear report output before destructive cleanup.
 - Preserve non-UTF-8 thumbnail path bytes in JSONL reports through explicit lossless byte fields rather than relying on human-oriented display strings.
@@ -285,6 +285,6 @@ pub trait CleanupClassifier {
 }
 ```
 
-The prune CLI default classifier should handle stable URI scheme categories and user-configurable path prefixes. It should treat `/media`, `/run/media/$UID`, `/run/user/$UID/doc`, GVfs, and KIO FUSE paths as removable, portal, or desktop-managed by default; `/media` can be disabled with `--ignore-fhs-media`; `/mnt` is excluded by default and can be added with repeated `--removable-prefix` options.
+The prune CLI default classifier should handle stable URI scheme categories and user-configurable path prefixes. It should treat `/media`, `/run/media/$UID`, `/run/user/$UID/doc`, GVfs, and KIO FUSE paths as removable, portal, or desktop-managed by default; `/media` can be disabled with `--ignore-media-prefix`; `/mnt` is excluded by default and can be added with repeated `--removable-prefix` options.
 
 For `file:` URIs, the default classifier should only treat empty authority and `localhost` authority as directly checkable local paths. Other authorities should be classified conservatively as remote or unknown unless an implementation-specific resolver is added. Direct local checks must distinguish confirmed absence from permission errors, transient I/O errors, and unsupported path conversion so cleanup policy can skip unverifiable originals instead of deleting them as missing.
