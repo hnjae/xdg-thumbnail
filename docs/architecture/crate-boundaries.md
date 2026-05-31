@@ -45,7 +45,7 @@ The library keeps a flat public API through `lib.rs` re-exports, but internal mo
 - Represent thumbnail sizes: `normal`, `large`, `x-large`, and `xx-large`. `ThumbnailSize::all()` returns a static slice in cache scan order rather than exposing a fixed array length as part of the public API contract.
 - Represent cache namespaces separately for successful thumbnail sizes and program-version failure entries.
 - Compute thumbnail filenames from canonical thumbnail URIs using MD5 and the `.png` suffix, including absolute canonical URIs for the personal cache and `./`-prefixed relative URIs for shared repositories, as specified in `docs/spec/uri-canonicalization.md`.
-- Expose pure computed-path APIs separately from validation APIs so callers cannot mistake an MD5-derived cache path for a display-valid thumbnail. Personal-cache path calculation is exposed as `PersonalCacheRoot::cache_entry_path`.
+- Expose pure computed-path APIs separately from validation APIs so callers cannot mistake an MD5-derived cache path for a display-valid thumbnail. Personal-cache path calculation is exposed as `PersonalCacheRoot::cache_entry_path`; shared-repository path calculation is exposed as `SharedRepositoryContext::cache_entry_path`.
 - Compute shared-repository cache paths only from an explicit shared repository context that includes the repository root, direct child original filename, and shared relative URI, so personal-cache absolute URI identity is never reused as a shared-repository lookup key.
 - Keep raw shared-repository filename construction separate from textual shared-URI parsing. Raw filenames with literal percent-looking text such as `dir%2Fpicture.png` are valid direct child names and are percent-encoded as `./dir%252Fpicture.png`; textual shared URIs that decode to multiple path segments, such as `./dir%2Fpicture.png`, are rejected. On Unix-like targets, backslash remains a filename byte and is preserved through percent-encoding when needed.
 - Read standard PNG text metadata such as `Thumb::URI`, `Thumb::MTime`, `Thumb::Size`, and `Thumb::Mimetype`, while exposing crate-owned PNG bit-depth and color-type enums instead of parser dependency types.
@@ -194,6 +194,8 @@ pub enum CacheEntryProblem {
     UriFilenameMismatch,
 }
 
+// CacheEntryProblem is a compact policy-branching vocabulary; richer non-metadata diagnostics belong on a separate detail surface.
+
 pub struct ThumbnailMetadataProblem {
     key: ThumbnailMetadataKey,
     kind: ThumbnailMetadataProblemKind,
@@ -226,7 +228,7 @@ pub enum NonstandardEntryPolicy {
 
 #[non_exhaustive]
 pub enum CacheEntryInspectionOutcome {
-    Unchecked,
+    Unvalidated,
     Invalid(Vec<CacheEntryProblem>),
 }
 
