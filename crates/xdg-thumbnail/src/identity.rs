@@ -154,9 +154,12 @@ pub struct ReadablePersonalOriginalIdentity {
 }
 
 impl ReadablePersonalOriginalIdentity {
-    /// Marks caller-confirmed original identity facts as readable.
+    /// Records caller- or backend-confirmed original identity facts as readable.
+    ///
+    /// This performs no I/O. Callers use it to attest that the supplied identity describes an
+    /// original that was readable through their chosen storage backend.
     #[must_use]
-    pub fn from_confirmed_readable_identity(identity: PersonalOriginalIdentity) -> Self {
+    pub fn assume_readable(identity: PersonalOriginalIdentity) -> Self {
         Self { identity }
     }
 

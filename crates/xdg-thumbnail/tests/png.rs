@@ -78,9 +78,9 @@ fn metadata_typed_accessors_distinguish_invalid_syntax() {
     let parsed = ParsedThumbnailPng::parse(&png).unwrap();
 
     assert_eq!(parsed.metadata().thumb_mtime_lossy(), None);
-    assert!(matches!(parsed.metadata().try_thumb_mtime(), Err(_)));
+    assert!(parsed.metadata().try_thumb_mtime().is_err());
     assert_eq!(parsed.metadata().thumb_size_lossy(), None);
-    assert!(matches!(parsed.metadata().try_thumb_size(), Err(_)));
+    assert!(parsed.metadata().try_thumb_size().is_err());
 }
 
 #[test]

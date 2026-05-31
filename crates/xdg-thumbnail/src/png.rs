@@ -336,9 +336,9 @@ impl ThumbnailMetadata {
         self.get("Thumb::URI")
     }
 
-    /// Returns parsed `Thumb::MTime` when present and syntactically valid.
+    /// Returns parsed `Thumb::MTime`, or `None` when it is missing or syntactically invalid.
     #[must_use]
-    pub fn thumb_mtime(&self) -> Option<UnixMtimeSeconds> {
+    pub fn thumb_mtime_lossy(&self) -> Option<UnixMtimeSeconds> {
         self.try_thumb_mtime().ok().flatten()
     }
 
@@ -356,9 +356,9 @@ impl ThumbnailMetadata {
         self.try_thumb_mtime()
     }
 
-    /// Returns parsed `Thumb::Size` when present and syntactically valid.
+    /// Returns parsed `Thumb::Size`, or `None` when it is missing or syntactically invalid.
     #[must_use]
-    pub fn thumb_size(&self) -> Option<u64> {
+    pub fn thumb_size_lossy(&self) -> Option<u64> {
         self.try_thumb_size().ok().flatten()
     }
 
