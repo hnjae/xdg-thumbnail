@@ -19,7 +19,6 @@ Options:
 --timeout <DURATION>          Maximum runtime for each thumbnailer invocation. Defaults to 30s. See Duration Syntax.
 --sandbox <MODE>              Thumbnailer sandbox mode: required or off. Defaults to required, which requires Linux with bubblewrap and never falls back to unsandboxed execution.
 --format <FORMAT>             Output format: human or jsonl. Defaults to human.
---verbose                     Print discovery, MIME, command, validation, and cache-write details.
 --generate-completion <SHELL> Generate a shell completion script to stdout and exit. Supported shells are defined by clap_complete.
 --generate-manpage            Generate a man page to stdout and exit.
 ```

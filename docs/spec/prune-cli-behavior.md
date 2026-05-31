@@ -24,7 +24,7 @@ Options:
 --ignore-media-prefix         Do not treat /media as removable by default.
 --age-basis <BASIS>           Timestamp basis for age-based cleanup: atime or mtime. Defaults to atime. mtime is a more portable and more aggressive explicit mode.
 --format <FORMAT>             Output format: human or jsonl. Defaults to human.
---verbose                     Print classification and timestamp details.
+--verbose                     Include kept entries and timestamp details in human output.
 --generate-completion <SHELL> Generate a shell completion script to stdout and exit. Supported shells are defined by clap_complete.
 --generate-manpage            Generate a man page to stdout and exit.
 ```
@@ -80,7 +80,7 @@ Each JSONL entry record must include at least `schema_version: 0`, `event: "entr
 
 Initial JSONL `decision` values are `keep`, `delete`, `stale`, and `skip`. `keep` means the entry is left unchanged because it is currently useful or outside the selected deletion policy. `delete` means the entry is a deletion candidate; `applied` distinguishes report-only candidates from deletions actually performed with `--delete`. `stale` means a stable local original still exists but the thumbnail metadata no longer matches it, so the entry is invalid for lookup and should be recreated by applications; the prune CLI reports this state without deleting the file unless `--allow-stale-local-deletion` is passed. With `--allow-stale-local-deletion`, the decision is `delete` with reason `stale-local-metadata`; the file remains in place with `applied: false` unless `--delete` is also passed, and is deleted with `applied: true` only when both options are present. `skip` means the entry is not acted on because it is unverifiable, out of scope, nonstandard, unsafe to delete under the selected options, or failed inspection in a way that is not a deletion candidate.
 
-Each reported human entry should include the thumbnail path, original URI if available, namespace, classification, decision, whether the decision was applied, reason, and the timestamp basis for age-based decisions. When access time is the selected age basis, reports should also expose whether access time was preserved during metadata inspection or why age evaluation was skipped. Verbose human output should include kept entries and classification details.
+Each reported human entry should include the thumbnail path, original URI if available, namespace, classification, decision, whether the decision was applied, reason, and the timestamp basis for age-based decisions. When access time is the selected age basis, reports should also expose whether access time was preserved during metadata inspection or why age evaluation was skipped. Verbose human output should include kept entries and add per-entry `timestamp=<unix-seconds-or-none>` and `access-time-preservation=<value>` details.
 
 When `--age-basis atime` is active and one or more age-based candidates are skipped because access time is unavailable, unreliable, or cannot be preserved during inspection, the human summary must include a short hint that `--age-basis mtime` is more portable and more aggressive, including an example such as `xdg-thumbnail-prune --older-than 30d --age-basis mtime`. JSONL summaries expose this through the timestamp skip counters and selected age basis rather than through prose hints.
 
