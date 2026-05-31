@@ -1965,6 +1965,9 @@ fn read_cache_entry_no_follow(path: &Path, context: &'static str) -> Result<Cach
         Err(rustix::io::Errno::LOOP | rustix::io::Errno::ISDIR | rustix::io::Errno::NOTDIR) => {
             return Ok(CacheEntryRead::Unreadable);
         }
+        Err(rustix::io::Errno::ACCESS | rustix::io::Errno::PERM) => {
+            return Ok(CacheEntryRead::Unreadable);
+        }
         Err(source) => {
             return Err(ThumbnailError::io(
                 context,
@@ -1984,8 +1987,12 @@ fn read_cache_entry_no_follow(path: &Path, context: &'static str) -> Result<Cach
 
     let mut file = File::from(fd);
     let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)
-        .map_err(|source| ThumbnailError::io(context, Some(path.to_owned()), source))?;
+    if let Err(source) = file.read_to_end(&mut bytes) {
+        if source.kind() == std::io::ErrorKind::PermissionDenied {
+            return Ok(CacheEntryRead::Unreadable);
+        }
+        return Err(ThumbnailError::io(context, Some(path.to_owned()), source));
+    }
     Ok(CacheEntryRead::Bytes(bytes))
 }
 
