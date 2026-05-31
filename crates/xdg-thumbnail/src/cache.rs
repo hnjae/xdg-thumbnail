@@ -225,7 +225,7 @@ impl PersonalCacheRoot {
     ///
     /// Returns an error when rendered PNG normalization fails, final thumbnail validation fails,
     /// cache directories are unavailable or insecure, or atomic installation fails.
-    pub fn install_thumbnail_path(
+    pub fn install_thumbnail_returning_path(
         &self,
         original: &ReadablePersonalOriginalIdentity,
         size: ThumbnailSize,
@@ -241,7 +241,7 @@ impl PersonalCacheRoot {
     ///
     /// Returns an error when rendered PNG normalization fails, final thumbnail validation fails,
     /// cache directories are unavailable or insecure, or atomic installation fails.
-    pub fn install_thumbnail_png_bytes(
+    pub fn install_thumbnail_returning_png_bytes(
         &self,
         original: &ReadablePersonalOriginalIdentity,
         size: ThumbnailSize,
@@ -257,7 +257,7 @@ impl PersonalCacheRoot {
     ///
     /// Returns an error when raw conversion or normalization fails, final thumbnail validation
     /// fails, cache directories are unavailable or insecure, or atomic installation fails.
-    pub fn install_thumbnail_raw_path(
+    pub fn install_raw_thumbnail_returning_path(
         &self,
         original: &ReadablePersonalOriginalIdentity,
         size: ThumbnailSize,
@@ -273,7 +273,7 @@ impl PersonalCacheRoot {
     ///
     /// Returns an error when raw conversion or normalization fails, final thumbnail validation
     /// fails, cache directories are unavailable or insecure, or atomic installation fails.
-    pub fn install_thumbnail_raw_png_bytes(
+    pub fn install_raw_thumbnail_returning_png_bytes(
         &self,
         original: &ReadablePersonalOriginalIdentity,
         size: ThumbnailSize,
@@ -315,12 +315,12 @@ impl PersonalCacheRoot {
     ///
     /// Returns an error when failure-entry PNG encoding fails, cache directories are unavailable or
     /// insecure, or atomic installation fails.
-    pub fn write_failure_entry_path(
+    pub fn write_failure_entry_returning_path(
         &self,
         original: &ReadablePersonalOriginalIdentity,
         namespace: &FailureNamespace,
     ) -> Result<InstalledThumbnailPath> {
-        let (path, _) = self.write_failure_entry_png_bytes_inner(original, namespace)?;
+        let (path, _) = self.write_failure_entry_returning_png_bytes_inner(original, namespace)?;
         Ok(InstalledThumbnailPath { path })
     }
 
@@ -330,16 +330,17 @@ impl PersonalCacheRoot {
     ///
     /// Returns an error when failure-entry PNG encoding fails, cache directories are unavailable or
     /// insecure, or atomic installation fails.
-    pub fn write_failure_entry_png_bytes(
+    pub fn write_failure_entry_returning_png_bytes(
         &self,
         original: &ReadablePersonalOriginalIdentity,
         namespace: &FailureNamespace,
     ) -> Result<InstalledThumbnailPngBytes> {
-        let (path, bytes) = self.write_failure_entry_png_bytes_inner(original, namespace)?;
+        let (path, bytes) =
+            self.write_failure_entry_returning_png_bytes_inner(original, namespace)?;
         Ok(InstalledThumbnailPngBytes { path, bytes })
     }
 
-    fn write_failure_entry_png_bytes_inner(
+    fn write_failure_entry_returning_png_bytes_inner(
         &self,
         original: &ReadablePersonalOriginalIdentity,
         namespace: &FailureNamespace,
@@ -900,7 +901,7 @@ impl PersonalThumbnailInstallRequest {
     ///
     /// # Errors
     ///
-    /// Returns the same errors as [`PersonalCacheRoot::install_thumbnail_path`].
+    /// Returns the same errors as [`PersonalCacheRoot::install_thumbnail_returning_path`].
     pub fn install_path(self) -> Result<InstalledThumbnailPath> {
         let Self {
             root,
@@ -908,14 +909,14 @@ impl PersonalThumbnailInstallRequest {
             size,
             rendered_png,
         } = self;
-        root.install_thumbnail_path(&original, size, &rendered_png)
+        root.install_thumbnail_returning_path(&original, size, &rendered_png)
     }
 
     /// Normalizes rendered PNG data, installs a personal-cache thumbnail, and returns final PNG bytes.
     ///
     /// # Errors
     ///
-    /// Returns the same errors as [`PersonalCacheRoot::install_thumbnail_png_bytes`].
+    /// Returns the same errors as [`PersonalCacheRoot::install_thumbnail_returning_png_bytes`].
     pub fn install_png_bytes(self) -> Result<InstalledThumbnailPngBytes> {
         let Self {
             root,
@@ -923,7 +924,7 @@ impl PersonalThumbnailInstallRequest {
             size,
             rendered_png,
         } = self;
-        root.install_thumbnail_png_bytes(&original, size, &rendered_png)
+        root.install_thumbnail_returning_png_bytes(&original, size, &rendered_png)
     }
 
     /// Splits this request into its owned parts.
@@ -985,7 +986,7 @@ impl PersonalThumbnailRawInstallRequest {
     ///
     /// # Errors
     ///
-    /// Returns the same errors as [`PersonalCacheRoot::install_thumbnail_raw_path`].
+    /// Returns the same errors as [`PersonalCacheRoot::install_raw_thumbnail_returning_path`].
     pub fn install_path(self) -> Result<InstalledThumbnailPath> {
         let Self {
             root,
@@ -993,14 +994,14 @@ impl PersonalThumbnailRawInstallRequest {
             size,
             image,
         } = self;
-        root.install_thumbnail_raw_path(&original, size, image.as_borrowed())
+        root.install_raw_thumbnail_returning_path(&original, size, image.as_borrowed())
     }
 
     /// Normalizes raw pixel data, installs a personal-cache thumbnail, and returns final PNG bytes.
     ///
     /// # Errors
     ///
-    /// Returns the same errors as [`PersonalCacheRoot::install_thumbnail_raw_png_bytes`].
+    /// Returns the same errors as [`PersonalCacheRoot::install_raw_thumbnail_returning_png_bytes`].
     pub fn install_png_bytes(self) -> Result<InstalledThumbnailPngBytes> {
         let Self {
             root,
@@ -1008,7 +1009,7 @@ impl PersonalThumbnailRawInstallRequest {
             size,
             image,
         } = self;
-        root.install_thumbnail_raw_png_bytes(&original, size, image.as_borrowed())
+        root.install_raw_thumbnail_returning_png_bytes(&original, size, image.as_borrowed())
     }
 
     /// Splits this request into its owned parts.
@@ -1067,28 +1068,28 @@ impl FailureEntryWriteRequest {
     ///
     /// # Errors
     ///
-    /// Returns the same errors as [`PersonalCacheRoot::write_failure_entry_path`].
+    /// Returns the same errors as [`PersonalCacheRoot::write_failure_entry_returning_path`].
     pub fn write_path(self) -> Result<InstalledThumbnailPath> {
         let Self {
             root,
             original,
             namespace,
         } = self;
-        root.write_failure_entry_path(&original, &namespace)
+        root.write_failure_entry_returning_path(&original, &namespace)
     }
 
     /// Writes a deterministic 1x1 transparent failure entry and returns final PNG bytes.
     ///
     /// # Errors
     ///
-    /// Returns the same errors as [`PersonalCacheRoot::write_failure_entry_png_bytes`].
+    /// Returns the same errors as [`PersonalCacheRoot::write_failure_entry_returning_png_bytes`].
     pub fn write_png_bytes(self) -> Result<InstalledThumbnailPngBytes> {
         let Self {
             root,
             original,
             namespace,
         } = self;
-        root.write_failure_entry_png_bytes(&original, &namespace)
+        root.write_failure_entry_returning_png_bytes(&original, &namespace)
     }
 
     /// Splits this request into its owned parts.
@@ -1486,7 +1487,6 @@ fn rgba8_lookup_entry_from_parts(
 
 /// Result of a validated personal thumbnail cache lookup.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[non_exhaustive]
 pub enum PersonalThumbnailLookup<T> {
     /// The cache entry exists and passed validation.
     Valid(T),

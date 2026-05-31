@@ -68,7 +68,7 @@ fn main() -> xdg_thumbnail::Result<()> {
     let root = PersonalCacheRoot::resolve_from_env()?;
     let original = ReadablePersonalOriginalIdentity::from_local_path("/home/alice/Pictures/photo.png")?;
     let rendered_png = render_thumbnail_png();
-    let installed = root.install_thumbnail_png_bytes(
+    let installed = root.install_thumbnail_returning_png_bytes(
         &original,
         ThumbnailSize::Normal,
         &rendered_png,

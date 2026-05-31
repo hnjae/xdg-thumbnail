@@ -72,6 +72,26 @@ impl TryFrom<i64> for UnixMtimeSeconds {
     }
 }
 
+impl From<u64> for UnixMtimeSeconds {
+    fn from(seconds: u64) -> Self {
+        Self::new(seconds)
+    }
+}
+
+impl From<UnixMtimeSeconds> for u64 {
+    fn from(mtime: UnixMtimeSeconds) -> Self {
+        mtime.as_u64()
+    }
+}
+
+impl TryFrom<SystemTime> for UnixMtimeSeconds {
+    type Error = ThumbnailError;
+
+    fn try_from(time: SystemTime) -> Result<Self> {
+        Self::from_system_time(time)
+    }
+}
+
 impl fmt::Display for UnixMtimeSeconds {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.seconds)

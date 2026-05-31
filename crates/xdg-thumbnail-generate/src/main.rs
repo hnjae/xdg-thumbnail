@@ -331,7 +331,6 @@ fn plan_one(
                 return record;
             }
             Ok(PersonalThumbnailLookup::Missing | PersonalThumbnailLookup::Invalid(_)) => {}
-            Ok(_) => {}
             Err(error) => {
                 record.decision = "skip";
                 record.reason = "cache-install-failed";
@@ -1042,7 +1041,7 @@ fn execute_thumbnailer(
             sandbox_applied,
         ));
     }
-    root.install_thumbnail_path(original, size, &rendered)
+    root.install_thumbnail_returning_path(original, size, &rendered)
         .map(|_| ())
         .map_err(|error| {
             ExecutionError::with_sandbox(
