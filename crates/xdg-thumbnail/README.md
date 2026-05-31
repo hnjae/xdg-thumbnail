@@ -8,6 +8,9 @@ This crate supports Unix-like XDG desktop environments only. Non-Unix targets fa
 
 `xdg-thumbnail` is pre-release software. Configuration, API shape, and internal formats may change before a stable release.
 
+> [!IMPORTANT]
+> This project was developed with AI assistance. Please review the code carefully before relying on it in production.
+
 ## Install
 
 ```sh
