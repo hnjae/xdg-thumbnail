@@ -8,20 +8,25 @@ use std::os::unix::ffi::OsStrExt;
 use tempfile::TempDir;
 use xdg_thumbnail::{
     CacheEntryInspection, CacheEntryInspectionOutcome, CacheEntryInspectionParts, CacheNamespace,
+    DisplayThumbnailRgba8LookupEntry, DisplayThumbnailRgba8LookupEntryParts,
     FailureEntryInspectionRequest, FailureEntryInspectionRequestParts, FailureEntryWriteRequest,
     FailureEntryWriteRequestParts, FailureNamespace, InstalledThumbnailPath,
-    InstalledThumbnailPngBytes, InstalledThumbnailPngBytesParts, NonstandardEntryPolicy,
-    OriginalUriIdentity, OwnedRawThumbnailImage, OwnedRawThumbnailImageParts, ParsedThumbnailPng,
-    PersonalCacheRoot, PersonalOriginalIdentity, PersonalOriginalUri,
-    PersonalThumbnailInspectionRequest, PersonalThumbnailInspectionRequestParts,
-    PersonalThumbnailInstallRequest, PersonalThumbnailInstallRequestParts, PersonalThumbnailLookup,
-    PersonalThumbnailLookupRequest, PersonalThumbnailLookupRequestParts,
-    PersonalThumbnailRawInstallRequest, PersonalThumbnailRawInstallRequestParts, RawThumbnailImage,
-    RawThumbnailPixelFormat, ReadablePersonalOriginalIdentity, SharedCacheEntryInspection,
-    SharedCacheEntryInspectionParts, SharedCacheEntryOutcome, SharedOriginalFacts,
-    SharedOriginalMetadata, SharedRepositoryContext, SharedThumbnailInspectionRequest,
-    SharedThumbnailInspectionRequestParts, SharedThumbnailLookup, SharedThumbnailLookupRequest,
-    SharedThumbnailLookupRequestParts, SharedThumbnailMetadataPolicy, ThumbnailMetadataKey,
+    InstalledThumbnailPngBytes, InstalledThumbnailPngBytesParts, MaterializedThumbnailPath,
+    MaterializedThumbnailPathParts, MaterializedThumbnailPngBytes,
+    MaterializedThumbnailPngBytesParts, NonstandardEntryPolicy, OriginalUriIdentity,
+    OwnedRawThumbnailImage, OwnedRawThumbnailImageParts, ParsedThumbnailPng, PersonalCacheRoot,
+    PersonalOriginalIdentity, PersonalOriginalUri, PersonalThumbnailInspectionRequest,
+    PersonalThumbnailInspectionRequestParts, PersonalThumbnailInstallRequest,
+    PersonalThumbnailInstallRequestParts, PersonalThumbnailLookup, PersonalThumbnailLookupRequest,
+    PersonalThumbnailLookupRequestParts, PersonalThumbnailMaterializationRequest,
+    PersonalThumbnailMaterializationRequestParts, PersonalThumbnailRawInstallRequest,
+    PersonalThumbnailRawInstallRequestParts, RawThumbnailImage, RawThumbnailPixelFormat,
+    ReadablePersonalOriginalIdentity, SharedCacheEntryInspection, SharedCacheEntryInspectionParts,
+    SharedCacheEntryOutcome, SharedOriginalFacts, SharedOriginalMetadata, SharedRepositoryContext,
+    SharedThumbnailInspectionRequest, SharedThumbnailInspectionRequestParts, SharedThumbnailLookup,
+    SharedThumbnailLookupRequest, SharedThumbnailLookupRequestParts, SharedThumbnailMetadataPolicy,
+    SharedToPersonalThumbnailMaterializationRequest,
+    SharedToPersonalThumbnailMaterializationRequestParts, ThumbnailMetadataKey,
     ThumbnailMetadataProblem, ThumbnailMetadataProblemKind, ThumbnailPathLookupEntry,
     ThumbnailPathLookupEntryParts, ThumbnailPngBytesLookupEntry, ThumbnailPngBytesLookupEntryParts,
     ThumbnailPngColorType, ThumbnailRgba8LookupEntry, ThumbnailRgba8LookupEntryParts,
@@ -61,9 +66,19 @@ fn owned_request_and_result_types_are_send_sync_static() {
     assert_send_sync_static::<ThumbnailPngBytesLookupEntryParts>();
     assert_send_sync_static::<ThumbnailRgba8LookupEntry>();
     assert_send_sync_static::<ThumbnailRgba8LookupEntryParts>();
+    assert_send_sync_static::<DisplayThumbnailRgba8LookupEntry>();
+    assert_send_sync_static::<DisplayThumbnailRgba8LookupEntryParts>();
     assert_send_sync_static::<InstalledThumbnailPath>();
     assert_send_sync_static::<InstalledThumbnailPngBytes>();
     assert_send_sync_static::<InstalledThumbnailPngBytesParts>();
+    assert_send_sync_static::<MaterializedThumbnailPath>();
+    assert_send_sync_static::<MaterializedThumbnailPathParts>();
+    assert_send_sync_static::<MaterializedThumbnailPngBytes>();
+    assert_send_sync_static::<MaterializedThumbnailPngBytesParts>();
+    assert_send_sync_static::<PersonalThumbnailMaterializationRequest>();
+    assert_send_sync_static::<PersonalThumbnailMaterializationRequestParts>();
+    assert_send_sync_static::<SharedToPersonalThumbnailMaterializationRequest>();
+    assert_send_sync_static::<SharedToPersonalThumbnailMaterializationRequestParts>();
     assert_send_sync_static::<OwnedRawThumbnailImageParts>();
     assert_send_sync_static::<CacheEntryInspection>();
     assert_send_sync_static::<CacheEntryInspectionParts>();
@@ -73,6 +88,8 @@ fn owned_request_and_result_types_are_send_sync_static() {
     assert_send_sync_static::<SharedThumbnailLookup<ThumbnailPngBytesLookupEntry>>();
     assert_send_sync_static::<PersonalThumbnailLookup<ThumbnailRgba8LookupEntry>>();
     assert_send_sync_static::<SharedThumbnailLookup<ThumbnailRgba8LookupEntry>>();
+    assert_send_sync_static::<PersonalThumbnailLookup<DisplayThumbnailRgba8LookupEntry>>();
+    assert_send_sync_static::<SharedThumbnailLookup<DisplayThumbnailRgba8LookupEntry>>();
 }
 
 fn run_blocking_style<F, R>(operation: F) -> R
@@ -156,6 +173,24 @@ fn personal_lookup_request_matches_borrowed_lookup() {
             assert_eq!(rgba8.metadata().thumb_size_lossy(), Some(12));
         }
         other => panic!("expected valid personal RGBA8 lookup, got {other:?}"),
+    }
+
+    let display_request =
+        PersonalThumbnailLookupRequest::new(root.clone(), original.clone(), ThumbnailSize::Normal);
+    assert_eq!(
+        display_request.clone().lookup_display_rgba8().unwrap(),
+        root.lookup_display_thumbnail_rgba8(&original, ThumbnailSize::Normal)
+            .unwrap()
+    );
+    match display_request.lookup_display_rgba8().unwrap() {
+        PersonalThumbnailLookup::Valid(display) => {
+            assert_eq!(display.source_path(), path.as_path());
+            assert_eq!(display.requested_size(), ThumbnailSize::Normal);
+            assert_eq!(display.source_size(), ThumbnailSize::Normal);
+            assert!(!display.is_derived());
+            assert_eq!(display.pixels(), &[255; 8]);
+        }
+        other => panic!("expected valid personal display lookup, got {other:?}"),
     }
 }
 
@@ -474,6 +509,14 @@ fn shared_lookup_and_inspection_requests_match_borrowed_api() {
             .lookup_thumbnail_rgba8(require_complete, ThumbnailSize::Normal)
             .unwrap()
     );
+    let lookup_request =
+        SharedThumbnailLookupRequest::new(context.clone(), require_complete, ThumbnailSize::Normal);
+    assert_eq!(
+        run_blocking_style(move || lookup_request.lookup_display_rgba8()).unwrap(),
+        context
+            .lookup_display_thumbnail_rgba8(require_complete, ThumbnailSize::Normal)
+            .unwrap()
+    );
 
     let inspection_request = SharedThumbnailInspectionRequest::new(
         context.clone(),
@@ -494,6 +537,116 @@ fn shared_lookup_and_inspection_requests_match_borrowed_api() {
     assert_eq!(parts.size, ThumbnailSize::Normal);
     assert_eq!(parts.path, path);
     assert_eq!(parts.metadata.unwrap().thumb_size_lossy(), Some(12));
+}
+
+#[test]
+fn materialization_requests_match_borrowed_api_and_expose_parts() {
+    let temp = TempDir::new().unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = readable_original();
+    let source_path = root.cache_entry_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::Large),
+    );
+    std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &source_path,
+        png_with_metadata_dimensions(personal_metadata("42"), 256, 128, 9),
+    )
+    .unwrap();
+
+    let request = PersonalThumbnailMaterializationRequest::new(
+        root.clone(),
+        original.clone(),
+        ThumbnailSize::Normal,
+    );
+    let parts = request.clone().into_parts();
+    assert_eq!(parts.root, root);
+    assert_eq!(parts.original, original);
+    assert_eq!(parts.size, ThumbnailSize::Normal);
+
+    assert_eq!(
+        request.clone().materialize_path().unwrap(),
+        root.materialize_thumbnail_from_larger_cache_returning_path(
+            &original,
+            ThumbnailSize::Normal
+        )
+        .unwrap()
+    );
+
+    let bytes_request = PersonalThumbnailMaterializationRequest::new(
+        root.clone(),
+        original.clone(),
+        ThumbnailSize::XLarge,
+    );
+    let bytes_parts = bytes_request.clone().into_parts();
+    assert_eq!(bytes_parts.size, ThumbnailSize::XLarge);
+    assert_eq!(
+        run_blocking_style(move || bytes_request.materialize_png_bytes()).unwrap(),
+        root.materialize_thumbnail_from_larger_cache_returning_png_bytes(
+            &original,
+            ThumbnailSize::XLarge
+        )
+        .unwrap()
+    );
+}
+
+#[test]
+fn shared_to_personal_materialization_request_matches_borrowed_api_and_exposes_parts() {
+    let temp = TempDir::new().unwrap();
+    let personal = PersonalCacheRoot::new(temp.path().join("personal-thumbnails")).unwrap();
+    let shared =
+        SharedRepositoryContext::new(temp.path(), OsStr::from_bytes(b"picture.png")).unwrap();
+    let source_path = shared.cache_entry_path(ThumbnailSize::Large);
+    std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &source_path,
+        png_with_metadata_dimensions(
+            shared_metadata("./picture.png", Some("42"), Some("12")),
+            256,
+            128,
+            9,
+        ),
+    )
+    .unwrap();
+    let facts = SharedOriginalFacts::new(
+        SharedThumbnailMetadataPolicy::RequireComplete,
+        SharedOriginalMetadata::new()
+            .with_mtime(UnixMtimeSeconds::new(42))
+            .with_original_byte_size(12),
+    );
+
+    let request = SharedToPersonalThumbnailMaterializationRequest::new(
+        personal.clone(),
+        shared.clone(),
+        facts,
+        ThumbnailSize::Normal,
+    );
+    let parts = request.clone().into_parts();
+    assert_eq!(parts.personal_root, personal);
+    assert_eq!(parts.shared_context, shared);
+    assert_eq!(parts.original_facts, facts);
+    assert_eq!(parts.size, ThumbnailSize::Normal);
+
+    assert_eq!(
+        request.clone().materialize_path().unwrap(),
+        personal
+            .materialize_shared_thumbnail_returning_path(&shared, facts, ThumbnailSize::Normal)
+            .unwrap()
+    );
+
+    let bytes_request = SharedToPersonalThumbnailMaterializationRequest::new(
+        personal.clone(),
+        shared.clone(),
+        facts,
+        ThumbnailSize::XLarge,
+    );
+    assert_eq!(
+        run_blocking_style(move || bytes_request.materialize_png_bytes()).unwrap(),
+        personal
+            .materialize_shared_thumbnail_returning_png_bytes(&shared, facts, ThumbnailSize::XLarge)
+            .unwrap()
+    );
 }
 
 fn readable_original() -> ReadablePersonalOriginalIdentity {
@@ -569,4 +722,28 @@ fn png_with_metadata(metadata: BTreeMap<&str, &str>) -> Vec<u8> {
 
 fn shared_png(metadata: BTreeMap<&str, &str>) -> Vec<u8> {
     png_with_metadata(metadata)
+}
+
+fn png_with_metadata_dimensions(
+    metadata: BTreeMap<&str, &str>,
+    width: u32,
+    height: u32,
+    value: u8,
+) -> Vec<u8> {
+    let mut output = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut output, width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        for (key, value) in metadata {
+            encoder
+                .add_text_chunk(key.to_owned(), value.to_owned())
+                .unwrap();
+        }
+        let mut writer = encoder.write_header().unwrap();
+        writer
+            .write_image_data(&vec![value; width as usize * height as usize * 4])
+            .unwrap();
+    }
+    output
 }

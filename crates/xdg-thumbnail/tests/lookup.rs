@@ -8,8 +8,8 @@ use tempfile::TempDir;
 use xdg_thumbnail::{
     CacheEntryProblem, CacheNamespace, PersonalCacheRoot, PersonalOriginalIdentity,
     PersonalOriginalUri, PersonalThumbnailLookup, ReadablePersonalOriginalIdentity,
-    ThumbnailMetadataKey, ThumbnailMetadataProblem, ThumbnailMetadataProblemKind, ThumbnailSize,
-    UnixMtimeSeconds,
+    ThumbnailMetadataKey, ThumbnailMetadataProblem, ThumbnailMetadataProblemKind,
+    ThumbnailPngColorType, ThumbnailSize, UnixMtimeSeconds,
 };
 
 #[test]
@@ -232,6 +232,302 @@ fn validated_lookup_rejects_symlink_and_non_regular_entries() {
     );
 }
 
+#[test]
+fn display_lookup_uses_larger_personal_source_when_exact_is_missing() {
+    let temp = TempDir::new().unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = original_identity(42);
+    let source_path = root.cache_entry_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::XxLarge),
+    );
+    std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &source_path,
+        png_with_metadata_dimensions(metadata("42"), 1024, 512, 7),
+    )
+    .unwrap();
+
+    match root
+        .lookup_display_thumbnail_rgba8(&original, ThumbnailSize::XLarge)
+        .unwrap()
+    {
+        PersonalThumbnailLookup::Valid(display) => {
+            assert_eq!(display.source_path(), source_path.as_path());
+            assert_eq!(display.requested_size(), ThumbnailSize::XLarge);
+            assert_eq!(display.source_size(), ThumbnailSize::XxLarge);
+            assert!(display.is_derived());
+            assert_eq!(
+                (display.width(), display.height(), display.stride()),
+                (512, 256, 2048)
+            );
+            assert_eq!(display.pixels().len(), 512 * 256 * 4);
+            assert_eq!(display.source_metadata().thumb_size_lossy(), Some(12));
+
+            let parts = display.into_parts();
+            assert_eq!(parts.source_path, source_path);
+            assert_eq!(parts.requested_size, ThumbnailSize::XLarge);
+            assert_eq!(parts.source_size, ThumbnailSize::XxLarge);
+            assert_eq!(parts.width, 512);
+            assert_eq!(parts.height, 256);
+            assert_eq!(parts.stride, 2048);
+            assert_eq!(
+                parts.source_metadata.thumb_mtime_lossy(),
+                Some(UnixMtimeSeconds::new(42))
+            );
+        }
+        other => panic!("expected derived personal display lookup, got {other:?}"),
+    }
+}
+
+#[test]
+fn display_lookup_exact_valid_wins_over_larger_personal_source() {
+    let temp = TempDir::new().unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = original_identity(42);
+    let exact_path = root.cache_entry_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::Large),
+    );
+    let larger_path = root.cache_entry_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::XxLarge),
+    );
+    std::fs::create_dir_all(exact_path.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(larger_path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &exact_path,
+        png_with_metadata_dimensions(metadata("42"), 64, 32, 11),
+    )
+    .unwrap();
+    std::fs::write(
+        &larger_path,
+        png_with_metadata_dimensions(metadata("42"), 1024, 512, 22),
+    )
+    .unwrap();
+
+    match root
+        .lookup_display_thumbnail_rgba8(&original, ThumbnailSize::Large)
+        .unwrap()
+    {
+        PersonalThumbnailLookup::Valid(display) => {
+            assert_eq!(display.source_path(), exact_path.as_path());
+            assert_eq!(display.source_size(), ThumbnailSize::Large);
+            assert!(!display.is_derived());
+            assert_eq!((display.width(), display.height()), (64, 32));
+            assert_eq!(display.pixels()[0], 11);
+        }
+        other => panic!("expected exact personal display lookup, got {other:?}"),
+    }
+}
+
+#[test]
+fn display_lookup_returns_exact_invalid_without_trying_larger_personal_source() {
+    let temp = TempDir::new().unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = original_identity(42);
+    let exact_path = root.cache_entry_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::Large),
+    );
+    let larger_path = root.cache_entry_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::XxLarge),
+    );
+    std::fs::create_dir_all(exact_path.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(larger_path.parent().unwrap()).unwrap();
+    std::fs::write(&exact_path, png_with_metadata(metadata("41"))).unwrap();
+    std::fs::write(
+        &larger_path,
+        png_with_metadata_dimensions(metadata("42"), 1024, 512, 22),
+    )
+    .unwrap();
+
+    match root
+        .lookup_display_thumbnail_rgba8(&original, ThumbnailSize::Large)
+        .unwrap()
+    {
+        PersonalThumbnailLookup::Invalid(problems) => {
+            assert!(problems.contains(&metadata_problem(
+                ThumbnailMetadataKey::Mtime,
+                ThumbnailMetadataProblemKind::ValueMismatch,
+            )));
+        }
+        other => panic!("expected exact invalid display lookup, got {other:?}"),
+    }
+}
+
+#[test]
+fn display_lookup_returns_first_larger_invalid_personal_source() {
+    let temp = TempDir::new().unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = original_identity(42);
+    let first_larger_path = root.cache_entry_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::Large),
+    );
+    let second_larger_path = root.cache_entry_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::XxLarge),
+    );
+    std::fs::create_dir_all(first_larger_path.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(second_larger_path.parent().unwrap()).unwrap();
+    std::fs::write(&first_larger_path, png_with_metadata(metadata("41"))).unwrap();
+    std::fs::write(
+        &second_larger_path,
+        png_with_metadata_dimensions(metadata("42"), 1024, 512, 22),
+    )
+    .unwrap();
+
+    match root
+        .lookup_display_thumbnail_rgba8(&original, ThumbnailSize::Normal)
+        .unwrap()
+    {
+        PersonalThumbnailLookup::Invalid(problems) => {
+            assert!(problems.contains(&metadata_problem(
+                ThumbnailMetadataKey::Mtime,
+                ThumbnailMetadataProblemKind::ValueMismatch,
+            )));
+        }
+        other => panic!("expected first larger invalid display lookup, got {other:?}"),
+    }
+}
+
+#[test]
+fn display_lookup_returns_missing_when_no_personal_candidates_exist() {
+    let temp = TempDir::new().unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = original_identity(42);
+
+    assert_eq!(
+        root.lookup_display_thumbnail_rgba8(&original, ThumbnailSize::Large)
+            .unwrap(),
+        PersonalThumbnailLookup::Missing
+    );
+}
+
+#[test]
+fn materialize_personal_larger_source_writes_requested_namespace() {
+    let temp = TempDir::new().unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = original_identity(42);
+    let source_path = root.cache_entry_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::Large),
+    );
+    let target_path = root.cache_entry_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::Normal),
+    );
+    std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &source_path,
+        png_with_metadata_dimensions(metadata("42"), 256, 128, 99),
+    )
+    .unwrap();
+
+    match root
+        .materialize_thumbnail_from_larger_cache_returning_path(&original, ThumbnailSize::Normal)
+        .unwrap()
+    {
+        PersonalThumbnailLookup::Valid(materialized) => {
+            assert_eq!(materialized.target_path(), target_path.as_path());
+            assert_eq!(materialized.source_path(), source_path.as_path());
+            assert_eq!(materialized.requested_size(), ThumbnailSize::Normal);
+            assert_eq!(materialized.source_size(), ThumbnailSize::Large);
+            assert!(materialized.written());
+            let parts = materialized.into_parts();
+            assert_eq!(parts.target_path, target_path);
+            assert_eq!(parts.source_path, source_path);
+            assert!(parts.written);
+        }
+        other => panic!("expected personal materialized path, got {other:?}"),
+    }
+
+    let parsed =
+        xdg_thumbnail::ParsedThumbnailPng::parse(&std::fs::read(&target_path).unwrap()).unwrap();
+    assert_eq!((parsed.width(), parsed.height()), (128, 64));
+    assert_eq!(parsed.color_type(), ThumbnailPngColorType::Rgba);
+    assert_eq!(
+        parsed.metadata().thumb_uri(),
+        Some("file:///home/alice/photo.png")
+    );
+    assert_eq!(
+        parsed.metadata().thumb_mtime_lossy(),
+        Some(UnixMtimeSeconds::new(42))
+    );
+    assert_eq!(parsed.metadata().thumb_size_lossy(), Some(12));
+}
+
+#[test]
+fn materialize_personal_exact_valid_is_noop() {
+    let temp = TempDir::new().unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = original_identity(42);
+    let target_path = root.cache_entry_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::Normal),
+    );
+    std::fs::create_dir_all(target_path.parent().unwrap()).unwrap();
+    let exact_bytes = png_with_metadata_dimensions(metadata("42"), 64, 32, 77);
+    std::fs::write(&target_path, &exact_bytes).unwrap();
+
+    match root
+        .materialize_thumbnail_from_larger_cache_returning_path(&original, ThumbnailSize::Normal)
+        .unwrap()
+    {
+        PersonalThumbnailLookup::Valid(materialized) => {
+            assert_eq!(materialized.target_path(), target_path.as_path());
+            assert_eq!(materialized.source_path(), target_path.as_path());
+            assert_eq!(materialized.source_size(), ThumbnailSize::Normal);
+            assert!(!materialized.written());
+        }
+        other => panic!("expected no-op personal materialization, got {other:?}"),
+    }
+    assert_eq!(std::fs::read(&target_path).unwrap(), exact_bytes);
+}
+
+#[test]
+fn materialize_personal_png_bytes_returns_final_target_bytes() {
+    let temp = TempDir::new().unwrap();
+    let root = PersonalCacheRoot::new(temp.path().join("thumbnails")).unwrap();
+    let original = original_identity(42);
+    let source_path = root.cache_entry_path(
+        original.identity().uri(),
+        &CacheNamespace::Size(ThumbnailSize::Large),
+    );
+    std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &source_path,
+        png_with_metadata_dimensions(metadata("42"), 256, 128, 99),
+    )
+    .unwrap();
+
+    match root
+        .materialize_thumbnail_from_larger_cache_returning_png_bytes(
+            &original,
+            ThumbnailSize::Normal,
+        )
+        .unwrap()
+    {
+        PersonalThumbnailLookup::Valid(materialized) => {
+            assert_ne!(
+                materialized.png_bytes(),
+                std::fs::read(&source_path).unwrap().as_slice()
+            );
+            assert_eq!(
+                materialized.png_bytes(),
+                std::fs::read(materialized.target_path())
+                    .unwrap()
+                    .as_slice()
+            );
+            let parts = materialized.into_parts();
+            assert_eq!(parts.png_bytes, std::fs::read(parts.target_path).unwrap());
+        }
+        other => panic!("expected materialized PNG bytes, got {other:?}"),
+    }
+}
+
 fn assert_unreadable_lookup<T: std::fmt::Debug>(lookup: PersonalThumbnailLookup<T>) {
     match lookup {
         PersonalThumbnailLookup::Invalid(problems) => {
@@ -290,6 +586,29 @@ fn png_with_metadata_pixels(
         }
         let mut writer = encoder.write_header().unwrap();
         writer.write_image_data(pixels).unwrap();
+    }
+    output
+}
+
+fn png_with_metadata_dimensions(
+    metadata: BTreeMap<&str, &str>,
+    width: u32,
+    height: u32,
+    value: u8,
+) -> Vec<u8> {
+    let pixels = vec![value; width as usize * height as usize * 4];
+    let mut output = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut output, width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        for (key, value) in metadata {
+            encoder
+                .add_text_chunk(key.to_owned(), value.to_owned())
+                .unwrap();
+        }
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_image_data(&pixels).unwrap();
     }
     output
 }
