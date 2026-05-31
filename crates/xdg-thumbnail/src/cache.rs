@@ -7,7 +7,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 
 use crate::inspection::{
     CacheEntryInspection, NonstandardEntryPolicy, read_thumbnail_for_inspection,
@@ -2848,13 +2848,19 @@ fn ensure_private_directory(path: &Path) -> Result<()> {
                     )
                 })?;
             }
-            fs::create_dir(path).map_err(|source| {
-                ThumbnailError::io(
-                    "create thumbnail cache directory",
-                    Some(path.to_owned()),
-                    source,
-                )
-            })?;
+            match fs::DirBuilder::new().mode(0o700).create(path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    return ensure_private_directory(path);
+                }
+                Err(source) => {
+                    return Err(ThumbnailError::io(
+                        "create thumbnail cache directory",
+                        Some(path.to_owned()),
+                        source,
+                    ));
+                }
+            }
             fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(|source| {
                 ThumbnailError::io(
                     "set thumbnail cache directory permissions",
