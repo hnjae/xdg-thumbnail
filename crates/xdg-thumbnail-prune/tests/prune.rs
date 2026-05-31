@@ -32,7 +32,12 @@ fn help_and_version_are_successful_metadata_modes() {
         .stdout(predicate::str::contains(
             "Requires --scope failures or --scope all",
         ))
+        .stdout(predicate::str::contains(
+            "Defaults to all successful thumbnail size namespaces",
+        ))
         .stdout(predicate::str::contains("--ignore-media-prefix"))
+        .stdout(predicate::str::contains("--generate-completion"))
+        .stdout(predicate::str::contains("--generate-manpage"))
         .stdout(predicate::str::contains("--delete-stale-local").not())
         .stdout(predicate::str::contains("--allow-delete-failures").not())
         .stdout(predicate::str::contains("--ignore-fhs-media").not());
@@ -64,6 +69,30 @@ fn generates_manpage_before_delete_option_validation() {
         .success()
         .stdout(predicates::str::contains(
             "Prune stale or invalid Freedesktop thumbnail cache entries",
+        ));
+}
+
+#[test]
+fn generates_manpage_before_removable_prefix_validation() {
+    Command::cargo_bin("xdg-thumbnail-prune")
+        .unwrap()
+        .args(["--generate-manpage", "--removable-prefix", "relative"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "Prune stale or invalid Freedesktop thumbnail cache entries",
+        ));
+}
+
+#[test]
+fn relative_removable_prefix_is_a_usage_error() {
+    Command::cargo_bin("xdg-thumbnail-prune")
+        .unwrap()
+        .args(["--removable-prefix", "relative"])
+        .assert()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "--removable-prefix requires an absolute path",
         ));
 }
 
